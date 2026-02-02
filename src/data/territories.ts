@@ -836,8 +836,9 @@ export function getTerritoriesByType(type: TerritoryType): Territory[] {
 const pathCenterCache = new Map<string, { x: number; y: number }>()
 
 /**
- * Calculate the visual center (centroid) of an SVG path.
- * Parses the path to extract coordinate points and returns their average.
+ * Calculate the visual center of an SVG path using bounding box.
+ * Properly parses SVG path commands (M, L, C, S, Q, T, H, V, A, Z) with
+ * both absolute and relative variants to find the true bounding box.
  * Results are cached for performance.
  */
 export function getPathCenter(path: string): { x: number; y: number } {
@@ -845,26 +846,143 @@ export function getPathCenter(path: string): { x: number; y: number } {
   const cached = pathCenterCache.get(path)
   if (cached) return cached
 
-  // Extract all numbers from the path
-  const numbers = path.match(/-?\d+(?:\.\d+)?/g)
-  if (!numbers || numbers.length < 2) {
+  let minX = Infinity
+  let minY = Infinity
+  let maxX = -Infinity
+  let maxY = -Infinity
+  let currentX = 0
+  let currentY = 0
+  let startX = 0
+  let startY = 0
+
+  const updateBounds = (x: number, y: number) => {
+    minX = Math.min(minX, x)
+    minY = Math.min(minY, y)
+    maxX = Math.max(maxX, x)
+    maxY = Math.max(maxY, y)
+  }
+
+  // Parse path commands - matches command letter followed by numbers
+  const commandRegex = /([MmLlHhVvCcSsQqTtAaZz])([^MmLlHhVvCcSsQqTtAaZz]*)/g
+  let match
+
+  while ((match = commandRegex.exec(path)) !== null) {
+    const command = match[1]
+    const argsStr = match[2].trim()
+    const args = argsStr.match(/-?\d+(?:\.\d+)?/g)?.map(Number) || []
+    const isRelative = command === command.toLowerCase()
+
+    switch (command.toUpperCase()) {
+      case 'M': // MoveTo
+        for (let i = 0; i < args.length; i += 2) {
+          currentX = isRelative ? currentX + args[i] : args[i]
+          currentY = isRelative ? currentY + args[i + 1] : args[i + 1]
+          if (i === 0) {
+            startX = currentX
+            startY = currentY
+          }
+          updateBounds(currentX, currentY)
+        }
+        break
+
+      case 'L': // LineTo
+        for (let i = 0; i < args.length; i += 2) {
+          currentX = isRelative ? currentX + args[i] : args[i]
+          currentY = isRelative ? currentY + args[i + 1] : args[i + 1]
+          updateBounds(currentX, currentY)
+        }
+        break
+
+      case 'H': // Horizontal LineTo
+        for (const arg of args) {
+          currentX = isRelative ? currentX + arg : arg
+          updateBounds(currentX, currentY)
+        }
+        break
+
+      case 'V': // Vertical LineTo
+        for (const arg of args) {
+          currentY = isRelative ? currentY + arg : arg
+          updateBounds(currentX, currentY)
+        }
+        break
+
+      case 'C': // CurveTo (cubic bezier) - 6 args per curve
+        for (let i = 0; i < args.length; i += 6) {
+          // Include control points in bounds for approximation
+          const cp1x = isRelative ? currentX + args[i] : args[i]
+          const cp1y = isRelative ? currentY + args[i + 1] : args[i + 1]
+          const cp2x = isRelative ? currentX + args[i + 2] : args[i + 2]
+          const cp2y = isRelative ? currentY + args[i + 3] : args[i + 3]
+          const endX = isRelative ? currentX + args[i + 4] : args[i + 4]
+          const endY = isRelative ? currentY + args[i + 5] : args[i + 5]
+          updateBounds(cp1x, cp1y)
+          updateBounds(cp2x, cp2y)
+          updateBounds(endX, endY)
+          currentX = endX
+          currentY = endY
+        }
+        break
+
+      case 'S': // Smooth CurveTo - 4 args per curve
+        for (let i = 0; i < args.length; i += 4) {
+          const cp2x = isRelative ? currentX + args[i] : args[i]
+          const cp2y = isRelative ? currentY + args[i + 1] : args[i + 1]
+          const endX = isRelative ? currentX + args[i + 2] : args[i + 2]
+          const endY = isRelative ? currentY + args[i + 3] : args[i + 3]
+          updateBounds(cp2x, cp2y)
+          updateBounds(endX, endY)
+          currentX = endX
+          currentY = endY
+        }
+        break
+
+      case 'Q': // Quadratic bezier - 4 args per curve
+        for (let i = 0; i < args.length; i += 4) {
+          const cpx = isRelative ? currentX + args[i] : args[i]
+          const cpy = isRelative ? currentY + args[i + 1] : args[i + 1]
+          const endX = isRelative ? currentX + args[i + 2] : args[i + 2]
+          const endY = isRelative ? currentY + args[i + 3] : args[i + 3]
+          updateBounds(cpx, cpy)
+          updateBounds(endX, endY)
+          currentX = endX
+          currentY = endY
+        }
+        break
+
+      case 'T': // Smooth Quadratic bezier - 2 args per curve
+        for (let i = 0; i < args.length; i += 2) {
+          currentX = isRelative ? currentX + args[i] : args[i]
+          currentY = isRelative ? currentY + args[i + 1] : args[i + 1]
+          updateBounds(currentX, currentY)
+        }
+        break
+
+      case 'A': // Arc - 7 args per arc
+        for (let i = 0; i < args.length; i += 7) {
+          const endX = isRelative ? currentX + args[i + 5] : args[i + 5]
+          const endY = isRelative ? currentY + args[i + 6] : args[i + 6]
+          updateBounds(endX, endY)
+          currentX = endX
+          currentY = endY
+        }
+        break
+
+      case 'Z': // ClosePath
+        currentX = startX
+        currentY = startY
+        break
+    }
+  }
+
+  // Fallback if no valid bounds found
+  if (minX === Infinity) {
     return { x: 0, y: 0 }
   }
 
-  // Parse coordinate pairs (SVG paths alternate x, y values)
-  let sumX = 0
-  let sumY = 0
-  let count = 0
-
-  for (let i = 0; i < numbers.length - 1; i += 2) {
-    sumX += parseFloat(numbers[i])
-    sumY += parseFloat(numbers[i + 1])
-    count++
-  }
-
   const center = {
-    x: Math.round(sumX / count),
-    y: Math.round(sumY / count),
+    x: Math.round((minX + maxX) / 2),
+    y: Math.round((minY + maxY) / 2),
   }
 
   // Cache and return

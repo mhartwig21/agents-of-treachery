@@ -361,32 +361,39 @@ export function DiplomacyMap({
         {/* Territory labels - outlined text for readability */}
         {territories
           .filter(t => !t.id.includes('_'))
-          .map((territory) => (
-            <text
-              key={`label-${territory.id}`}
-              x={territory.labelX}
-              y={territory.labelY}
-              textAnchor="middle"
-              fill={territory.type === 'sea' ? '#1a3a5a' : '#2a2016'}
-              fontSize="11"
-              fontWeight="600"
-              stroke={territory.type === 'sea' ? 'rgba(168, 197, 216, 0.8)' : 'rgba(255, 255, 255, 0.7)'}
-              strokeWidth="2.5"
-              paintOrder="stroke fill"
-              className="pointer-events-none select-none"
-            >
-              {territory.id.toUpperCase()}
-            </text>
-          ))}
+          .map((territory) => {
+            const center = getTerritoryCenter(territory.id)
+            if (!center) return null
+            return (
+              <text
+                key={`label-${territory.id}`}
+                x={center.x}
+                y={center.y}
+                textAnchor="middle"
+                dominantBaseline="middle"
+                fill={territory.type === 'sea' ? '#1a3a5a' : '#2a2016'}
+                fontSize="11"
+                fontWeight="600"
+                stroke={territory.type === 'sea' ? 'rgba(168, 197, 216, 0.8)' : 'rgba(255, 255, 255, 0.7)'}
+                strokeWidth="2.5"
+                paintOrder="stroke fill"
+                className="pointer-events-none select-none"
+              >
+                {territory.id.toUpperCase()}
+              </text>
+            )
+          })}
 
         {/* Supply center markers */}
         {territories
           .filter(t => t.supplyCenter && !t.id.includes('_'))
           .map((territory) => {
+            const center = getTerritoryCenter(territory.id)
+            if (!center) return null
             const owner = gameState.supplyCenters[territory.id]
             return (
               <g key={`sc-${territory.id}`}>
-                {renderSupplyCenter(territory.labelX, territory.labelY, owner)}
+                {renderSupplyCenter(center.x, center.y, owner)}
               </g>
             )
           })}
