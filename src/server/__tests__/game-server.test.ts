@@ -16,9 +16,9 @@ describe('GameServer', () => {
         ],
       });
 
-      expect(result.content).toContain('HOLD');
+      expect(result.content).toContain('ORDERS:');
       expect(result.usage?.inputTokens).toBe(100);
-      expect(result.usage?.outputTokens).toBe(50);
+      expect(result.usage?.outputTokens).toBe(150);
     });
   });
 });
