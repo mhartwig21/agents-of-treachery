@@ -15,6 +15,15 @@ import { PressTimeline } from './PressTimeline';
 import { TurnScrubber } from './TurnScrubber';
 import { LiveActivityPanel } from './LiveActivityPanel';
 import { PhaseIndicator, PhaseBadge } from '../shared/PhaseIndicator';
+import { CollapsiblePanel } from '../shared/CollapsiblePanel';
+
+/** State for which sidebar panels are collapsed */
+interface CollapsedPanels {
+  liveActivity: boolean;
+  powerStats: boolean;
+  orders: boolean;
+  press: boolean;
+}
 
 interface SpectatorGameViewProps {
   /** Callback to return to dashboard */
@@ -33,6 +42,12 @@ export function SpectatorGameView({ onBack }: SpectatorGameViewProps) {
   const [selectedPower, setSelectedPower] = useState<LowercasePower | undefined>();
   const [selectedTerritory, setSelectedTerritory] = useState<string | null>(null);
   const [orderFilterPower, setOrderFilterPower] = useState<LowercasePower | undefined>();
+  const [collapsedPanels, setCollapsedPanels] = useState<CollapsedPanels>({
+    liveActivity: false,
+    powerStats: false,
+    orders: false,
+    press: false,
+  });
 
   // Compute supply center counts from current snapshot
   const supplyCenterCounts = { england: 0, france: 0, germany: 0, italy: 0, austria: 0, russia: 0, turkey: 0 } as Record<LowercasePower, number>;
@@ -131,43 +146,68 @@ export function SpectatorGameView({ onBack }: SpectatorGameViewProps) {
         </div>
 
         {/* Right sidebar */}
-        <div className="w-80 bg-gray-850 border-l border-gray-700 flex flex-col overflow-hidden">
+        <div className="w-80 bg-gray-850 border-l border-gray-700 flex flex-col overflow-y-auto">
           {/* Live activity (only when live) */}
           {isLive && (
-            <LiveActivityPanel
-              currentAgent={activeGame.currentAgent}
-              latestMessages={activeGame.latestMessages}
-              latestOrders={activeGame.latestOrders}
-              isLive={isLive}
+            <CollapsiblePanel
+              title="Live Activity"
+              collapsed={collapsedPanels.liveActivity}
+              onCollapsedChange={(v) => setCollapsedPanels((p) => ({ ...p, liveActivity: v }))}
               className="border-b border-gray-700"
-            />
+            >
+              <LiveActivityPanel
+                currentAgent={activeGame.currentAgent}
+                latestMessages={activeGame.latestMessages}
+                latestOrders={activeGame.latestOrders}
+                isLive={isLive}
+              />
+            </CollapsiblePanel>
           )}
 
           {/* Power stats */}
-          <PowerStatsPanel
-            supplyCenterCounts={supplyCenterCounts}
-            unitCounts={unitCounts}
-            selectedPower={selectedPower}
-            onPowerClick={setSelectedPower}
+          <CollapsiblePanel
+            title="Power Statistics"
+            collapsed={collapsedPanels.powerStats}
+            onCollapsedChange={(v) => setCollapsedPanels((p) => ({ ...p, powerStats: v }))}
             className="border-b border-gray-700"
-          />
+          >
+            <PowerStatsPanel
+              supplyCenterCounts={supplyCenterCounts}
+              unitCounts={unitCounts}
+              selectedPower={selectedPower}
+              onPowerClick={setSelectedPower}
+            />
+          </CollapsiblePanel>
 
           {/* Orders */}
-          <OrdersPanel
-            orders={currentSnapshot.orders}
-            units={currentSnapshot.gameState.units}
-            filterPower={orderFilterPower}
-            onFilterChange={setOrderFilterPower}
+          <CollapsiblePanel
+            title="Orders"
+            count={currentSnapshot.orders.length}
+            collapsed={collapsedPanels.orders}
+            onCollapsedChange={(v) => setCollapsedPanels((p) => ({ ...p, orders: v }))}
             className="border-b border-gray-700"
-          />
+          >
+            <OrdersPanel
+              orders={currentSnapshot.orders}
+              units={currentSnapshot.gameState.units}
+              filterPower={orderFilterPower}
+              onFilterChange={setOrderFilterPower}
+            />
+          </CollapsiblePanel>
 
           {/* Press channels */}
-          <div className="flex-1 overflow-hidden">
+          <CollapsiblePanel
+            title="Press Channels"
+            count={currentSnapshot.messages.length}
+            collapsed={collapsedPanels.press}
+            onCollapsedChange={(v) => setCollapsedPanels((p) => ({ ...p, press: v }))}
+            className="flex-1 min-h-0"
+          >
             <ChannelPanel
               messages={currentSnapshot.messages}
-              className="h-full"
+              className="max-h-96"
             />
-          </div>
+          </CollapsiblePanel>
         </div>
       </div>
 

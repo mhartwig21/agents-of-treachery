@@ -114,11 +114,8 @@ export function ChannelPanel({
 
   return (
     <div className={`flex flex-col bg-gray-800 ${className}`}>
-      {/* Header */}
-      <div className="px-4 py-3 border-b border-gray-700">
-        <h3 className="font-semibold text-sm mb-2">Press Channels</h3>
-
-        {/* Search */}
+      {/* Search */}
+      <div className="px-4 py-2 border-b border-gray-700">
         <input
           type="text"
           placeholder="Search messages..."
