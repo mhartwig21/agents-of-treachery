@@ -357,6 +357,36 @@ export function extractDiplomacySection(response: string): string | null {
 }
 
 /**
+ * Power name aliases for flexible parsing of diplomatic messages.
+ */
+const POWER_ALIASES: Record<string, Power> = {
+  'england': 'ENGLAND',
+  'france': 'FRANCE',
+  'germany': 'GERMANY',
+  'italy': 'ITALY',
+  'austria': 'AUSTRIA',
+  'austria-hungary': 'AUSTRIA',
+  'russia': 'RUSSIA',
+  'turkey': 'TURKEY',
+  'ottoman': 'TURKEY',
+};
+
+/**
+ * Normalize a power name to its canonical form.
+ */
+function normalizePower(input: string): Power | null {
+  const normalized = input.trim().toLowerCase();
+  if (POWER_ALIASES[normalized]) {
+    return POWER_ALIASES[normalized];
+  }
+  const upper = input.trim().toUpperCase() as Power;
+  if (POWERS.includes(upper)) {
+    return upper;
+  }
+  return null;
+}
+
+/**
  * Clean raw order line: strip markdown, numbering, bullets, and normalize whitespace.
  */
 function cleanOrderLine(line: string): string {
@@ -391,6 +421,48 @@ function cleanOrderLine(line: string): string {
   cleaned = cleaned.replace(/\s{2,}/g, ' ');
 
   return cleaned.trim();
+}
+
+/**
+ * Extract diplomatic messages from agent response.
+ * Looks for patterns like:
+ * - TO ENGLAND: message content
+ * - TO England: message content
+ * - TO FRANCE, GERMANY: message to multiple powers
+ */
+export function extractDiplomaticMessages(response: string): DiplomaticAction[] {
+  const messages: DiplomaticAction[] = [];
+
+  // Match "TO [POWER(S)]: [message]" pattern
+  // Can have multiple powers separated by comma or "and"
+  const toPattern = /TO\s+([A-Za-z,\s-]+?):\s*([^\n]+(?:\n(?!TO\s+[A-Za-z]).*)*)/gi;
+
+  let match;
+  while ((match = toPattern.exec(response)) !== null) {
+    const powersStr = match[1];
+    const content = match[2].trim();
+
+    // Parse target powers (can be "ENGLAND", "ENGLAND, FRANCE", "ENGLAND and FRANCE")
+    const powerParts = powersStr.split(/[,\s]+(?:and\s+)?/i).filter(p => p.trim());
+    const targetPowers: Power[] = [];
+
+    for (const part of powerParts) {
+      const power = normalizePower(part);
+      if (power) {
+        targetPowers.push(power);
+      }
+    }
+
+    if (targetPowers.length > 0 && content) {
+      messages.push({
+        type: 'SEND_MESSAGE',
+        targetPowers,
+        content,
+      });
+    }
+  }
+
+  return messages;
 }
 
 /**
@@ -726,17 +798,6 @@ export function parseBuildLine(line: string): {
 }
 
 /**
- * Normalize a power name to its canonical form.
- */
-function normalizePower(input: string): Power | null {
-  const normalized = input.trim().toUpperCase();
-  if (POWERS.includes(normalized as Power)) {
-    return normalized as Power;
-  }
-  return null;
-}
-
-/**
  * Valid negotiation stages for tracking deal progression.
  */
 const NEGOTIATION_STAGES = ['OPENING', 'COUNTER', 'FINAL', 'ACCEPT', 'REJECT'] as const;
@@ -929,6 +990,11 @@ export function parseAgentResponse(response: string): ParseResult {
         result.errors.push(error);
       }
     }
+  }
+
+  // Fallback: extract "TO POWER:" style diplomatic messages
+  if (result.diplomaticMessages.length === 0) {
+    result.diplomaticMessages = extractDiplomaticMessages(response);
   }
 
   return result;

@@ -21,6 +21,7 @@ import {
   parseDiplomacyLine,
   parseAgentResponse,
   extractDiplomacySection,
+  extractDiplomaticMessages,
   validateOrders,
   fillDefaultOrders,
 } from '../order-parser';
@@ -630,6 +631,37 @@ A Paris HOLD
         condition: 'you support Serbia',
         commitment: 'I help you into Warsaw',
       });
+    });
+  });
+
+  describe('extractDiplomaticMessages', () => {
+    it('extracts single message to one power', () => {
+      const response = `TO GERMANY: Let's work together on the eastern front.`;
+      const messages = extractDiplomaticMessages(response);
+      expect(messages.length).toBe(1);
+      expect(messages[0].targetPowers).toEqual(['GERMANY']);
+      expect(messages[0].content).toBe("Let's work together on the eastern front.");
+    });
+
+    it('handles lowercase power names', () => {
+      const response = `TO england: I mean you no harm.`;
+      const messages = extractDiplomaticMessages(response);
+      expect(messages.length).toBe(1);
+      expect(messages[0].targetPowers).toEqual(['ENGLAND']);
+    });
+
+    it('handles multiple targets with comma', () => {
+      const response = `TO RUSSIA, TURKEY: Let us discuss the Black Sea.`;
+      const messages = extractDiplomaticMessages(response);
+      expect(messages.length).toBe(1);
+      expect(messages[0].targetPowers).toContain('RUSSIA');
+      expect(messages[0].targetPowers).toContain('TURKEY');
+    });
+
+    it('returns empty array for response with no messages', () => {
+      const response = `ORDERS:\nA Paris HOLD`;
+      const messages = extractDiplomaticMessages(response);
+      expect(messages.length).toBe(0);
     });
   });
 
