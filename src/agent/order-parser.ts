@@ -15,7 +15,9 @@ import type {
   Coast,
   GameState,
 } from '../engine/types';
+import { POWERS } from '../engine/types';
 import { getProvince, PROVINCES, areAdjacent } from '../engine/map';
+import type { DiplomaticAction } from './types';
 
 /**
  * Result of parsing orders from agent response.
@@ -24,6 +26,7 @@ export interface ParseResult {
   orders: Order[];
   retreatOrders: RetreatOrder[];
   buildOrders: BuildOrder[];
+  diplomaticMessages: DiplomaticAction[];
   errors: string[];
   warnings: string[];
 }
@@ -187,7 +190,7 @@ export function parseCoast(input: string): Coast | null {
  */
 export function extractOrdersSection(response: string): string | null {
   // Look for ORDERS: section
-  const ordersMatch = response.match(/ORDERS:\s*([\s\S]*?)(?=(?:RETREATS:|BUILDS:|REASONING:|$))/i);
+  const ordersMatch = response.match(/ORDERS:\s*([\s\S]*?)(?=(?:RETREATS:|BUILDS:|REASONING:|DIPLOMACY:|$))/i);
   if (ordersMatch) {
     return ordersMatch[1].trim();
   }
@@ -205,7 +208,7 @@ export function extractOrdersSection(response: string): string | null {
  * Extract the retreats section from agent response.
  */
 export function extractRetreatsSection(response: string): string | null {
-  const retreatsMatch = response.match(/RETREATS:\s*([\s\S]*?)(?=(?:ORDERS:|BUILDS:|REASONING:|$))/i);
+  const retreatsMatch = response.match(/RETREATS:\s*([\s\S]*?)(?=(?:ORDERS:|BUILDS:|REASONING:|DIPLOMACY:|$))/i);
   if (retreatsMatch) {
     return retreatsMatch[1].trim();
   }
@@ -216,9 +219,20 @@ export function extractRetreatsSection(response: string): string | null {
  * Extract the builds section from agent response.
  */
 export function extractBuildsSection(response: string): string | null {
-  const buildsMatch = response.match(/BUILDS:\s*([\s\S]*?)(?=(?:ORDERS:|RETREATS:|REASONING:|$))/i);
+  const buildsMatch = response.match(/BUILDS:\s*([\s\S]*?)(?=(?:ORDERS:|RETREATS:|REASONING:|DIPLOMACY:|$))/i);
   if (buildsMatch) {
     return buildsMatch[1].trim();
+  }
+  return null;
+}
+
+/**
+ * Extract the diplomacy section from agent response.
+ */
+export function extractDiplomacySection(response: string): string | null {
+  const diplomacyMatch = response.match(/DIPLOMACY:\s*([\s\S]*?)(?=(?:ORDERS:|RETREATS:|BUILDS:|REASONING:|$))/i);
+  if (diplomacyMatch) {
+    return diplomacyMatch[1].trim();
   }
   return null;
 }
@@ -512,6 +526,86 @@ export function parseBuildLine(line: string): {
 }
 
 /**
+ * Normalize a power name to its canonical form.
+ */
+function normalizePower(input: string): Power | null {
+  const normalized = input.trim().toUpperCase();
+  if (POWERS.includes(normalized as Power)) {
+    return normalized as Power;
+  }
+  return null;
+}
+
+/**
+ * Parse a diplomacy line (SEND command).
+ *
+ * Expected format: SEND POWER: "message"
+ * Examples:
+ *   SEND FRANCE: "I propose we form an alliance"
+ *   SEND GERMANY: "Your movements concern me"
+ */
+export function parseDiplomacyLine(line: string): {
+  action: DiplomaticAction | null;
+  error: string | null;
+} {
+  let cleaned = line.trim();
+  if (!cleaned || cleaned.startsWith('#') || cleaned.startsWith('//')) {
+    return { action: null, error: null };
+  }
+
+  // Remove leading dashes or bullets
+  cleaned = cleaned.replace(/^[-*•]\s*/, '');
+
+  // Parse SEND POWER: "message" format
+  const sendMatch = cleaned.match(/^SEND\s+([A-Za-z]+):\s*"([^"]+)"$/i);
+  if (sendMatch) {
+    const targetPower = normalizePower(sendMatch[1]);
+    const content = sendMatch[2];
+
+    if (!targetPower) {
+      return { action: null, error: `Unknown power: ${sendMatch[1]}` };
+    }
+
+    return {
+      action: {
+        type: 'SEND_MESSAGE',
+        targetPowers: [targetPower],
+        content,
+      },
+      error: null,
+    };
+  }
+
+  // Also support single-quoted messages
+  const sendMatchSingleQuote = cleaned.match(/^SEND\s+([A-Za-z]+):\s*'([^']+)'$/i);
+  if (sendMatchSingleQuote) {
+    const targetPower = normalizePower(sendMatchSingleQuote[1]);
+    const content = sendMatchSingleQuote[2];
+
+    if (!targetPower) {
+      return { action: null, error: `Unknown power: ${sendMatchSingleQuote[1]}` };
+    }
+
+    return {
+      action: {
+        type: 'SEND_MESSAGE',
+        targetPowers: [targetPower],
+        content,
+      },
+      error: null,
+    };
+  }
+
+  // If line starts with SEND but doesn't match, report error
+  if (/^SEND\s/i.test(cleaned)) {
+    return { action: null, error: `Could not parse diplomacy: ${line}` };
+  }
+
+  // Empty or non-SEND line, not an error
+  return { action: null, error: null };
+}
+
+/**
  * Parse all orders from an agent response.
  */
 export function parseAgentResponse(response: string): ParseResult {
@@ -519,6 +613,7 @@ export function parseAgentResponse(response: string): ParseResult {
     orders: [],
     retreatOrders: [],
     buildOrders: [],
+    diplomaticMessages: [],
     errors: [],
     warnings: [],
   };
@@ -559,6 +654,20 @@ export function parseAgentResponse(response: string): ParseResult {
       const { order, error } = parseBuildLine(line);
       if (order) {
         result.buildOrders.push(order);
+      } else if (error) {
+        result.errors.push(error);
+      }
+    }
+  }
+
+  // Extract and parse diplomacy section
+  const diplomacySection = extractDiplomacySection(response);
+  if (diplomacySection) {
+    const lines = diplomacySection.split('\n');
+    for (const line of lines) {
+      const { action, error } = parseDiplomacyLine(line);
+      if (action) {
+        result.diplomaticMessages.push(action);
       } else if (error) {
         result.errors.push(error);
       }
