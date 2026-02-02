@@ -2,6 +2,7 @@
 .claude/
 .beads/
 .logs/
+logs/
 node_modules/
 dist/
 .env

@@ -61,6 +61,7 @@ export interface RuntimeEvent {
     orders?: Order[];
     winner?: Power;
     draw?: boolean;
+    durationMs?: number;
   };
 }
 
@@ -468,12 +469,14 @@ export class AgentRuntime {
       reasoning: response.content,
     };
 
+    const durationMs = Date.now() - startTime;
     this.emitEvent({
       type: 'agent_turn_completed',
       timestamp: new Date(),
       data: {
         power,
         orders: valid,
+        durationMs,
       },
     });
 

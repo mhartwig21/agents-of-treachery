@@ -17,6 +17,7 @@ import {
   engineToUIOrder,
 } from '../spectator/types';
 import type { Message } from '../press/types';
+import { GameLogger, getGameLogger, removeGameLogger, createLoggingLLMProvider } from './game-logger';
 
 /**
  * Message types sent to clients.
@@ -50,6 +51,7 @@ interface ActiveGame {
   subscribers: Set<WebSocket>;
   accumulatedMessages: Message[];
   accumulatedOrders: Map<Power, import('../engine/types').Order[]>;
+  logger: GameLogger;
 }
 
 /**
@@ -173,7 +175,10 @@ export class GameServer {
       verbose: false,
     };
 
-    const runtime = new AgentRuntime(config, this.llmProvider);
+    const logger = getGameLogger(gameId);
+    // Wrap LLM provider with logging
+    const loggingProvider = createLoggingLLMProvider(this.llmProvider, logger);
+    const runtime = new AgentRuntime(config, loggingProvider);
     const spectator = new SpectatorAPI(runtime.getPressSystem());
 
     const now = new Date();
@@ -195,13 +200,22 @@ export class GameServer {
       subscribers: new Set([ws]),
       accumulatedMessages: [],
       accumulatedOrders: new Map(),
+      logger,
     };
 
     this.games.set(gameId, activeGame);
 
+    // Log game started
+    logger.gameStarted(gameName, POWERS);
+
     // Subscribe to press messages
     spectator.onAnyMessage((message) => {
       activeGame.accumulatedMessages.push(message);
+      const preview = message.content.length > 100 ? message.content.slice(0, 100) + '...' : message.content;
+      // Get recipients from channel ID (format: bilateral:POWER1:POWER2 or multiparty:... or global)
+      const channelParts = message.channelId.split(':');
+      const recipients = channelParts.slice(1).filter(p => p !== message.sender);
+      logger.messageSent(message.sender, recipients.length > 0 ? recipients : ['all'], preview);
     });
 
     // Subscribe to runtime events
@@ -218,8 +232,10 @@ export class GameServer {
     // Initialize and run game
     try {
       console.log(`[${gameId}] Initializing runtime...`);
+      logger.debug('Initializing runtime');
       await runtime.initialize();
       console.log(`[${gameId}] Runtime initialized, starting game loop...`);
+      logger.debug('Runtime initialized, starting game loop');
       const result = await runtime.runGame();
       console.log(`[${gameId}] Game finished:`, result);
 
@@ -229,6 +245,9 @@ export class GameServer {
         activeGame.history.winner = result.winner.toLowerCase() as any;
       }
 
+      // Log game ended
+      logger.gameEnded(result.winner, result.draw, 'Game completed normally');
+
       this.broadcastToGame(activeGame, {
         type: 'GAME_ENDED',
         gameId,
@@ -236,11 +255,18 @@ export class GameServer {
         draw: result.draw,
       });
     } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      const errorStack = error instanceof Error ? error.stack : undefined;
       console.error(`Game ${gameId} error:`, error);
+      logger.error(errorMsg, 'Game execution failed', errorStack);
+      logger.gameEnded(undefined, undefined, `Error: ${errorMsg}`);
       this.sendToClient(ws, {
         type: 'ERROR',
         message: `Game error: ${error}`,
       });
+    } finally {
+      // Clean up logger registry
+      removeGameLogger(gameId);
     }
   }
 
@@ -248,11 +274,12 @@ export class GameServer {
    * Handles runtime events and creates snapshots.
    */
   private handleRuntimeEvent(game: ActiveGame, event: RuntimeEvent): void {
-    const { runtime } = game;
+    const { runtime, logger } = game;
     console.log(`[${game.gameId}] Event: ${event.type}`, event.data.power || '');
 
     // Send real-time updates for agent activity
     if (event.type === 'agent_turn_started' && event.data.power) {
+      logger.agentTurnStarted(event.data.power);
       this.broadcastToGame(game, {
         type: 'GAME_UPDATED',
         gameId: game.gameId,
@@ -266,6 +293,7 @@ export class GameServer {
     // Send real-time update when agent completes
     if (event.type === 'agent_turn_completed' && event.data.power) {
       console.log(`[${game.gameId}] ${event.data.power} completed turn`);
+      logger.agentTurnCompleted(event.data.power, event.data.durationMs || 0);
       // Send any new messages immediately
       if (game.accumulatedMessages.length > 0) {
         const latestMessages = [...game.accumulatedMessages];
@@ -283,6 +311,15 @@ export class GameServer {
     // Track orders as they're submitted
     if (event.type === 'orders_submitted' && event.data.power && event.data.orders) {
       console.log(`[${game.gameId}] ${event.data.power} submitted ${event.data.orders.length} orders`);
+      const orderStrings = event.data.orders.map((o): string => {
+        switch (o.type) {
+          case 'HOLD': return `${o.unit} HOLD`;
+          case 'MOVE': return `${o.unit} - ${o.destination}`;
+          case 'SUPPORT': return `${o.unit} S ${o.supportedUnit}${o.destination ? ' - ' + o.destination : ''}`;
+          case 'CONVOY': return `${o.unit} C ${o.convoyedUnit} - ${o.destination}`;
+        }
+      });
+      logger.ordersSubmitted(event.data.power, orderStrings, true);
       game.accumulatedOrders.set(event.data.power, event.data.orders);
       // Send order update immediately
       this.broadcastToGame(game, {
@@ -298,6 +335,7 @@ export class GameServer {
     // Create full snapshot when phase resolves
     if (event.type === 'phase_resolved' || event.type === 'game_started') {
       const gameState = runtime.getGameState();
+      logger.phaseResolved(gameState.phase, gameState.year, gameState.season);
       const uiGameState = engineToUIGameState(gameState);
 
       // Convert accumulated orders to UI format
