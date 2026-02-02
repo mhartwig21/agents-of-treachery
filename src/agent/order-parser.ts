@@ -15,6 +15,8 @@ import type {
   Coast,
   GameState,
 } from '../engine/types';
+import { POWERS } from '../engine/types';
+import type { DiplomaticAction } from './types';
 import { getProvince, PROVINCES, areAdjacent } from '../engine/map';
 
 /**
@@ -24,6 +26,7 @@ export interface ParseResult {
   orders: Order[];
   retreatOrders: RetreatOrder[];
   buildOrders: BuildOrder[];
+  diplomaticMessages: DiplomaticAction[];
   errors: string[];
   warnings: string[];
 }
@@ -221,6 +224,78 @@ export function extractBuildsSection(response: string): string | null {
     return buildsMatch[1].trim();
   }
   return null;
+}
+
+/**
+ * Power name aliases for flexible parsing of diplomatic messages.
+ */
+const POWER_ALIASES: Record<string, Power> = {
+  'england': 'ENGLAND',
+  'france': 'FRANCE',
+  'germany': 'GERMANY',
+  'italy': 'ITALY',
+  'austria': 'AUSTRIA',
+  'austria-hungary': 'AUSTRIA',
+  'russia': 'RUSSIA',
+  'turkey': 'TURKEY',
+  'ottoman': 'TURKEY',
+};
+
+/**
+ * Normalize a power name to its canonical form.
+ */
+function normalizePower(input: string): Power | null {
+  const normalized = input.trim().toLowerCase();
+  if (POWER_ALIASES[normalized]) {
+    return POWER_ALIASES[normalized];
+  }
+  const upper = input.trim().toUpperCase() as Power;
+  if (POWERS.includes(upper)) {
+    return upper;
+  }
+  return null;
+}
+
+/**
+ * Extract diplomatic messages from agent response.
+ * Looks for patterns like:
+ * - TO ENGLAND: message content
+ * - TO England: message content
+ * - TO FRANCE, GERMANY: message to multiple powers
+ */
+export function extractDiplomaticMessages(response: string): DiplomaticAction[] {
+  const messages: DiplomaticAction[] = [];
+
+  // Match "TO [POWER(S)]: [message]" pattern
+  // Can have multiple powers separated by comma or "and"
+  const toPattern = /TO\s+([A-Za-z,\s-]+?):\s*([^\n]+(?:\n(?!TO\s+[A-Za-z]).*)*)/gi;
+
+  let match;
+  while ((match = toPattern.exec(response)) !== null) {
+    const powersStr = match[1];
+    const content = match[2].trim();
+
+    // Parse target powers (can be "ENGLAND", "ENGLAND, FRANCE", "ENGLAND and FRANCE")
+    const powerParts = powersStr.split(/[,\s]+(?:and\s+)?/i).filter(p => p.trim());
+    const targetPowers: Power[] = [];
+
+    for (const part of powerParts) {
+      const power = normalizePower(part);
+      if (power) {
+        targetPowers.push(power);
+      }
+    }
+
+    if (targetPowers.length > 0 && content) {
+      messages.push({
+        type: 'SEND_MESSAGE',
+        targetPowers,
+        content,
+      });
+    }
+  }
+
+  return messages;
 }
 
 /**
@@ -519,6 +594,7 @@ export function parseAgentResponse(response: string): ParseResult {
     orders: [],
     retreatOrders: [],
     buildOrders: [],
+    diplomaticMessages: [],
     errors: [],
     warnings: [],
   };
@@ -564,6 +640,9 @@ export function parseAgentResponse(response: string): ParseResult {
       }
     }
   }
+
+  // Extract diplomatic messages
+  result.diplomaticMessages = extractDiplomaticMessages(response);
 
   return result;
 }

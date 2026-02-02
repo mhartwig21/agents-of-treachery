@@ -19,6 +19,7 @@ import {
   parseRetreatLine,
   parseBuildLine,
   parseAgentResponse,
+  extractDiplomaticMessages,
   validateOrders,
   fillDefaultOrders,
 } from '../order-parser';
@@ -435,6 +436,67 @@ BUILD F Brest
 
       const result = parseAgentResponse(response);
       expect(result.buildOrders.length).toBe(2);
+    });
+
+    it('extracts diplomatic messages', () => {
+      const response = `
+ANALYSIS: Looking at the current situation, I should try to ally with England.
+
+TO ENGLAND: I propose we work together against Germany. What do you say?
+
+TO FRANCE: Shall we coordinate our moves in Burgundy?
+
+INTENTIONS: I plan to attack Munich.
+      `;
+
+      const result = parseAgentResponse(response);
+      expect(result.diplomaticMessages.length).toBe(2);
+      expect(result.diplomaticMessages[0].type).toBe('SEND_MESSAGE');
+      expect(result.diplomaticMessages[0].targetPowers).toContain('ENGLAND');
+      expect(result.diplomaticMessages[0].content).toContain('propose we work together');
+      expect(result.diplomaticMessages[1].targetPowers).toContain('FRANCE');
+    });
+
+    it('extracts diplomatic messages to multiple powers', () => {
+      const response = `
+TO ENGLAND, FRANCE: I suggest we form a triple alliance against Germany.
+      `;
+
+      const result = parseAgentResponse(response);
+      expect(result.diplomaticMessages.length).toBe(1);
+      expect(result.diplomaticMessages[0].targetPowers).toContain('ENGLAND');
+      expect(result.diplomaticMessages[0].targetPowers).toContain('FRANCE');
+    });
+  });
+
+  describe('extractDiplomaticMessages', () => {
+    it('extracts single message to one power', () => {
+      const response = `TO GERMANY: Let's work together on the eastern front.`;
+      const messages = extractDiplomaticMessages(response);
+      expect(messages.length).toBe(1);
+      expect(messages[0].targetPowers).toEqual(['GERMANY']);
+      expect(messages[0].content).toBe("Let's work together on the eastern front.");
+    });
+
+    it('handles lowercase power names', () => {
+      const response = `TO england: I mean you no harm.`;
+      const messages = extractDiplomaticMessages(response);
+      expect(messages.length).toBe(1);
+      expect(messages[0].targetPowers).toEqual(['ENGLAND']);
+    });
+
+    it('handles multiple targets with comma', () => {
+      const response = `TO RUSSIA, TURKEY: Let us discuss the Black Sea.`;
+      const messages = extractDiplomaticMessages(response);
+      expect(messages.length).toBe(1);
+      expect(messages[0].targetPowers).toContain('RUSSIA');
+      expect(messages[0].targetPowers).toContain('TURKEY');
+    });
+
+    it('returns empty array for response with no messages', () => {
+      const response = `ORDERS:\nA Paris HOLD`;
+      const messages = extractDiplomaticMessages(response);
+      expect(messages.length).toBe(0);
     });
   });
 
