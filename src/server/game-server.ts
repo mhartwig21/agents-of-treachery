@@ -444,19 +444,197 @@ export class GameServer {
 }
 
 /**
+ * Adjacency map for Diplomacy territories.
+ * Maps each territory to its adjacent territories.
+ */
+const ADJACENCIES: Record<string, string[]> = {
+  // England
+  LON: ['WAL', 'YOR', 'ENG', 'NTH'],
+  EDI: ['YOR', 'LVP', 'CLY', 'NTH', 'NWG'],
+  LVP: ['EDI', 'YOR', 'WAL', 'CLY', 'IRI', 'NAO'],
+  YOR: ['LON', 'EDI', 'LVP', 'WAL', 'NTH'],
+  WAL: ['LON', 'LVP', 'YOR', 'ENG', 'IRI'],
+  CLY: ['EDI', 'LVP', 'NAO', 'NWG'],
+  // France
+  PAR: ['BRE', 'PIC', 'BUR', 'GAS'],
+  BRE: ['PAR', 'PIC', 'GAS', 'MAO', 'ENG'],
+  MAR: ['SPA', 'GAS', 'BUR', 'PIE', 'LYO'],
+  BUR: ['PAR', 'PIC', 'BEL', 'RUH', 'MUN', 'MAR', 'GAS'],
+  GAS: ['PAR', 'BRE', 'BUR', 'MAR', 'SPA', 'MAO'],
+  PIC: ['PAR', 'BRE', 'BEL', 'BUR', 'ENG'],
+  // Germany
+  BER: ['KIE', 'MUN', 'SIL', 'PRU', 'BAL'],
+  MUN: ['BER', 'KIE', 'RUH', 'BUR', 'TYR', 'BOH', 'SIL'],
+  KIE: ['BER', 'MUN', 'RUH', 'HOL', 'HEL', 'DEN', 'BAL'],
+  RUH: ['KIE', 'MUN', 'BUR', 'BEL', 'HOL'],
+  SIL: ['BER', 'MUN', 'BOH', 'GAL', 'WAR', 'PRU'],
+  PRU: ['BER', 'SIL', 'WAR', 'LVN', 'BAL'],
+  // Italy
+  ROM: ['NAP', 'TUS', 'VEN', 'APU', 'TYS'],
+  NAP: ['ROM', 'APU', 'TYS', 'ION'],
+  VEN: ['ROM', 'TUS', 'PIE', 'TYR', 'TRI', 'APU', 'ADR'],
+  TUS: ['ROM', 'VEN', 'PIE', 'LYO', 'TYS'],
+  PIE: ['TUS', 'VEN', 'TYR', 'MAR', 'LYO'],
+  APU: ['ROM', 'NAP', 'VEN', 'ION', 'ADR'],
+  // Austria
+  VIE: ['BUD', 'TRI', 'BOH', 'GAL', 'TYR'],
+  BUD: ['VIE', 'TRI', 'GAL', 'RUM', 'SER'],
+  TRI: ['VIE', 'BUD', 'VEN', 'TYR', 'SER', 'ALB', 'ADR'],
+  BOH: ['VIE', 'MUN', 'SIL', 'GAL', 'TYR'],
+  GAL: ['VIE', 'BUD', 'BOH', 'SIL', 'WAR', 'UKR', 'RUM'],
+  TYR: ['VIE', 'TRI', 'VEN', 'PIE', 'MUN', 'BOH'],
+  // Russia
+  MOS: ['STP', 'SEV', 'UKR', 'WAR', 'LVN'],
+  WAR: ['MOS', 'LVN', 'PRU', 'SIL', 'GAL', 'UKR'],
+  STP: ['MOS', 'LVN', 'FIN', 'NWY', 'BAR', 'BOT'],
+  SEV: ['MOS', 'UKR', 'RUM', 'ARM', 'BLA'],
+  UKR: ['MOS', 'WAR', 'GAL', 'RUM', 'SEV'],
+  LVN: ['MOS', 'WAR', 'PRU', 'STP', 'BOT', 'BAL'],
+  FIN: ['STP', 'NWY', 'SWE', 'BOT'],
+  // Turkey
+  CON: ['ANK', 'SMY', 'BUL', 'AEG', 'BLA'],
+  ANK: ['CON', 'SMY', 'ARM', 'BLA'],
+  SMY: ['CON', 'ANK', 'ARM', 'SYR', 'AEG', 'EAS'],
+  ARM: ['ANK', 'SMY', 'SEV', 'SYR', 'BLA'],
+  SYR: ['SMY', 'ARM', 'EAS'],
+  // Neutrals
+  NWY: ['STP', 'FIN', 'SWE', 'SKA', 'NTH', 'NWG', 'BAR'],
+  SWE: ['NWY', 'FIN', 'DEN', 'SKA', 'BOT', 'BAL'],
+  DEN: ['SWE', 'KIE', 'SKA', 'HEL', 'BAL', 'NTH'],
+  HOL: ['KIE', 'RUH', 'BEL', 'HEL', 'NTH'],
+  BEL: ['HOL', 'RUH', 'BUR', 'PIC', 'ENG', 'NTH'],
+  SPA: ['MAR', 'GAS', 'POR', 'MAO', 'LYO', 'WES'],
+  POR: ['SPA', 'MAO'],
+  TUN: ['NAF', 'WES', 'TYS', 'ION'],
+  NAF: ['TUN', 'MAO', 'WES'],
+  SER: ['BUD', 'TRI', 'ALB', 'GRE', 'BUL', 'RUM'],
+  ALB: ['TRI', 'SER', 'GRE', 'ADR', 'ION'],
+  GRE: ['SER', 'ALB', 'BUL', 'AEG', 'ION'],
+  BUL: ['CON', 'SER', 'GRE', 'RUM', 'AEG', 'BLA'],
+  RUM: ['BUD', 'GAL', 'UKR', 'SEV', 'SER', 'BUL', 'BLA'],
+  // Sea zones
+  NTH: ['LON', 'EDI', 'YOR', 'NWY', 'DEN', 'HOL', 'BEL', 'ENG', 'SKA', 'HEL', 'NWG'],
+  NWG: ['EDI', 'CLY', 'NWY', 'NTH', 'NAO', 'BAR'],
+  ENG: ['LON', 'WAL', 'BRE', 'PIC', 'BEL', 'NTH', 'IRI', 'MAO'],
+  IRI: ['WAL', 'LVP', 'ENG', 'NAO', 'MAO'],
+  NAO: ['LVP', 'CLY', 'NWG', 'IRI', 'MAO'],
+  MAO: ['BRE', 'GAS', 'SPA', 'POR', 'NAF', 'ENG', 'IRI', 'NAO', 'WES'],
+  HEL: ['KIE', 'DEN', 'HOL', 'NTH'],
+  BAL: ['BER', 'KIE', 'PRU', 'LVN', 'SWE', 'DEN', 'BOT'],
+  BOT: ['STP', 'LVN', 'FIN', 'SWE', 'BAL'],
+  SKA: ['NWY', 'SWE', 'DEN', 'NTH'],
+  TYS: ['ROM', 'NAP', 'TUS', 'TUN', 'LYO', 'WES', 'ION'],
+  ION: ['NAP', 'APU', 'TUN', 'ALB', 'GRE', 'TYS', 'ADR', 'AEG', 'EAS'],
+  ADR: ['VEN', 'TRI', 'APU', 'ALB', 'ION'],
+  LYO: ['MAR', 'PIE', 'TUS', 'SPA', 'TYS', 'WES'],
+  WES: ['SPA', 'NAF', 'TUN', 'MAO', 'LYO', 'TYS'],
+  AEG: ['CON', 'SMY', 'GRE', 'BUL', 'ION', 'EAS'],
+  EAS: ['SMY', 'SYR', 'ION', 'AEG'],
+  BLA: ['CON', 'ANK', 'ARM', 'SEV', 'RUM', 'BUL'],
+  BAR: ['STP', 'NWY', 'NWG'],
+};
+
+/**
+ * Parse unit positions from the turn prompt.
+ * Returns array of { type: 'A' | 'F', province: string }
+ */
+function parseUnitsFromPrompt(prompt: string): Array<{ type: 'A' | 'F'; province: string }> {
+  const units: Array<{ type: 'A' | 'F'; province: string }> = [];
+
+  // Look for "### Your Units" section
+  const unitsMatch = prompt.match(/### Your Units[^\n]*\n([\s\S]*?)(?=\n###|\n##|$)/);
+  if (!unitsMatch) {
+    return units;
+  }
+
+  const unitsSection = unitsMatch[1];
+  // Match lines like "- A Paris" or "- F London" or "- A St Petersburg (north coast)"
+  const unitPattern = /^- ([AF]) ([A-Za-z ]+?)(?:\s*\([^)]*\))?$/gm;
+  let match;
+
+  while ((match = unitPattern.exec(unitsSection)) !== null) {
+    const type = match[1] as 'A' | 'F';
+    // Normalize province name to abbreviation
+    const province = normalizeProvince(match[2].trim());
+    if (province) {
+      units.push({ type, province });
+    }
+  }
+
+  return units;
+}
+
+/**
+ * Normalize province name to standard 3-letter abbreviation.
+ */
+function normalizeProvince(name: string): string {
+  const normalized = name.toUpperCase().trim();
+
+  // Common full names to abbreviations
+  const nameMap: Record<string, string> = {
+    'LONDON': 'LON', 'EDINBURGH': 'EDI', 'LIVERPOOL': 'LVP', 'YORK': 'YOR',
+    'WALES': 'WAL', 'CLYDE': 'CLY',
+    'PARIS': 'PAR', 'BREST': 'BRE', 'MARSEILLES': 'MAR', 'BURGUNDY': 'BUR',
+    'GASCONY': 'GAS', 'PICARDY': 'PIC',
+    'BERLIN': 'BER', 'MUNICH': 'MUN', 'KIEL': 'KIE', 'RUHR': 'RUH',
+    'SILESIA': 'SIL', 'PRUSSIA': 'PRU',
+    'ROME': 'ROM', 'NAPLES': 'NAP', 'VENICE': 'VEN', 'TUSCANY': 'TUS',
+    'PIEDMONT': 'PIE', 'APULIA': 'APU',
+    'VIENNA': 'VIE', 'BUDAPEST': 'BUD', 'TRIESTE': 'TRI', 'BOHEMIA': 'BOH',
+    'GALICIA': 'GAL', 'TYROLIA': 'TYR',
+    'MOSCOW': 'MOS', 'WARSAW': 'WAR', 'ST PETERSBURG': 'STP', 'SEVASTOPOL': 'SEV',
+    'UKRAINE': 'UKR', 'LIVONIA': 'LVN', 'FINLAND': 'FIN',
+    'CONSTANTINOPLE': 'CON', 'ANKARA': 'ANK', 'SMYRNA': 'SMY', 'ARMENIA': 'ARM',
+    'SYRIA': 'SYR',
+    'NORWAY': 'NWY', 'SWEDEN': 'SWE', 'DENMARK': 'DEN', 'HOLLAND': 'HOL',
+    'BELGIUM': 'BEL', 'SPAIN': 'SPA', 'PORTUGAL': 'POR', 'TUNIS': 'TUN',
+    'NORTH AFRICA': 'NAF', 'SERBIA': 'SER', 'ALBANIA': 'ALB', 'GREECE': 'GRE',
+    'BULGARIA': 'BUL', 'RUMANIA': 'RUM',
+    'NORTH SEA': 'NTH', 'NORWEGIAN SEA': 'NWG', 'ENGLISH CHANNEL': 'ENG',
+    'IRISH SEA': 'IRI', 'MID-ATLANTIC OCEAN': 'MAO', 'NORTH ATLANTIC OCEAN': 'NAO',
+    'HELGOLAND BIGHT': 'HEL', 'BALTIC SEA': 'BAL', 'GULF OF BOTHNIA': 'BOT',
+    'SKAGERRAK': 'SKA', 'TYRRHENIAN SEA': 'TYS', 'IONIAN SEA': 'ION',
+    'ADRIATIC SEA': 'ADR', 'GULF OF LYON': 'LYO', 'WESTERN MEDITERRANEAN': 'WES',
+    'AEGEAN SEA': 'AEG', 'EASTERN MEDITERRANEAN': 'EAS', 'BLACK SEA': 'BLA',
+    'BARENTS SEA': 'BAR',
+  };
+
+  // Check if it's a full name
+  if (nameMap[normalized]) {
+    return nameMap[normalized];
+  }
+
+  // Already an abbreviation (3 letters)
+  if (normalized.length <= 3 && ADJACENCIES[normalized]) {
+    return normalized;
+  }
+
+  // Try to find partial match
+  for (const [fullName, abbrev] of Object.entries(nameMap)) {
+    if (fullName.startsWith(normalized) || normalized.startsWith(fullName)) {
+      return abbrev;
+    }
+  }
+
+  // Return as-is if we can't normalize (might still be valid)
+  return normalized.substring(0, 3);
+}
+
+/**
+ * Get a random adjacent territory for a unit.
+ */
+function getRandomAdjacent(province: string): string | null {
+  const adjacent = ADJACENCIES[province];
+  if (!adjacent || adjacent.length === 0) {
+    return null;
+  }
+  return adjacent[Math.floor(Math.random() * adjacent.length)];
+}
+
+/**
  * Creates a mock LLM provider for testing with random moves and diplomacy.
  */
 export function createMockLLMProvider(): LLMProvider {
-  const moveTypes = ['HOLD', 'MOVE', 'SUPPORT'];
-  const territories = [
-    'LON', 'EDI', 'LVP', 'YOR', 'WAL', 'NTH', 'NWG', 'ENG', 'IRI',
-    'PAR', 'BRE', 'MAR', 'BUR', 'GAS', 'PIC', 'MAO',
-    'BER', 'MUN', 'KIE', 'RUH', 'SIL', 'PRU', 'HEL', 'BAL',
-    'ROM', 'NAP', 'VEN', 'TUS', 'PIE', 'APU', 'TYS', 'ION', 'ADR',
-    'VIE', 'BUD', 'TRI', 'BOH', 'GAL', 'TYR',
-    'MOS', 'WAR', 'STP', 'SEV', 'UKR', 'LVN', 'FIN', 'BOT',
-    'CON', 'ANK', 'SMY', 'ARM', 'SYR', 'BLA', 'AEG', 'EAS'
-  ];
   const diplomaticIntents = [
     'I propose we form an alliance against our mutual enemy.',
     'Your movements concern me. Can we discuss your intentions?',
@@ -476,21 +654,44 @@ export function createMockLLMProvider(): LLMProvider {
       const powerMatch = systemMsg.match(/You are playing as (\w+)/i);
       const myPower = powerMatch ? powerMatch[1].toUpperCase() : 'ENGLAND';
 
-      // Generate random orders
-      const numUnits = Math.floor(Math.random() * 3) + 2;
+      // Get the user message (turn prompt) which contains actual unit positions
+      const userMsg = params.messages.find(m => m.role === 'user')?.content || '';
+
+      // Parse actual units from the prompt
+      const myUnits = parseUnitsFromPrompt(userMsg);
+
+      // Generate orders for actual units
       const orders: string[] = [];
-      for (let i = 0; i < numUnits; i++) {
-        const moveType = moveTypes[Math.floor(Math.random() * moveTypes.length)];
-        const from = territories[Math.floor(Math.random() * territories.length)];
-        if (moveType === 'HOLD') {
-          orders.push(`${from} HOLD`);
-        } else if (moveType === 'MOVE') {
-          const to = territories[Math.floor(Math.random() * territories.length)];
-          orders.push(`${from} - ${to}`);
+      for (const unit of myUnits) {
+        const moveType = Math.random();
+        const unitPrefix = unit.type;
+
+        if (moveType < 0.3) {
+          // HOLD (30% chance)
+          orders.push(`${unitPrefix} ${unit.province} HOLD`);
+        } else if (moveType < 0.8) {
+          // MOVE (50% chance)
+          const destination = getRandomAdjacent(unit.province);
+          if (destination) {
+            orders.push(`${unitPrefix} ${unit.province} -> ${destination}`);
+          } else {
+            orders.push(`${unitPrefix} ${unit.province} HOLD`);
+          }
         } else {
-          const supportTarget = territories[Math.floor(Math.random() * territories.length)];
-          orders.push(`${from} S ${supportTarget}`);
+          // SUPPORT another unit (20% chance)
+          const otherUnits = myUnits.filter(u => u.province !== unit.province);
+          if (otherUnits.length > 0) {
+            const supportTarget = otherUnits[Math.floor(Math.random() * otherUnits.length)];
+            orders.push(`${unitPrefix} ${unit.province} SUPPORT ${supportTarget.type} ${supportTarget.province}`);
+          } else {
+            orders.push(`${unitPrefix} ${unit.province} HOLD`);
+          }
         }
+      }
+
+      // If no units were parsed, generate a fallback HOLD
+      if (orders.length === 0) {
+        orders.push('No units available');
       }
 
       // Generate random diplomatic messages (50% chance per other power)
