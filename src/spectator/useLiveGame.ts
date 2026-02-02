@@ -101,6 +101,8 @@ export function useLiveGame(options: UseLiveGameOptions = {}): UseLiveGameReturn
 
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<number | null>(null);
+  // Track subscribed games to re-subscribe on reconnect
+  const subscribedGamesRef = useRef<Set<string>>(new Set());
 
   // Use a ref for the message handler to avoid recreating connect() on context changes
   const handleMessageRef = useRef<(event: MessageEvent) => void>(() => {});
@@ -121,6 +123,8 @@ export function useLiveGame(options: UseLiveGameOptions = {}): UseLiveGameReturn
 
           case 'GAME_CREATED':
             addGame(message.game);
+            // Server auto-subscribes the client that created the game
+            subscribedGamesRef.current.add(message.game.gameId);
             break;
 
           case 'GAME_UPDATED':
@@ -175,6 +179,10 @@ export function useLiveGame(options: UseLiveGameOptions = {}): UseLiveGameReturn
       ws.onopen = () => {
         setConnectionState('connected');
         setError(null);
+        // Re-subscribe to any games we were previously subscribed to
+        for (const gameId of subscribedGamesRef.current) {
+          ws.send(JSON.stringify({ type: 'SUBSCRIBE_GAME', gameId }));
+        }
       };
 
       ws.onmessage = (event) => handleMessageRef.current(event);
@@ -227,6 +235,7 @@ export function useLiveGame(options: UseLiveGameOptions = {}): UseLiveGameReturn
    */
   const subscribeToGame = useCallback(
     (gameId: string) => {
+      subscribedGamesRef.current.add(gameId);
       send({ type: 'SUBSCRIBE_GAME', gameId });
     },
     [send]
@@ -237,6 +246,7 @@ export function useLiveGame(options: UseLiveGameOptions = {}): UseLiveGameReturn
    */
   const unsubscribeFromGame = useCallback(
     (gameId: string) => {
+      subscribedGamesRef.current.delete(gameId);
       send({ type: 'UNSUBSCRIBE_GAME', gameId });
     },
     [send]
