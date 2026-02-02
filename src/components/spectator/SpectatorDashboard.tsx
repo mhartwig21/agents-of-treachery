@@ -75,7 +75,9 @@ export function SpectatorDashboard({
         // Active games first, then by last activity
         if (a.status === 'active' && b.status !== 'active') return -1;
         if (b.status === 'active' && a.status !== 'active') return 1;
-        return b.lastActivity.getTime() - a.lastActivity.getTime();
+        const aTime = typeof a.lastActivity === 'string' ? new Date(a.lastActivity).getTime() : a.lastActivity.getTime();
+        const bTime = typeof b.lastActivity === 'string' ? new Date(b.lastActivity).getTime() : b.lastActivity.getTime();
+        return bTime - aTime;
       });
   }, [gameSummaries, statusFilter, searchQuery]);
 
@@ -211,14 +213,18 @@ export function SpectatorDashboard({
           />
         ) : viewMode === 'grid' ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {filteredGames.map((game) => (
-              <GameCard
-                key={game.gameId}
-                game={game}
-                onClick={() => handleSelectGame(game.gameId)}
-                isSelected={state.activeGameId === game.gameId}
-              />
-            ))}
+            {filteredGames.map((game) => {
+              const fullGame = state.games.get(game.gameId);
+              return (
+                <GameCard
+                  key={game.gameId}
+                  game={game}
+                  onClick={() => handleSelectGame(game.gameId)}
+                  isSelected={state.activeGameId === game.gameId}
+                  currentAgent={fullGame?.currentAgent}
+                />
+              );
+            })}
           </div>
         ) : (
           <div className="space-y-2">

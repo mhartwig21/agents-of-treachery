@@ -13,6 +13,7 @@ import { OrdersPanel } from './OrdersPanel';
 import { ChannelPanel } from './ChannelPanel';
 import { PressTimeline } from './PressTimeline';
 import { TurnScrubber } from './TurnScrubber';
+import { LiveActivityPanel } from './LiveActivityPanel';
 import { PhaseIndicator, PhaseBadge } from '../shared/PhaseIndicator';
 
 interface SpectatorGameViewProps {
@@ -131,6 +132,17 @@ export function SpectatorGameView({ onBack }: SpectatorGameViewProps) {
 
         {/* Right sidebar */}
         <div className="w-80 bg-gray-850 border-l border-gray-700 flex flex-col overflow-hidden">
+          {/* Live activity (only when live) */}
+          {isLive && (
+            <LiveActivityPanel
+              currentAgent={activeGame.currentAgent}
+              latestMessages={activeGame.latestMessages}
+              latestOrders={activeGame.latestOrders}
+              isLive={isLive}
+              className="border-b border-gray-700"
+            />
+          )}
+
           {/* Power stats */}
           <PowerStatsPanel
             supplyCenterCounts={supplyCenterCounts}

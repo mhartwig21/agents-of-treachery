@@ -12,15 +12,19 @@ interface GameCardProps {
   game: GameSummary;
   onClick: () => void;
   isSelected?: boolean;
+  /** Which agent is currently thinking (for live indicator) */
+  currentAgent?: string;
 }
 
-export function GameCard({ game, onClick, isSelected = false }: GameCardProps) {
+export function GameCard({ game, onClick, isSelected = false, currentAgent }: GameCardProps) {
   // Status badge styling
   const statusStyles = {
     active: 'bg-green-900/50 text-green-400',
     completed: 'bg-gray-700 text-gray-400',
     paused: 'bg-yellow-900/50 text-yellow-400',
   };
+
+  const isAgentActive = game.status === 'active' && currentAgent;
 
   return (
     <div
@@ -29,6 +33,7 @@ export function GameCard({ game, onClick, isSelected = false }: GameCardProps) {
         bg-gray-800 rounded-lg p-4 cursor-pointer transition-all
         hover:bg-gray-750 hover:ring-1 hover:ring-gray-600
         ${isSelected ? 'ring-2 ring-blue-500' : ''}
+        ${isAgentActive ? 'ring-1 ring-green-500/50' : ''}
       `}
     >
       {/* Header */}
@@ -43,9 +48,17 @@ export function GameCard({ game, onClick, isSelected = false }: GameCardProps) {
             className="mt-1"
           />
         </div>
-        <span className={`text-xs px-2 py-1 rounded ${statusStyles[game.status]}`}>
-          {game.status}
-        </span>
+        <div className="flex items-center gap-2">
+          {isAgentActive && (
+            <span className="flex items-center gap-1 text-xs text-green-400">
+              <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+              <span className="capitalize">{currentAgent}</span>
+            </span>
+          )}
+          <span className={`text-xs px-2 py-1 rounded ${statusStyles[game.status]}`}>
+            {game.status}
+          </span>
+        </div>
       </div>
 
       {/* Progress bar showing SC distribution */}
@@ -98,9 +111,10 @@ export function GameCard({ game, onClick, isSelected = false }: GameCardProps) {
 /**
  * Formats a date as a relative time string.
  */
-function formatTimeAgo(date: Date): string {
+function formatTimeAgo(date: Date | string): string {
   const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
+  const dateObj = typeof date === 'string' ? new Date(date) : date;
+  const diffMs = now.getTime() - dateObj.getTime();
   const diffMins = Math.floor(diffMs / 60000);
   const diffHours = Math.floor(diffMins / 60);
   const diffDays = Math.floor(diffHours / 24);
@@ -109,7 +123,7 @@ function formatTimeAgo(date: Date): string {
   if (diffMins < 60) return `${diffMins}m ago`;
   if (diffHours < 24) return `${diffHours}h ago`;
   if (diffDays < 7) return `${diffDays}d ago`;
-  return date.toLocaleDateString();
+  return dateObj.toLocaleDateString();
 }
 
 /**
