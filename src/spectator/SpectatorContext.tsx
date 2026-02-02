@@ -217,10 +217,16 @@ export function SpectatorProvider({ children, initialGames = [] }: SpectatorProv
   }, [activeGame, state.replayPosition]);
 
   const stepBackward = useCallback(() => {
-    if (state.replayPosition === null) return;
+    // If in live mode, switch to replay and go to second-to-last snapshot
+    if (state.replayPosition === null) {
+      if (!activeGame || activeGame.snapshots.length < 2) return;
+      dispatch({ type: 'SET_VIEW_MODE', mode: 'replay' });
+      dispatch({ type: 'SET_REPLAY_POSITION', position: activeGame.snapshots.length - 2 });
+      return;
+    }
     const prevPos = Math.max(state.replayPosition - 1, 0);
     dispatch({ type: 'SET_REPLAY_POSITION', position: prevPos });
-  }, [state.replayPosition]);
+  }, [state.replayPosition, activeGame]);
 
   const goToLive = useCallback(() => {
     dispatch({ type: 'SET_VIEW_MODE', mode: 'live' });
