@@ -65,10 +65,7 @@ export function PowerStatsPanel({
   }
 
   return (
-    <div className={`bg-gray-800 rounded-lg ${className}`}>
-      <div className="px-4 py-3 border-b border-gray-700">
-        <h3 className="font-semibold text-sm">Power Statistics</h3>
-      </div>
+    <div className={`bg-gray-800 ${className}`}>
       <div className="p-4 space-y-3">
         {powerStats.map(({ power, supplyCenters, units, isEliminated }) => (
           <PowerStatRow

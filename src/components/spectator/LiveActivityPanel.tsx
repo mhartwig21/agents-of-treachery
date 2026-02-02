@@ -39,11 +39,6 @@ export function LiveActivityPanel({
 
   return (
     <div className={`bg-gray-800 p-3 ${className}`}>
-      <div className="flex items-center gap-2 mb-2">
-        <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-        <span className="text-sm font-medium text-green-400">Live Activity</span>
-      </div>
-
       {!hasActivity ? (
         <div className="text-gray-500 text-sm italic">Waiting for agent activity...</div>
       ) : (

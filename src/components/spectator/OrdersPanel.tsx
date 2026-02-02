@@ -57,12 +57,7 @@ export function OrdersPanel({
     : orders;
 
   return (
-    <div className={`bg-gray-800 rounded-lg ${className}`}>
-      <div className="px-4 py-3 border-b border-gray-700 flex items-center justify-between">
-        <h3 className="font-semibold text-sm">Orders</h3>
-        <span className="text-xs text-gray-500">{orders.length} total</span>
-      </div>
-
+    <div className={`bg-gray-800 ${className}`}>
       {/* Power filter */}
       <div className="px-4 py-2 border-b border-gray-700 flex flex-wrap gap-1">
         <button
