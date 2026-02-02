@@ -466,6 +466,7 @@ export class AgentRuntime {
       orders: valid,
       retreatOrders: parsed.retreatOrders,
       buildOrders: parsed.buildOrders,
+      diplomaticMessages: parsed.diplomaticMessages,
       reasoning: response.content,
     };
 
