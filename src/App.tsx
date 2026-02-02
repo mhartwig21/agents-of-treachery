@@ -261,6 +261,11 @@ function AppContent() {
     )
   }
 
+  // Check URL params for live mode
+  const urlParams = new URLSearchParams(window.location.search)
+  const enableLive = urlParams.get('live') === 'true'
+  const serverUrl = urlParams.get('server') || 'ws://localhost:3001'
+
   // Spectator mode
   if (activeGame) {
     return (
@@ -273,7 +278,15 @@ function AppContent() {
   return (
     <div>
       {/* Mode toggle header */}
-      <div className="fixed top-4 right-4 z-50">
+      <div className="fixed top-4 right-4 z-50 flex gap-2">
+        {!enableLive && (
+          <a
+            href="?live=true"
+            className="px-3 py-1.5 text-sm rounded bg-green-700 hover:bg-green-600 transition-colors"
+          >
+            Enable Live
+          </a>
+        )}
         <button
           onClick={() => setMode('player')}
           className="px-3 py-1.5 text-sm rounded bg-gray-700 hover:bg-gray-600 transition-colors"
@@ -281,7 +294,10 @@ function AppContent() {
           Player Mode
         </button>
       </div>
-      <SpectatorDashboard />
+      <SpectatorDashboard
+        enableLiveConnection={enableLive}
+        serverUrl={serverUrl}
+      />
     </div>
   )
 }

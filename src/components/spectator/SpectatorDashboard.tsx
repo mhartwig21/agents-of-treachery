@@ -6,6 +6,7 @@
 
 import { useState, useMemo } from 'react';
 import { useSpectator } from '../../spectator/SpectatorContext';
+import { useLiveGame, type ConnectionState } from '../../spectator/useLiveGame';
 import { createGameSummary, type GameSummary } from '../../spectator/types';
 import { GameCard, GameCardCompact } from './GameCard';
 import { PowerBadgeRow } from '../shared/PowerBadge';
@@ -16,13 +17,34 @@ type ViewMode = 'grid' | 'list';
 interface SpectatorDashboardProps {
   /** Callback when a game is selected */
   onSelectGame?: (gameId: string) => void;
+  /** Whether to enable live game connection */
+  enableLiveConnection?: boolean;
+  /** WebSocket server URL */
+  serverUrl?: string;
 }
 
-export function SpectatorDashboard({ onSelectGame }: SpectatorDashboardProps) {
+export function SpectatorDashboard({
+  onSelectGame,
+  enableLiveConnection = false,
+  serverUrl,
+}: SpectatorDashboardProps) {
   const { state, selectGame } = useSpectator();
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [searchQuery, setSearchQuery] = useState('');
+  const [isStartingGame, setIsStartingGame] = useState(false);
+
+  // Live game connection (only active when enabled)
+  const {
+    connectionState,
+    error: connectionError,
+    startGame: startLiveGame,
+    reconnect,
+  } = useLiveGame({
+    serverUrl,
+    autoConnect: enableLiveConnection,
+    autoReconnect: enableLiveConnection,
+  });
 
   // Convert games to summaries and filter
   const gameSummaries = useMemo(() => {
@@ -62,6 +84,16 @@ export function SpectatorDashboard({ onSelectGame }: SpectatorDashboardProps) {
     onSelectGame?.(gameId);
   };
 
+  const handleStartNewGame = () => {
+    if (connectionState !== 'connected') {
+      return;
+    }
+    setIsStartingGame(true);
+    startLiveGame(`AI Game ${Date.now()}`);
+    // Reset after a brief moment (game creation is async)
+    setTimeout(() => setIsStartingGame(false), 1000);
+  };
+
   // Stats counts
   const activeCount = gameSummaries.filter((g) => g.status === 'active').length;
   const completedCount = gameSummaries.filter((g) => g.status === 'completed').length;
@@ -78,7 +110,31 @@ export function SpectatorDashboard({ onSelectGame }: SpectatorDashboardProps) {
                 Watch AI agents play Diplomacy in real-time
               </p>
             </div>
-            <PowerBadgeRow size="md" />
+            <div className="flex items-center gap-4">
+              {enableLiveConnection && (
+                <div className="flex items-center gap-3">
+                  <ConnectionIndicator
+                    state={connectionState}
+                    error={connectionError}
+                    onReconnect={reconnect}
+                  />
+                  <button
+                    onClick={handleStartNewGame}
+                    disabled={connectionState !== 'connected' || isStartingGame}
+                    className={`
+                      px-4 py-2 rounded-lg font-medium transition-colors
+                      ${connectionState === 'connected' && !isStartingGame
+                        ? 'bg-green-600 hover:bg-green-500 text-white'
+                        : 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                      }
+                    `}
+                  >
+                    {isStartingGame ? 'Starting...' : 'Start New Game'}
+                  </button>
+                </div>
+              )}
+              <PowerBadgeRow size="md" />
+            </div>
           </div>
 
           {/* Filters and search */}
@@ -228,5 +284,42 @@ function ListIcon() {
     <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
       <path fillRule="evenodd" d="M3 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 4a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clipRule="evenodd" />
     </svg>
+  );
+}
+
+interface ConnectionIndicatorProps {
+  state: ConnectionState;
+  error: string | null;
+  onReconnect: () => void;
+}
+
+function ConnectionIndicator({ state, error, onReconnect }: ConnectionIndicatorProps) {
+  const stateConfig: Record<ConnectionState, { color: string; label: string }> = {
+    connected: { color: 'bg-green-500', label: 'Connected' },
+    connecting: { color: 'bg-yellow-500', label: 'Connecting...' },
+    disconnected: { color: 'bg-gray-500', label: 'Disconnected' },
+    error: { color: 'bg-red-500', label: 'Error' },
+  };
+
+  const config = stateConfig[state];
+
+  return (
+    <div className="flex items-center gap-2">
+      <div className={`w-2 h-2 rounded-full ${config.color}`} />
+      <span className="text-sm text-gray-400">{config.label}</span>
+      {(state === 'disconnected' || state === 'error') && (
+        <button
+          onClick={onReconnect}
+          className="text-xs text-blue-400 hover:text-blue-300 underline"
+        >
+          Reconnect
+        </button>
+      )}
+      {error && (
+        <span className="text-xs text-red-400" title={error}>
+          (!)
+        </span>
+      )}
+    </div>
   );
 }
