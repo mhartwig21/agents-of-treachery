@@ -325,9 +325,10 @@ export function DiplomacyMap({
         {/* Background */}
         <rect x="-200" y="-200" width="2400" height="1800" fill="#a8c5d8" />
 
-        {/* Territories */}
+        {/* Territories - render sea first, then land on top */}
         {territories
           .filter(t => !t.id.includes('_')) // Skip coastal variants for rendering
+          .sort((a, b) => (a.type === 'sea' ? 0 : 1) - (b.type === 'sea' ? 0 : 1)) // Sea first, land on top
           .map((territory) => {
             const isSelected = selectedTerritory === territory.id
             const isHovered = hoveredTerritory === territory.id
