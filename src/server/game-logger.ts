@@ -5,7 +5,7 @@
  * Captures: LLM calls/responses, agent turns, orders, errors, and more.
  */
 
-import { existsSync, mkdirSync, appendFileSync, readFileSync, readdirSync } from 'fs';
+import { existsSync, mkdirSync, appendFileSync, readFileSync, readdirSync, statSync } from 'fs';
 import { join, dirname, basename } from 'path';
 
 /**
@@ -244,7 +244,7 @@ export function listGameLogs(logsDir?: string): { gameId: string; path: string; 
 
   return files.map(f => {
     const fullPath = join(baseDir, f);
-    const stat = require('fs').statSync(fullPath);
+    const stat = statSync(fullPath);
     return {
       gameId: basename(f, '.jsonl'),
       path: fullPath,
