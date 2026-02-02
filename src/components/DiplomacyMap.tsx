@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback } from 'react'
 import type { GameState, Power, Unit, Order } from '../types/game'
-import { territories, getTerritory } from '../data/territories'
+import { territories, getTerritory, getTerritoryCenter } from '../data/territories'
 
 interface DiplomacyMapProps {
   gameState: GameState
@@ -158,12 +158,13 @@ export function DiplomacyMap({
     const unit = getOrderUnit(order)
     if (!unit) return null
 
-    const unitTerritory = getTerritory(order.unit.split('_')[0]) || getTerritory(order.unit)
-    if (!unitTerritory) return null
+    const unitBaseId = order.unit.split('_')[0]
+    const unitCenter = getTerritoryCenter(unitBaseId) || getTerritoryCenter(order.unit)
+    if (!unitCenter) return null
 
     const color = POWER_COLORS[unit.power]
-    const fromX = unitTerritory.labelX
-    const fromY = unitTerritory.labelY - 8
+    const fromX = unitCenter.x
+    const fromY = unitCenter.y
 
     switch (order.type) {
       case 'hold': {
@@ -183,11 +184,12 @@ export function DiplomacyMap({
       }
       case 'move': {
         if (!order.target) return null
-        const targetTerritory = getTerritory(order.target.split('_')[0]) || getTerritory(order.target)
-        if (!targetTerritory) return null
+        const targetBaseId = order.target.split('_')[0]
+        const targetCenter = getTerritoryCenter(targetBaseId) || getTerritoryCenter(order.target)
+        if (!targetCenter) return null
 
-        const toX = targetTerritory.labelX
-        const toY = targetTerritory.labelY - 8
+        const toX = targetCenter.x
+        const toY = targetCenter.y
 
         // Calculate arrow end point (stop before destination)
         const dx = toX - fromX
@@ -212,11 +214,12 @@ export function DiplomacyMap({
       }
       case 'support': {
         if (!order.target) return null
-        const targetTerritory = getTerritory(order.target.split('_')[0]) || getTerritory(order.target)
-        if (!targetTerritory) return null
+        const supportTargetId = order.target.split('_')[0]
+        const supportCenter = getTerritoryCenter(supportTargetId) || getTerritoryCenter(order.target)
+        if (!supportCenter) return null
 
-        const toX = targetTerritory.labelX
-        const toY = targetTerritory.labelY - 8
+        const toX = supportCenter.x
+        const toY = supportCenter.y
 
         return (
           <line
@@ -234,11 +237,12 @@ export function DiplomacyMap({
       }
       case 'convoy': {
         if (!order.target) return null
-        const targetTerritory = getTerritory(order.target.split('_')[0]) || getTerritory(order.target)
-        if (!targetTerritory) return null
+        const convoyTargetId = order.target.split('_')[0]
+        const convoyCenter = getTerritoryCenter(convoyTargetId) || getTerritoryCenter(order.target)
+        if (!convoyCenter) return null
 
-        const toX = targetTerritory.labelX
-        const toY = targetTerritory.labelY - 8
+        const toX = convoyCenter.x
+        const toY = convoyCenter.y
 
         return (
           <line
@@ -390,9 +394,9 @@ export function DiplomacyMap({
         {/* Units */}
         {gameState.units.map((unit) => {
           const baseId = unit.territory.split('_')[0]
-          const territory = getTerritory(baseId) || getTerritory(unit.territory)
-          if (!territory) return null
-          return renderUnit(unit, territory.labelX, territory.labelY - 8)
+          const center = getTerritoryCenter(baseId) || getTerritoryCenter(unit.territory)
+          if (!center) return null
+          return renderUnit(unit, center.x, center.y)
         })}
 
         {/* Orders visualization */}

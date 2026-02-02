@@ -831,3 +831,54 @@ export function getSupplyCenters(): Territory[] {
 export function getTerritoriesByType(type: TerritoryType): Territory[] {
   return territories.filter(t => t.type === type)
 }
+
+// Cache for computed path centers
+const pathCenterCache = new Map<string, { x: number; y: number }>()
+
+/**
+ * Calculate the visual center (centroid) of an SVG path.
+ * Parses the path to extract coordinate points and returns their average.
+ * Results are cached for performance.
+ */
+export function getPathCenter(path: string): { x: number; y: number } {
+  // Check cache first
+  const cached = pathCenterCache.get(path)
+  if (cached) return cached
+
+  // Extract all numbers from the path
+  const numbers = path.match(/-?\d+(?:\.\d+)?/g)
+  if (!numbers || numbers.length < 2) {
+    return { x: 0, y: 0 }
+  }
+
+  // Parse coordinate pairs (SVG paths alternate x, y values)
+  let sumX = 0
+  let sumY = 0
+  let count = 0
+
+  for (let i = 0; i < numbers.length - 1; i += 2) {
+    sumX += parseFloat(numbers[i])
+    sumY += parseFloat(numbers[i + 1])
+    count++
+  }
+
+  const center = {
+    x: Math.round(sumX / count),
+    y: Math.round(sumY / count),
+  }
+
+  // Cache and return
+  pathCenterCache.set(path, center)
+  return center
+}
+
+/**
+ * Get the visual center for a territory, calculated from its SVG path.
+ * This provides better unit placement than labelX/labelY which are
+ * positioned for text labels rather than visual centering.
+ */
+export function getTerritoryCenter(id: string): { x: number; y: number } | undefined {
+  const territory = getTerritory(id)
+  if (!territory) return undefined
+  return getPathCenter(territory.path)
+}
