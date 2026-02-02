@@ -19,6 +19,9 @@ const PLAYBACK_SPEEDS = [0.5, 1, 2, 4];
 
 export function TurnScrubber({ compact = false, className = '' }: TurnScrubberProps) {
   const { activeGame } = useSpectator();
+  const [playbackSpeed, setPlaybackSpeed] = useState(1);
+
+  // Convert speed multiplier to interval (1x = 1000ms, 2x = 500ms, etc.)
   const {
     isPlaying,
     togglePlay,
@@ -29,9 +32,7 @@ export function TurnScrubber({ compact = false, className = '' }: TurnScrubberPr
     currentPosition,
     totalSnapshots,
     isLive,
-  } = useReplayControls();
-
-  const [playbackSpeed, setPlaybackSpeed] = useState(1);
+  } = useReplayControls(1000 / playbackSpeed);
 
   if (!activeGame || totalSnapshots === 0) {
     return null;
