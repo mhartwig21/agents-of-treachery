@@ -26,6 +26,8 @@ const VIEWBOX = { width: 1835, height: 1360 }
 // Initial offset to center Europe (eliminates dead space on left/top)
 // Map content starts around x=200, y=175 - offset centers UK-Turkey range
 const INITIAL_OFFSET = { x: 150, y: 50 }
+// Minimum drag distance (in pixels) before a click becomes a pan
+const DRAG_THRESHOLD = 5
 
 export function DiplomacyMap({
   gameState,
@@ -39,6 +41,10 @@ export function DiplomacyMap({
   const [isPanning, setIsPanning] = useState(false)
   const [panStart, setPanStart] = useState({ x: 0, y: 0 })
   const [hoveredTerritory, setHoveredTerritory] = useState<string | null>(null)
+  // Track mouse position at start of potential drag to distinguish click vs pan
+  const mouseDownPosRef = useRef<{ x: number; y: number } | null>(null)
+  // Track if we've moved past the drag threshold (true = panning, false = click)
+  const hasDraggedRef = useRef(false)
 
   // Get territory fill color based on owner
   const getTerritoryFill = (territoryId: string, type: string) => {
@@ -79,10 +85,17 @@ export function DiplomacyMap({
     })
   }, [viewBox])
 
-  // Pan handlers
+  // Pan handlers - supports left-click drag, middle-click, and right-click
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    if (e.button === 1 || e.button === 2) { // Middle or right click
-      e.preventDefault()
+    // Track initial position for all mouse buttons
+    mouseDownPosRef.current = { x: e.clientX, y: e.clientY }
+    hasDraggedRef.current = false
+
+    if (e.button === 0 || e.button === 1 || e.button === 2) {
+      // For middle/right click, prevent default immediately
+      if (e.button === 1 || e.button === 2) {
+        e.preventDefault()
+      }
       setIsPanning(true)
       setPanStart({ x: e.clientX, y: e.clientY })
     }
@@ -92,6 +105,20 @@ export function DiplomacyMap({
     if (!isPanning) return
     const svg = svgRef.current
     if (!svg) return
+
+    // Check if we've moved past the drag threshold
+    if (mouseDownPosRef.current && !hasDraggedRef.current) {
+      const distance = Math.sqrt(
+        Math.pow(e.clientX - mouseDownPosRef.current.x, 2) +
+        Math.pow(e.clientY - mouseDownPosRef.current.y, 2)
+      )
+      if (distance > DRAG_THRESHOLD) {
+        hasDraggedRef.current = true
+      }
+    }
+
+    // Only pan if we've crossed the drag threshold
+    if (!hasDraggedRef.current) return
 
     const rect = svg.getBoundingClientRect()
     const dx = ((e.clientX - panStart.x) / rect.width) * viewBox.width
@@ -107,6 +134,11 @@ export function DiplomacyMap({
 
   const handleMouseUp = useCallback(() => {
     setIsPanning(false)
+    mouseDownPosRef.current = null
+    // Reset hasDragged after a microtask so onClick handlers can check it first
+    setTimeout(() => {
+      hasDraggedRef.current = false
+    }, 0)
   }, [])
 
   // Reset zoom
@@ -352,7 +384,12 @@ export function DiplomacyMap({
                 strokeWidth={isSelected ? 2.5 : isHighlighted ? 2 : 1}
                 opacity={isHovered ? 0.85 : highlightedTerritories && !isHighlighted ? 0.6 : 1}
                 className={readOnly ? 'transition-opacity duration-150' : 'cursor-pointer transition-opacity duration-150'}
-                onClick={readOnly ? undefined : () => onTerritorySelect(isSelected ? null : territory.id)}
+                onClick={readOnly ? undefined : () => {
+                  // Only select if we didn't drag (click vs pan)
+                  if (!hasDraggedRef.current) {
+                    onTerritorySelect(isSelected ? null : territory.id)
+                  }
+                }}
                 onMouseEnter={() => setHoveredTerritory(territory.id)}
                 onMouseLeave={() => setHoveredTerritory(null)}
               />
