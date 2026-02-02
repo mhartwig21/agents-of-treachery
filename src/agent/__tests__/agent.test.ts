@@ -752,4 +752,17 @@ describe('Mock LLM Provider', () => {
     expect(provider.calls.length).toBe(1);
     expect(provider.calls[0].messages[0].content).toBe('Test');
   });
+
+  it('returns parseable default response with ORDERS section', async () => {
+    const provider = new MockLLMProvider();
+
+    const result = await provider.complete({ messages: [] });
+
+    // Default response should include ORDERS section
+    expect(result.content).toContain('ORDERS:');
+
+    // Should be parseable by order parser
+    const parsed = parseAgentResponse(result.content);
+    expect(parsed.errors.length).toBe(0);
+  });
 });
