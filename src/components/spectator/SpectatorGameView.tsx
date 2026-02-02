@@ -4,9 +4,11 @@
  * Layout with DiplomacyMap, side panels, and bottom scrubber.
  */
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useSpectator } from '../../spectator/SpectatorContext';
 import { type LowercasePower } from '../../spectator/types';
+import type { Order as UIOrder } from '../../types/game';
+import type { Message } from '../../press/types';
 import { DiplomacyMap } from '../DiplomacyMap';
 import { PowerStatsPanel } from './PowerStatsPanel';
 import { OrdersPanel } from './OrdersPanel';
@@ -37,6 +39,7 @@ export function SpectatorGameView({ onBack }: SpectatorGameViewProps) {
     currentSnapshot,
     isLive,
     setGameViewTab,
+    liveAccumulator,
   } = useSpectator();
 
   const [selectedPower, setSelectedPower] = useState<LowercasePower | undefined>();
@@ -61,6 +64,27 @@ export function SpectatorGameView({ onBack }: SpectatorGameViewProps) {
       unitCounts[unit.power]++;
     }
   }
+
+  // Merge live accumulator data with snapshot data when viewing live
+  const mergedOrders = useMemo((): UIOrder[] => {
+    if (!currentSnapshot) return [];
+    if (!isLive || !liveAccumulator) return currentSnapshot.orders;
+    // Combine snapshot orders with live accumulated orders
+    const allOrders = [...currentSnapshot.orders];
+    for (const orders of Object.values(liveAccumulator.orders)) {
+      allOrders.push(...orders);
+    }
+    return allOrders;
+  }, [currentSnapshot, isLive, liveAccumulator]);
+
+  const mergedMessages = useMemo((): Message[] => {
+    if (!currentSnapshot) return [];
+    if (!isLive || !liveAccumulator) return currentSnapshot.messages;
+    // Combine snapshot messages with live accumulated messages, avoiding duplicates
+    const existingIds = new Set(currentSnapshot.messages.map(m => m.id));
+    const newMessages = liveAccumulator.messages.filter(m => !existingIds.has(m.id));
+    return [...currentSnapshot.messages, ...newMessages];
+  }, [currentSnapshot, isLive, liveAccumulator]);
 
   if (!activeGame || !currentSnapshot) {
     return (
@@ -93,6 +117,8 @@ export function SpectatorGameView({ onBack }: SpectatorGameViewProps) {
         gameViewTab={state.gameViewTab}
         setGameViewTab={setGameViewTab}
         onBack={onBack}
+        mergedOrders={mergedOrders}
+        mergedMessages={mergedMessages}
       />
     );
   }
@@ -182,13 +208,13 @@ export function SpectatorGameView({ onBack }: SpectatorGameViewProps) {
           {/* Orders */}
           <CollapsiblePanel
             title="Orders"
-            count={currentSnapshot.orders.length}
+            count={mergedOrders.length}
             collapsed={collapsedPanels.orders}
             onCollapsedChange={(v) => setCollapsedPanels((p) => ({ ...p, orders: v }))}
             className="border-b border-gray-700"
           >
             <OrdersPanel
-              orders={currentSnapshot.orders}
+              orders={mergedOrders}
               units={currentSnapshot.gameState.units}
               filterPower={orderFilterPower}
               onFilterChange={setOrderFilterPower}
@@ -198,13 +224,13 @@ export function SpectatorGameView({ onBack }: SpectatorGameViewProps) {
           {/* Press channels */}
           <CollapsiblePanel
             title="Press Channels"
-            count={currentSnapshot.messages.length}
+            count={mergedMessages.length}
             collapsed={collapsedPanels.press}
             onCollapsedChange={(v) => setCollapsedPanels((p) => ({ ...p, press: v }))}
             className="flex-1 min-h-0"
           >
             <ChannelPanel
-              messages={currentSnapshot.messages}
+              messages={mergedMessages}
               className="max-h-96"
             />
           </CollapsiblePanel>
@@ -231,6 +257,8 @@ interface MobileGameViewProps {
   gameViewTab: 'map' | 'orders' | 'press';
   setGameViewTab: (tab: 'map' | 'orders' | 'press') => void;
   onBack?: () => void;
+  mergedOrders: UIOrder[];
+  mergedMessages: Message[];
 }
 
 function MobileGameView({
@@ -244,6 +272,8 @@ function MobileGameView({
   gameViewTab,
   setGameViewTab,
   onBack,
+  mergedOrders,
+  mergedMessages,
 }: MobileGameViewProps) {
   return (
     <div className="h-screen flex flex-col bg-gray-900 text-white">
@@ -288,14 +318,14 @@ function MobileGameView({
         {gameViewTab === 'orders' && (
           <div className="h-full overflow-auto p-4">
             <OrdersPanel
-              orders={currentSnapshot.orders}
+              orders={mergedOrders}
               units={currentSnapshot.gameState.units}
             />
           </div>
         )}
         {gameViewTab === 'press' && (
           <div className="h-full overflow-auto">
-            <PressTimeline messages={currentSnapshot.messages} />
+            <PressTimeline messages={mergedMessages} />
           </div>
         )}
       </div>

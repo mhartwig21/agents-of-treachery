@@ -94,7 +94,7 @@ const DEFAULT_OPTIONS: Required<UseLiveGameOptions> = {
  */
 export function useLiveGame(options: UseLiveGameOptions = {}): UseLiveGameReturn {
   const opts = { ...DEFAULT_OPTIONS, ...options };
-  const { addGame, updateGame, addSnapshot, dispatch } = useSpectator();
+  const { addGame, updateGame, addSnapshot, dispatch, accumulateMessages, accumulateOrders } = useSpectator();
 
   const [connectionState, setConnectionState] = useState<ConnectionState>('disconnected');
   const [error, setError] = useState<string | null>(null);
@@ -125,6 +125,13 @@ export function useLiveGame(options: UseLiveGameOptions = {}): UseLiveGameReturn
 
           case 'GAME_UPDATED':
             updateGame(message.gameId, message.updates);
+            // Accumulate real-time messages and orders into live accumulator
+            if (message.updates.latestMessages && message.updates.latestMessages.length > 0) {
+              accumulateMessages(message.gameId, message.updates.latestMessages);
+            }
+            if (message.updates.latestOrders) {
+              accumulateOrders(message.gameId, message.updates.latestOrders);
+            }
             break;
 
           case 'SNAPSHOT_ADDED':
@@ -151,7 +158,7 @@ export function useLiveGame(options: UseLiveGameOptions = {}): UseLiveGameReturn
         console.error('Failed to parse server message:', err);
       }
     },
-    [addGame, updateGame, addSnapshot, dispatch]
+    [addGame, updateGame, addSnapshot, dispatch, accumulateMessages, accumulateOrders]
   );
 
   // Keep the ref updated with the latest handler
