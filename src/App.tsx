@@ -1,6 +1,10 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { DiplomacyMap } from './components/DiplomacyMap'
+import { SpectatorProvider, useSpectator } from './spectator/SpectatorContext'
+import { SpectatorDashboard } from './components/spectator/SpectatorDashboard'
+import { SpectatorGameView } from './components/spectator/SpectatorGameView'
 import type { GameState, Power } from './types/game'
+import type { GameHistory, GameSnapshot } from './spectator/types'
 
 const initialGameState: GameState = {
   phase: 'spring',
@@ -66,42 +70,228 @@ const powerColors: Record<Power, string> = {
   turkey: '#f9a825',
 }
 
-export default function App() {
-  const [gameState] = useState<GameState>(initialGameState)
+// Create sample game history for demo
+function createSampleGames(): GameHistory[] {
+  const now = new Date()
+
+  // Sample snapshot
+  const snapshot1: GameSnapshot = {
+    id: '1901-SPRING-MOVEMENT',
+    year: 1901,
+    season: 'SPRING',
+    phase: 'MOVEMENT',
+    gameState: initialGameState,
+    orders: initialGameState.orders,
+    messages: [
+      {
+        id: 'msg1',
+        channelId: 'bilateral:ENGLAND:FRANCE',
+        sender: 'ENGLAND',
+        content: 'Shall we coordinate against Germany? I propose we work together on the North Sea.',
+        timestamp: new Date(now.getTime() - 3600000),
+        metadata: { intent: 'PROPOSAL' },
+      },
+      {
+        id: 'msg2',
+        channelId: 'bilateral:ENGLAND:FRANCE',
+        sender: 'FRANCE',
+        content: 'Interesting proposal. What guarantee can you offer?',
+        timestamp: new Date(now.getTime() - 3000000),
+        metadata: { intent: 'REQUEST' },
+      },
+      {
+        id: 'msg3',
+        channelId: 'bilateral:GERMANY:RUSSIA',
+        sender: 'GERMANY',
+        content: 'Russia, I suggest we maintain peace in the east. Focus on other threats.',
+        timestamp: new Date(now.getTime() - 2400000),
+        metadata: { intent: 'PROPOSAL' },
+      },
+    ],
+    timestamp: new Date(now.getTime() - 3600000),
+  }
+
+  // Second snapshot (Fall 1901)
+  const fall1901State: GameState = {
+    ...initialGameState,
+    phase: 'fall',
+    units: [
+      // England moved
+      { type: 'fleet', power: 'england', territory: 'nth' },
+      { type: 'fleet', power: 'england', territory: 'nwg' },
+      { type: 'army', power: 'england', territory: 'yor' },
+      // France
+      { type: 'fleet', power: 'france', territory: 'mao' },
+      { type: 'army', power: 'france', territory: 'bur' },
+      { type: 'army', power: 'france', territory: 'spa' },
+      // Germany
+      { type: 'fleet', power: 'germany', territory: 'den' },
+      { type: 'army', power: 'germany', territory: 'kie' },
+      { type: 'army', power: 'germany', territory: 'ruh' },
+      // Italy
+      { type: 'fleet', power: 'italy', territory: 'ion' },
+      { type: 'army', power: 'italy', territory: 'apu' },
+      { type: 'army', power: 'italy', territory: 'tyr' },
+      // Austria
+      { type: 'fleet', power: 'austria', territory: 'alb' },
+      { type: 'army', power: 'austria', territory: 'ser' },
+      { type: 'army', power: 'austria', territory: 'gal' },
+      // Russia
+      { type: 'fleet', power: 'russia', territory: 'bot' },
+      { type: 'fleet', power: 'russia', territory: 'bla' },
+      { type: 'army', power: 'russia', territory: 'ukr' },
+      { type: 'army', power: 'russia', territory: 'sil' },
+      // Turkey
+      { type: 'fleet', power: 'turkey', territory: 'ank' },
+      { type: 'army', power: 'turkey', territory: 'bul' },
+      { type: 'army', power: 'turkey', territory: 'arm' },
+    ],
+  }
+
+  const snapshot2: GameSnapshot = {
+    id: '1901-FALL-MOVEMENT',
+    year: 1901,
+    season: 'FALL',
+    phase: 'MOVEMENT',
+    gameState: fall1901State,
+    orders: [
+      { type: 'move', unit: 'nth', target: 'nwy' },
+      { type: 'support', unit: 'nwg', target: 'nth', supportTarget: 'nwy' },
+    ],
+    messages: [
+      {
+        id: 'msg4',
+        channelId: 'bilateral:AUSTRIA:ITALY',
+        sender: 'AUSTRIA',
+        content: 'Italy, I notice your moves towards Tyrolia. This concerns me greatly.',
+        timestamp: new Date(now.getTime() - 1800000),
+        metadata: { intent: 'THREAT' },
+      },
+      {
+        id: 'msg5',
+        channelId: 'bilateral:AUSTRIA:ITALY',
+        sender: 'ITALY',
+        content: 'A defensive measure only, I assure you. Perhaps we can discuss terms?',
+        timestamp: new Date(now.getTime() - 1200000),
+        metadata: { intent: 'SMALL_TALK' },
+      },
+    ],
+    timestamp: new Date(now.getTime() - 1800000),
+  }
+
+  const game1: GameHistory = {
+    gameId: 'game-001',
+    name: 'AI Championship Round 1',
+    status: 'active',
+    snapshots: [snapshot1, snapshot2],
+    createdAt: new Date(now.getTime() - 86400000),
+    updatedAt: now,
+  }
+
+  const game2: GameHistory = {
+    gameId: 'game-002',
+    name: 'Training Match Alpha',
+    status: 'completed',
+    snapshots: [snapshot1],
+    winner: 'england',
+    createdAt: new Date(now.getTime() - 172800000),
+    updatedAt: new Date(now.getTime() - 86400000),
+  }
+
+  const game3: GameHistory = {
+    gameId: 'game-003',
+    name: 'Practice Game Beta',
+    status: 'paused',
+    snapshots: [snapshot1],
+    createdAt: new Date(now.getTime() - 259200000),
+    updatedAt: new Date(now.getTime() - 172800000),
+  }
+
+  return [game1, game2, game3]
+}
+
+type AppMode = 'player' | 'spectator'
+
+function AppContent() {
+  const [mode, setMode] = useState<AppMode>('spectator')
   const [selectedTerritory, setSelectedTerritory] = useState<string | null>(null)
+  const { activeGame, selectGame } = useSpectator()
+
+  // Player mode (original view)
+  if (mode === 'player') {
+    return (
+      <div className="min-h-screen flex flex-col">
+        <header className="bg-gray-800 px-4 py-3 flex items-center justify-between">
+          <h1 className="text-xl font-bold">Agents of Treachery</h1>
+          <div className="flex items-center gap-4 text-sm">
+            <button
+              onClick={() => setMode('spectator')}
+              className="px-3 py-1 rounded bg-gray-700 hover:bg-gray-600 transition-colors"
+            >
+              Spectator Mode
+            </button>
+            <span className="text-gray-400">
+              {initialGameState.phase.charAt(0).toUpperCase() + initialGameState.phase.slice(1)} {initialGameState.year}
+            </span>
+            <div className="flex gap-2">
+              {(Object.keys(powerColors) as Power[]).map((power) => (
+                <div
+                  key={power}
+                  className="w-4 h-4 rounded"
+                  style={{ backgroundColor: powerColors[power] }}
+                  title={power.charAt(0).toUpperCase() + power.slice(1)}
+                />
+              ))}
+            </div>
+          </div>
+        </header>
+        <main className="flex-1 relative">
+          <DiplomacyMap
+            gameState={initialGameState}
+            selectedTerritory={selectedTerritory}
+            onTerritorySelect={setSelectedTerritory}
+          />
+        </main>
+        {selectedTerritory && (
+          <footer className="bg-gray-800 px-4 py-2 text-sm">
+            Selected: <span className="font-semibold">{selectedTerritory}</span>
+          </footer>
+        )}
+      </div>
+    )
+  }
+
+  // Spectator mode
+  if (activeGame) {
+    return (
+      <SpectatorGameView
+        onBack={() => selectGame(null)}
+      />
+    )
+  }
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <header className="bg-gray-800 px-4 py-3 flex items-center justify-between">
-        <h1 className="text-xl font-bold">Agents of Treachery</h1>
-        <div className="flex items-center gap-4 text-sm">
-          <span className="text-gray-400">
-            {gameState.phase.charAt(0).toUpperCase() + gameState.phase.slice(1)} {gameState.year}
-          </span>
-          <div className="flex gap-2">
-            {(Object.keys(powerColors) as Power[]).map((power) => (
-              <div
-                key={power}
-                className="w-4 h-4 rounded"
-                style={{ backgroundColor: powerColors[power] }}
-                title={power.charAt(0).toUpperCase() + power.slice(1)}
-              />
-            ))}
-          </div>
-        </div>
-      </header>
-      <main className="flex-1 relative">
-        <DiplomacyMap
-          gameState={gameState}
-          selectedTerritory={selectedTerritory}
-          onTerritorySelect={setSelectedTerritory}
-        />
-      </main>
-      {selectedTerritory && (
-        <footer className="bg-gray-800 px-4 py-2 text-sm">
-          Selected: <span className="font-semibold">{selectedTerritory}</span>
-        </footer>
-      )}
+    <div>
+      {/* Mode toggle header */}
+      <div className="fixed top-4 right-4 z-50">
+        <button
+          onClick={() => setMode('player')}
+          className="px-3 py-1.5 text-sm rounded bg-gray-700 hover:bg-gray-600 transition-colors"
+        >
+          Player Mode
+        </button>
+      </div>
+      <SpectatorDashboard />
     </div>
+  )
+}
+
+export default function App() {
+  const sampleGames = useMemo(() => createSampleGames(), [])
+
+  return (
+    <SpectatorProvider initialGames={sampleGames}>
+      <AppContent />
+    </SpectatorProvider>
   )
 }

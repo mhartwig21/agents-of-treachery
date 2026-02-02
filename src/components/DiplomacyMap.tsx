@@ -6,6 +6,10 @@ interface DiplomacyMapProps {
   gameState: GameState
   selectedTerritory: string | null
   onTerritorySelect: (id: string | null) => void
+  /** When true, disables click handlers for spectator mode */
+  readOnly?: boolean
+  /** Territories to highlight (e.g., for a selected power) */
+  highlightedTerritories?: string[]
 }
 
 const POWER_COLORS: Record<Power, string> = {
@@ -24,6 +28,8 @@ export function DiplomacyMap({
   gameState,
   selectedTerritory,
   onTerritorySelect,
+  readOnly = false,
+  highlightedTerritories,
 }: DiplomacyMapProps) {
   const svgRef = useRef<SVGSVGElement>(null)
   const [viewBox, setViewBox] = useState({ x: 0, y: 0, width: VIEWBOX.width, height: VIEWBOX.height })
@@ -325,6 +331,7 @@ export function DiplomacyMap({
           .map((territory) => {
             const isSelected = selectedTerritory === territory.id
             const isHovered = hoveredTerritory === territory.id
+            const isHighlighted = highlightedTerritories?.includes(territory.id)
             const fill = getTerritoryFill(territory.id, territory.type)
 
             return (
@@ -332,11 +339,11 @@ export function DiplomacyMap({
                 key={territory.id}
                 d={territory.path}
                 fill={fill}
-                stroke={isSelected ? '#ffd700' : '#5c4a32'}
-                strokeWidth={isSelected ? 2.5 : 1}
-                opacity={isHovered ? 0.85 : 1}
-                className="cursor-pointer transition-opacity duration-150"
-                onClick={() => onTerritorySelect(isSelected ? null : territory.id)}
+                stroke={isSelected ? '#ffd700' : isHighlighted ? '#60a5fa' : '#5c4a32'}
+                strokeWidth={isSelected ? 2.5 : isHighlighted ? 2 : 1}
+                opacity={isHovered ? 0.85 : highlightedTerritories && !isHighlighted ? 0.6 : 1}
+                className={readOnly ? 'transition-opacity duration-150' : 'cursor-pointer transition-opacity duration-150'}
+                onClick={readOnly ? undefined : () => onTerritorySelect(isSelected ? null : territory.id)}
                 onMouseEnter={() => setHoveredTerritory(territory.id)}
                 onMouseLeave={() => setHoveredTerritory(null)}
               />
