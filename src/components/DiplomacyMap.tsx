@@ -351,7 +351,7 @@ export function DiplomacyMap({
             )
           })}
 
-        {/* Territory labels */}
+        {/* Territory labels - outlined text for readability */}
         {territories
           .filter(t => !t.id.includes('_'))
           .map((territory) => (
@@ -360,9 +360,12 @@ export function DiplomacyMap({
               x={territory.labelX}
               y={territory.labelY}
               textAnchor="middle"
-              fill={territory.type === 'sea' ? '#4a6d8a' : '#5c4a32'}
-              fontSize="10"
-              fontWeight="500"
+              fill={territory.type === 'sea' ? '#1a3a5a' : '#2a2016'}
+              fontSize="11"
+              fontWeight="600"
+              stroke={territory.type === 'sea' ? 'rgba(168, 197, 216, 0.8)' : 'rgba(255, 255, 255, 0.7)'}
+              strokeWidth="2.5"
+              paintOrder="stroke fill"
               className="pointer-events-none select-none"
             >
               {territory.id.toUpperCase()}
