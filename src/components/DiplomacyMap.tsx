@@ -22,7 +22,7 @@ const POWER_COLORS: Record<Power, string> = {
   turkey: '#f9a825',
 }
 
-const VIEWBOX = { width: 900, height: 800 }
+const VIEWBOX = { width: 1835, height: 1360 }
 
 export function DiplomacyMap({
   gameState,
@@ -61,8 +61,8 @@ export function DiplomacyMap({
     const mouseY = ((e.clientY - rect.top) / rect.height) * viewBox.height + viewBox.y
 
     const zoomFactor = e.deltaY > 0 ? 1.1 : 0.9
-    const newWidth = Math.min(VIEWBOX.width * 2, Math.max(200, viewBox.width * zoomFactor))
-    const newHeight = Math.min(VIEWBOX.height * 2, Math.max(160, viewBox.height * zoomFactor))
+    const newWidth = Math.min(VIEWBOX.width * 2, Math.max(400, viewBox.width * zoomFactor))
+    const newHeight = Math.min(VIEWBOX.height * 2, Math.max(300, viewBox.height * zoomFactor))
 
     // Keep mouse position fixed during zoom
     const newX = mouseX - (mouseX - viewBox.x) * (newWidth / viewBox.width)
@@ -263,8 +263,8 @@ export function DiplomacyMap({
         <button
           onClick={() => setViewBox(prev => ({
             ...prev,
-            width: Math.max(200, prev.width * 0.8),
-            height: Math.max(160, prev.height * 0.8),
+            width: Math.max(400, prev.width * 0.8),
+            height: Math.max(300, prev.height * 0.8),
           }))}
           className="bg-gray-700 hover:bg-gray-600 text-white w-8 h-8 rounded flex items-center justify-center"
           title="Zoom in"
@@ -323,7 +323,7 @@ export function DiplomacyMap({
         </defs>
 
         {/* Background */}
-        <rect x="-200" y="-200" width="1400" height="1200" fill="#a8c5d8" />
+        <rect x="-200" y="-200" width="2400" height="1800" fill="#a8c5d8" />
 
         {/* Territories */}
         {territories
