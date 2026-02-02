@@ -5,11 +5,11 @@ export default defineConfig({
   plugins: [react()],
   test: {
     include: ['src/**/*.test.{ts,tsx}'],
-    environment: 'node',
-    environmentMatchGlobs: [
-      // Use jsdom for React component tests
-      ['src/**/*.test.tsx', 'jsdom'],
-    ],
+    environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
+    globals: true,
+    coverage: {
+      provider: 'v8',
+    },
   },
 });
