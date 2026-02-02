@@ -198,7 +198,11 @@ export function useMessagesByChannel(messages: Message[]): Map<ChannelId, Messag
 
   // Sort messages within each channel by timestamp
   for (const [, channelMessages] of grouped) {
-    channelMessages.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+    channelMessages.sort((a, b) => {
+      const aTime = typeof a.timestamp === 'string' ? new Date(a.timestamp).getTime() : a.timestamp.getTime();
+      const bTime = typeof b.timestamp === 'string' ? new Date(b.timestamp).getTime() : b.timestamp.getTime();
+      return aTime - bTime;
+    });
   }
 
   return grouped;

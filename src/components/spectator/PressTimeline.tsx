@@ -48,9 +48,11 @@ export function PressTimeline({
 
   // Sort by timestamp (newest first)
   const sortedMessages = useMemo(() => {
-    return [...filteredMessages].sort(
-      (a, b) => b.timestamp.getTime() - a.timestamp.getTime()
-    );
+    return [...filteredMessages].sort((a, b) => {
+      const aTime = typeof a.timestamp === 'string' ? new Date(a.timestamp).getTime() : a.timestamp.getTime();
+      const bTime = typeof b.timestamp === 'string' ? new Date(b.timestamp).getTime() : b.timestamp.getTime();
+      return bTime - aTime;
+    });
   }, [filteredMessages]);
 
   // Group messages by time period (hour)
@@ -261,7 +263,11 @@ export function PressTimelineCompact({
 }: PressTimelineCompactProps) {
   const recentMessages = useMemo(() => {
     return [...messages]
-      .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
+      .sort((a, b) => {
+        const aTime = typeof a.timestamp === 'string' ? new Date(a.timestamp).getTime() : a.timestamp.getTime();
+        const bTime = typeof b.timestamp === 'string' ? new Date(b.timestamp).getTime() : b.timestamp.getTime();
+        return bTime - aTime;
+      })
       .slice(0, maxMessages);
   }, [messages, maxMessages]);
 

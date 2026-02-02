@@ -1,0 +1,316 @@
+#!/usr/bin/env npx tsx
+/**
+ * Run a full Diplomacy game simulation with AI agents.
+ *
+ * Usage:
+ *   npx tsx scripts/run-game.ts              # Run with real AI
+ *   npx tsx scripts/run-game.ts --mock       # Run with mock AI
+ *   npx tsx scripts/run-game.ts --turns 10   # Limit to 10 turns
+ *   npx tsx scripts/run-game.ts --output game.json  # Save game state
+ *
+ * Requires ANTHROPIC_API_KEY environment variable (unless --mock).
+ */
+
+import * as fs from 'fs';
+import { AgentRuntime, type RuntimeEvent } from '../src/agent/runtime';
+import type { LLMProvider, LLMCompletionParams, LLMCompletionResult, AgentRuntimeConfig } from '../src/agent/types';
+import { POWERS, type Power, type GameState } from '../src/engine/types';
+
+/**
+ * Claude LLM Provider implementation.
+ */
+class ClaudeLLMProvider implements LLMProvider {
+  private apiKey: string;
+  private baseUrl: string;
+
+  constructor(apiKey: string, baseUrl = 'https://api.anthropic.com') {
+    this.apiKey = apiKey;
+    this.baseUrl = baseUrl;
+  }
+
+  async complete(params: LLMCompletionParams): Promise<LLMCompletionResult> {
+    const model = params.model || 'claude-sonnet-4-20250514';
+    const maxTokens = params.maxTokens || 4096;
+    const temperature = params.temperature ?? 0.7;
+
+    // Convert messages to Anthropic format
+    const systemMessage = params.messages.find(m => m.role === 'system');
+    const otherMessages = params.messages
+      .filter(m => m.role !== 'system')
+      .map(m => ({
+        role: m.role as 'user' | 'assistant',
+        content: m.content,
+      }));
+
+    const body = {
+      model,
+      max_tokens: maxTokens,
+      temperature,
+      system: systemMessage?.content || '',
+      messages: otherMessages,
+    };
+
+    const response = await fetch(`${this.baseUrl}/v1/messages`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': this.apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Claude API error: ${response.status} - ${error}`);
+    }
+
+    const result = await response.json();
+    const content = result.content?.[0]?.text || '';
+
+    return {
+      content,
+      usage: {
+        inputTokens: result.usage?.input_tokens || 0,
+        outputTokens: result.usage?.output_tokens || 0,
+      },
+      stopReason: result.stop_reason === 'end_turn' ? 'end_turn' : 'max_tokens',
+    };
+  }
+}
+
+/**
+ * Simple mock LLM for testing without API calls.
+ */
+class MockLLMProvider implements LLMProvider {
+  private turnCount = 0;
+
+  async complete(_params: LLMCompletionParams): Promise<LLMCompletionResult> {
+    this.turnCount++;
+
+    // Generate simple HOLD orders for testing
+    const content = `
+REASONING: This is turn ${this.turnCount}. I'll hold my positions for now.
+
+ORDERS:
+A Paris HOLD
+A Marseilles HOLD
+F Brest HOLD
+`;
+
+    return {
+      content,
+      usage: { inputTokens: 100, outputTokens: 50 },
+      stopReason: 'end_turn',
+    };
+  }
+}
+
+function parseArgs(): { useMock: boolean; maxTurns: number; outputFile?: string } {
+  const args = process.argv.slice(2);
+  let useMock = false;
+  let maxTurns = 0; // 0 means unlimited
+  let outputFile: string | undefined;
+
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--mock') useMock = true;
+    if (args[i] === '--turns' && args[i + 1]) {
+      maxTurns = parseInt(args[i + 1], 10);
+    }
+    if (args[i] === '--output' && args[i + 1]) {
+      outputFile = args[i + 1];
+    }
+  }
+
+  return { useMock, maxTurns, outputFile };
+}
+
+// Game state snapshots for export
+interface GameSnapshot {
+  year: number;
+  season: string;
+  phase: string;
+  units: { power: string; type: string; province: string }[];
+  supplyCenters: Record<string, string>;
+  orders: { power: string; order: string }[];
+  messages: { from: string; to: string[]; content: string; timestamp: string }[];
+}
+
+async function main() {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const { useMock, maxTurns, outputFile } = parseArgs();
+
+  if (!apiKey && !useMock) {
+    console.error('Error: ANTHROPIC_API_KEY environment variable is required.');
+    console.error('Set it with: export ANTHROPIC_API_KEY=your-key');
+    console.error('Or run with --mock for testing without API calls.');
+    console.error('\nOptions:');
+    console.error('  --mock          Run with mock AI (for testing)');
+    console.error('  --turns N       Limit to N turns');
+    console.error('  --output FILE   Save game state to JSON file');
+    process.exit(1);
+  }
+
+  console.log('🎯 Agents of Treachery - Game Simulation');
+  console.log('========================================\n');
+
+  const llmProvider = useMock
+    ? new MockLLMProvider()
+    : new ClaudeLLMProvider(apiKey!);
+
+  if (useMock) {
+    console.log('⚠️  Running in MOCK mode (no real AI calls)\n');
+  }
+  if (maxTurns > 0) {
+    console.log(`📊 Limited to ${maxTurns} turns\n`);
+  }
+
+  const gameId = `game-${Date.now()}`;
+  const snapshots: GameSnapshot[] = [];
+
+  // Configure agents with varied personalities
+  const agentConfigs = POWERS.map((power, i) => ({
+    power,
+    personality: {
+      cooperativeness: 0.3 + (i * 0.1),
+      aggression: 0.4 + ((7 - i) * 0.08),
+      patience: 0.5,
+      trustworthiness: 0.5 + (i % 2) * 0.2,
+      paranoia: 0.3 + (i % 3) * 0.15,
+      deceptiveness: 0.2 + (i % 4) * 0.1,
+    },
+    model: useMock ? 'mock' : 'claude-sonnet-4-20250514',
+    temperature: 0.7,
+    maxTokens: 2048,
+  }));
+
+  const config: AgentRuntimeConfig = {
+    gameId,
+    agents: agentConfigs,
+    parallelExecution: true,
+    turnTimeout: 120000,
+    persistMemory: false,
+    verbose: true,
+  };
+
+  const runtime = new AgentRuntime(config, llmProvider);
+  let turnCount = 0;
+  let currentOrders: { power: string; order: string }[] = [];
+
+  // Set up event logging
+  runtime.onEvent((event: RuntimeEvent) => {
+    const ts = event.timestamp.toLocaleTimeString();
+    switch (event.type) {
+      case 'game_started':
+        console.log(`[${ts}] 🎮 Game started: ${event.data.year} ${event.data.season} ${event.data.phase}`);
+        break;
+      case 'phase_started':
+        console.log(`\n[${ts}] 📍 Phase: ${event.data.year} ${event.data.season} ${event.data.phase}`);
+        currentOrders = [];
+        break;
+      case 'agent_turn_started':
+        console.log(`[${ts}]   🤖 ${event.data.power} thinking...`);
+        break;
+      case 'agent_turn_completed':
+        console.log(`[${ts}]   ✓ ${event.data.power} submitted ${event.data.orders?.length || 0} orders`);
+        if (event.data.orders && event.data.power) {
+          for (const order of event.data.orders) {
+            currentOrders.push({
+              power: event.data.power,
+              order: `${order.unit} ${order.type}${order.target ? ' -> ' + order.target : ''}`,
+            });
+          }
+        }
+        break;
+      case 'orders_submitted':
+        // Already logged above
+        break;
+      case 'phase_resolved': {
+        console.log(`[${ts}] ✅ Phase resolved`);
+        turnCount++;
+
+        // Capture snapshot
+        const state = runtime.getGameState();
+        const snapshot: GameSnapshot = {
+          year: state.year,
+          season: state.season,
+          phase: state.phase,
+          units: state.units.map(u => ({ power: u.power, type: u.type, province: u.province })),
+          supplyCenters: Object.fromEntries(state.supplyCenters),
+          orders: [...currentOrders],
+          messages: [], // TODO: capture press messages
+        };
+        snapshots.push(snapshot);
+
+        // Check turn limit
+        if (maxTurns > 0 && turnCount >= maxTurns) {
+          console.log(`\n[${ts}] ⏱️  Turn limit reached (${maxTurns} turns)`);
+          runtime.stop();
+        }
+        break;
+      }
+      case 'game_ended':
+        if (event.data.winner) {
+          console.log(`\n[${ts}] 🏆 WINNER: ${event.data.winner}!`);
+        } else if (event.data.draw) {
+          console.log(`\n[${ts}] 🤝 Game ended in DRAW`);
+        }
+        break;
+    }
+  });
+
+  console.log(`Starting game: ${gameId}`);
+  console.log(`Powers: ${POWERS.join(', ')}\n`);
+
+  try {
+    await runtime.initialize();
+    const result = await runtime.runGame();
+
+    console.log('\n========================================');
+    console.log('Game Complete!');
+    if (result.winner) {
+      console.log(`Winner: ${result.winner}`);
+    } else {
+      console.log('Result: Draw');
+    }
+
+    // Print final state
+    const finalState = runtime.getGameState();
+    console.log(`\nFinal Year: ${finalState.year} ${finalState.season}`);
+    console.log('\nSupply Center Counts:');
+    const scCounts = new Map<Power, number>();
+    for (const [, owner] of finalState.supplyCenters) {
+      if (owner) {
+        scCounts.set(owner, (scCounts.get(owner) || 0) + 1);
+      }
+    }
+    for (const [power, count] of Array.from(scCounts).sort((a, b) => b[1] - a[1])) {
+      console.log(`  ${power}: ${count} SCs`);
+    }
+
+    // Save output if requested
+    if (outputFile) {
+      const output = {
+        gameId,
+        startedAt: new Date().toISOString(),
+        result: result.winner ? { winner: result.winner } : { draw: true },
+        finalState: {
+          year: finalState.year,
+          season: finalState.season,
+          supplyCenters: Object.fromEntries(finalState.supplyCenters),
+          units: finalState.units.map(u => ({ power: u.power, type: u.type, province: u.province })),
+        },
+        snapshots,
+        turnCount,
+      };
+      fs.writeFileSync(outputFile, JSON.stringify(output, null, 2));
+      console.log(`\n📁 Game saved to: ${outputFile}`);
+    }
+
+  } catch (error) {
+    console.error('Game error:', error);
+    process.exit(1);
+  }
+}
+
+main();
