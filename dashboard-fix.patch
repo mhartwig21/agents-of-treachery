@@ -1,0 +1,47 @@
+From 84e14aaad9a88f91810c4ee0cc23e60602d8fb5d Mon Sep 17 00:00:00 2001
+From: warboy <hartwigm21@gmail.com>
+Date: Mon, 2 Feb 2026 12:00:15 +0000
+Subject: [PATCH] fix(dashboard): prevent HTTP handler hang by setting
+ cmd.Stdin to nil
+
+The runCmd and runBdCmd functions in fetcher.go did not set cmd.Stdin = nil,
+which caused commands to block indefinitely when they tried to read from
+stdin (e.g., gh asking for authentication, bd prompting for input).
+
+When gt dashboard runs from a terminal, commands inherit stdin from the
+parent process. If a command attempts to read from stdin, it blocks
+waiting for input that never comes, causing the HTTP handler to hang.
+
+This matches the pattern already used in api.go where cmd.Stdin = nil is
+set to prevent similar issues.
+
+Fixes: aot-0lz
+
+Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
+---
+ internal/web/fetcher.go | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/internal/web/fetcher.go b/internal/web/fetcher.go
+index a824efa..d72d3d3 100644
+--- a/internal/web/fetcher.go
++++ b/internal/web/fetcher.go
+@@ -32,6 +32,7 @@ func runCmd(timeout time.Duration, name string, args ...string) (*bytes.Buffer,
+ 	defer cancel()
+ 
+ 	cmd := exec.CommandContext(ctx, name, args...)
++	cmd.Stdin = nil // Prevent blocking if command tries to read stdin
+ 	var stdout bytes.Buffer
+ 	cmd.Stdout = &stdout
+ 
+@@ -51,6 +52,7 @@ func runBdCmd(beadsDir string, args ...string) (*bytes.Buffer, error) {
+ 
+ 	cmd := exec.CommandContext(ctx, "bd", args...)
+ 	cmd.Dir = beadsDir
++	cmd.Stdin = nil // Prevent blocking if command tries to read stdin
+ 	var stdout bytes.Buffer
+ 	cmd.Stdout = &stdout
+ 
+-- 
+2.43.0
+
