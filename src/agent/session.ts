@@ -242,6 +242,16 @@ export class MockLLMProvider implements LLMProvider {
   private responseIndex = 0;
   public calls: Array<{ messages: ConversationMessage[] }> = [];
 
+  /**
+   * Default response that includes a valid ORDERS section.
+   * This ensures mock agents always submit parseable orders.
+   */
+  private static readonly DEFAULT_RESPONSE = `REASONING: This is a mock agent response for testing purposes.
+
+ORDERS:
+# All units hold by default
+`;
+
   constructor(responses: string[] = []) {
     this.responses = responses;
   }
@@ -257,7 +267,7 @@ export class MockLLMProvider implements LLMProvider {
   }> {
     this.calls.push({ messages: params.messages });
 
-    const response = this.responses[this.responseIndex] ?? 'Mock response';
+    const response = this.responses[this.responseIndex] ?? MockLLMProvider.DEFAULT_RESPONSE;
     this.responseIndex = (this.responseIndex + 1) % Math.max(1, this.responses.length);
 
     return {
