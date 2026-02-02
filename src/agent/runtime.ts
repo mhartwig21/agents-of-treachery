@@ -189,25 +189,30 @@ export class AgentRuntime {
    * Run a single phase of the game.
    */
   async runPhase(): Promise<void> {
+    // Capture the current phase/year/season BEFORE running (phase handlers may transition)
+    const phaseYear = this.gameState.year;
+    const phaseSeason = this.gameState.season;
+    const phasePhase = this.gameState.phase;
+
     this.emitEvent({
       type: 'phase_started',
       timestamp: new Date(),
       data: {
-        year: this.gameState.year,
-        season: this.gameState.season,
-        phase: this.gameState.phase,
+        year: phaseYear,
+        season: phaseSeason,
+        phase: phasePhase,
       },
     });
 
     // Update press context
     this.pressSystem.updateContext({
       gameId: this.config.gameId,
-      year: this.gameState.year,
-      season: this.gameState.season,
-      phase: this.gameState.phase,
+      year: phaseYear,
+      season: phaseSeason,
+      phase: phasePhase,
     });
 
-    switch (this.gameState.phase) {
+    switch (phasePhase) {
       case 'DIPLOMACY':
         await this.runDiplomacyPhase();
         break;
@@ -222,13 +227,14 @@ export class AgentRuntime {
         break;
     }
 
+    // Emit phase_resolved with the phase that COMPLETED (not the new phase)
     this.emitEvent({
       type: 'phase_resolved',
       timestamp: new Date(),
       data: {
-        year: this.gameState.year,
-        season: this.gameState.season,
-        phase: this.gameState.phase,
+        year: phaseYear,
+        season: phaseSeason,
+        phase: phasePhase,
       },
     });
   }
