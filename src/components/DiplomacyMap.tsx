@@ -23,6 +23,9 @@ const POWER_COLORS: Record<Power, string> = {
 }
 
 const VIEWBOX = { width: 1835, height: 1360 }
+// Initial offset to center Europe (eliminates dead space on left/top)
+// Map content starts around x=200, y=175 - offset centers UK-Turkey range
+const INITIAL_OFFSET = { x: 150, y: 50 }
 
 export function DiplomacyMap({
   gameState,
@@ -32,7 +35,7 @@ export function DiplomacyMap({
   highlightedTerritories,
 }: DiplomacyMapProps) {
   const svgRef = useRef<SVGSVGElement>(null)
-  const [viewBox, setViewBox] = useState({ x: 0, y: 0, width: VIEWBOX.width, height: VIEWBOX.height })
+  const [viewBox, setViewBox] = useState({ x: INITIAL_OFFSET.x, y: INITIAL_OFFSET.y, width: VIEWBOX.width, height: VIEWBOX.height })
   const [isPanning, setIsPanning] = useState(false)
   const [panStart, setPanStart] = useState({ x: 0, y: 0 })
   const [hoveredTerritory, setHoveredTerritory] = useState<string | null>(null)
@@ -108,7 +111,7 @@ export function DiplomacyMap({
 
   // Reset zoom
   const resetZoom = useCallback(() => {
-    setViewBox({ x: 0, y: 0, width: VIEWBOX.width, height: VIEWBOX.height })
+    setViewBox({ x: INITIAL_OFFSET.x, y: INITIAL_OFFSET.y, width: VIEWBOX.width, height: VIEWBOX.height })
   }, [])
 
   // Render unit icon
