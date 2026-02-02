@@ -18,7 +18,9 @@ import {
   parseOrderLine,
   parseRetreatLine,
   parseBuildLine,
+  parseDiplomacyLine,
   parseAgentResponse,
+  extractDiplomacySection,
   validateOrders,
   fillDefaultOrders,
 } from '../order-parser';
@@ -435,6 +437,125 @@ BUILD F Brest
 
       const result = parseAgentResponse(response);
       expect(result.buildOrders.length).toBe(2);
+    });
+
+    it('extracts diplomatic messages', () => {
+      const response = `
+ORDERS:
+A Paris HOLD
+
+DIPLOMACY:
+SEND FRANCE: "I propose we form an alliance"
+SEND GERMANY: "Your movements concern me"
+      `;
+
+      const result = parseAgentResponse(response);
+      expect(result.diplomaticMessages.length).toBe(2);
+      expect(result.diplomaticMessages[0]).toEqual({
+        type: 'SEND_MESSAGE',
+        targetPowers: ['FRANCE'],
+        content: 'I propose we form an alliance',
+      });
+      expect(result.diplomaticMessages[1]).toEqual({
+        type: 'SEND_MESSAGE',
+        targetPowers: ['GERMANY'],
+        content: 'Your movements concern me',
+      });
+    });
+
+    it('handles complete response with all sections', () => {
+      const response = `
+REASONING: Strategic analysis here.
+
+ORDERS:
+A Paris -> Burgundy
+F Brest -> English Channel
+
+DIPLOMACY:
+SEND ENGLAND: "Let us agree to peace in the Channel"
+      `;
+
+      const result = parseAgentResponse(response);
+      expect(result.orders.length).toBe(2);
+      expect(result.diplomaticMessages.length).toBe(1);
+      expect(result.errors.length).toBe(0);
+    });
+  });
+
+  describe('extractDiplomacySection', () => {
+    it('extracts diplomacy section from response', () => {
+      const response = `
+ORDERS:
+A Paris HOLD
+
+DIPLOMACY:
+SEND FRANCE: "Hello"
+SEND GERMANY: "Hi"
+      `;
+
+      const section = extractDiplomacySection(response);
+      expect(section).toContain('SEND FRANCE');
+      expect(section).toContain('SEND GERMANY');
+    });
+
+    it('returns null when no diplomacy section', () => {
+      const response = `
+ORDERS:
+A Paris HOLD
+      `;
+
+      const section = extractDiplomacySection(response);
+      expect(section).toBeNull();
+    });
+  });
+
+  describe('parseDiplomacyLine', () => {
+    it('parses SEND command with double quotes', () => {
+      const result = parseDiplomacyLine('SEND FRANCE: "I propose we form an alliance"');
+      expect(result.action).toEqual({
+        type: 'SEND_MESSAGE',
+        targetPowers: ['FRANCE'],
+        content: 'I propose we form an alliance',
+      });
+      expect(result.error).toBeNull();
+    });
+
+    it('parses SEND command with single quotes', () => {
+      const result = parseDiplomacyLine("SEND GERMANY: 'Your movements concern me'");
+      expect(result.action).toEqual({
+        type: 'SEND_MESSAGE',
+        targetPowers: ['GERMANY'],
+        content: 'Your movements concern me',
+      });
+      expect(result.error).toBeNull();
+    });
+
+    it('normalizes power names', () => {
+      const result = parseDiplomacyLine('SEND france: "Test message"');
+      expect(result.action?.targetPowers[0]).toBe('FRANCE');
+    });
+
+    it('returns error for unknown power', () => {
+      const result = parseDiplomacyLine('SEND MORDOR: "We want the ring"');
+      expect(result.action).toBeNull();
+      expect(result.error).toContain('Unknown power');
+    });
+
+    it('ignores empty lines', () => {
+      const result = parseDiplomacyLine('');
+      expect(result.action).toBeNull();
+      expect(result.error).toBeNull();
+    });
+
+    it('ignores comment lines', () => {
+      const result = parseDiplomacyLine('# This is a comment');
+      expect(result.action).toBeNull();
+      expect(result.error).toBeNull();
+    });
+
+    it('handles bullet points', () => {
+      const result = parseDiplomacyLine('- SEND ITALY: "Support my move"');
+      expect(result.action?.targetPowers[0]).toBe('ITALY');
     });
   });
 
