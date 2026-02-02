@@ -7,9 +7,8 @@
  */
 
 // Types
-export {
+export type {
   Power,
-  POWERS,
   UnitType,
   ProvinceType,
   Coast,
@@ -28,6 +27,9 @@ export {
   OrderResolution,
   GameState,
 } from './types';
+
+// Constants
+export { POWERS } from './types';
 
 // Map data
 export {

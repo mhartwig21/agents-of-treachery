@@ -9,12 +9,11 @@
  */
 
 // Types
-export {
+export type {
   GameId,
   GameStatus,
   AgentHandle,
   OrchestratorConfig,
-  DEFAULT_ORCHESTRATOR_CONFIG,
   GameEventType,
   GameEvent,
   GameEventBase,
@@ -41,8 +40,12 @@ export {
   GameSessionSnapshot,
 } from './types';
 
+// Constants
+export { DEFAULT_ORCHESTRATOR_CONFIG } from './types';
+
 // Orchestrator
 export { GameOrchestrator } from './orchestrator';
 
 // Session
-export { GameSession, GameSessionConfig } from './session';
+export { GameSession } from './session';
+export type { GameSessionConfig } from './session';

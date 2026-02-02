@@ -2,12 +2,12 @@
  * Tests for the Diplomacy press system.
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { PressSystem } from '../press-system';
 import { AgentPressAPI, createAgentAPIs } from '../agent-api';
 import { SpectatorAPI } from '../spectator';
 import { ChannelManager, getBilateralChannelId, GLOBAL_CHANNEL_ID } from '../channel';
-import { Power, PressContext, Message, Channel } from '../types';
+import { Power, PressContext, Message } from '../types';
 
 const createTestContext = (): PressContext => ({
   gameId: 'test-game',

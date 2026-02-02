@@ -4,9 +4,8 @@
 
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { GameSession } from '../session';
-import { GameOrchestrator } from '../orchestrator';
 import { GameEvent, AgentHandle } from '../types';
-import { Power, POWERS } from '../../engine/types';
+import { POWERS } from '../../engine/types';
 
 describe('GameOrchestrator', () => {
   let session: GameSession;

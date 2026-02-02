@@ -3,7 +3,7 @@
  * 75 provinces, 34 supply centers, adjacencies.
  */
 
-import { Province, ProvinceType, Power, Coast } from './types';
+import { Province, Power, Coast } from './types';
 
 // Province IDs use standard abbreviations
 export const PROVINCES: Province[] = [

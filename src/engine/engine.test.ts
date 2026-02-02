@@ -8,7 +8,6 @@ import {
   getHomeCenters,
   areAdjacent,
   PROVINCES,
-  ADJACENCIES,
   adjudicate,
   getSupplyCenterCounts,
   getUnitCounts,

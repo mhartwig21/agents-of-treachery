@@ -8,12 +8,8 @@ import {
   Unit,
   Order,
   Power,
-  Season,
-  Phase,
   RetreatOrder,
   BuildOrder,
-  UnitType,
-  Coast,
   POWERS,
 } from './types';
 import { getHomeCenters, getProvince, PROVINCES } from './map';
@@ -363,7 +359,6 @@ export function submitBuilds(
   }
 
   // Store the build orders for resolution
-  const key = `builds:${power}`;
   state.orders.set(power, builds as any);
 }
 

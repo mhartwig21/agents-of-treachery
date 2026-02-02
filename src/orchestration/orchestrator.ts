@@ -9,21 +9,17 @@ import {
   GameState,
   Power,
   Phase,
-  Season,
   Order,
   RetreatOrder,
   BuildOrder,
-  POWERS,
 } from '../engine/types';
 import {
   submitOrders,
-  allOrdersSubmitted,
   resolveMovement,
   submitRetreats,
   resolveRetreats,
   submitBuilds,
   resolveBuilds,
-  cloneState,
 } from '../engine/game';
 import {
   GameId,
@@ -251,7 +247,7 @@ export class GameOrchestrator {
   /**
    * Handles the nudge (deadline approaching) notification.
    */
-  private handleNudge(state: GameState): void {
+  private handleNudge(_state: GameState): void {
     if (!this.phaseStatus) return;
 
     const pendingPowers = this.phaseStatus.submissions
@@ -437,7 +433,7 @@ export class GameOrchestrator {
   /**
    * Handles the case when all orders have been received.
    */
-  private handleAllOrdersReceived(state: GameState): void {
+  private handleAllOrdersReceived(_state: GameState): void {
     if (!this.phaseStatus) return;
 
     const now = new Date();

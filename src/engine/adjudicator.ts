@@ -12,7 +12,6 @@ import {
   ConvoyOrder,
   OrderResolution,
   Power,
-  Coast,
 } from './types';
 import { areAdjacent, canArmyOccupy, canFleetOccupy, getProvince, ADJACENCIES } from './map';
 
@@ -285,7 +284,6 @@ export function adjudicate(ctx: AdjudicationContext): Map<string, OrderResolutio
   const holdStrengths = new Map<string, number>();
   for (const unit of ctx.units) {
     let strength = 1;
-    const order = getOrderForUnit(unit.province, ctx);
 
     // Add support for holds
     for (const [, orders] of ctx.orders) {
@@ -399,7 +397,7 @@ export function adjudicate(ctx: AdjudicationContext): Map<string, OrderResolutio
   }
 
   // Build final results
-  for (const { power, order } of allOrders) {
+  for (const { power: _power, order } of allOrders) {
     if (results.has(order.unit)) continue; // Already failed validation
 
     const unit = findUnit(order.unit, ctx);
@@ -496,7 +494,7 @@ function isSupportCut(
 export function getRetreatOptions(
   unit: Unit,
   dislodgedFrom: string,
-  ctx: AdjudicationContext,
+  _ctx: AdjudicationContext,
   occupiedAfter: Set<string>,
   standoffProvinces: Set<string>
 ): string[] {

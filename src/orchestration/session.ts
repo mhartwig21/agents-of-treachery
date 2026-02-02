@@ -19,7 +19,6 @@ import {
   submitRetreats,
   submitBuilds,
   cloneState,
-  checkVictory,
 } from '../engine/game';
 import { PressSystem } from '../press/press-system';
 import { PressContext } from '../press/types';
