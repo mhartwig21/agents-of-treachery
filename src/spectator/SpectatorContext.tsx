@@ -329,10 +329,12 @@ export function useReplayControls(autoPlaySpeed: number = 1000) {
 
   const play = useCallback(() => {
     if (isLive) {
+      // Start from beginning when switching from live mode
       setViewMode('replay');
+      seekToPosition(0);
     }
     setIsPlaying(true);
-  }, [isLive, setViewMode]);
+  }, [isLive, setViewMode, seekToPosition]);
 
   const pause = useCallback(() => {
     setIsPlaying(false);
