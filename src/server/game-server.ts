@@ -132,8 +132,10 @@ export class GameServer {
    * Handles messages from clients.
    */
   private handleClientMessage(ws: WebSocket, message: ClientMessage): void {
+    console.log('Received message:', message.type);
     switch (message.type) {
       case 'START_GAME':
+        console.log('Starting new game:', message.name);
         this.startNewGame(ws, message.name);
         break;
 
@@ -160,6 +162,7 @@ export class GameServer {
   private async startNewGame(ws: WebSocket, name?: string): Promise<void> {
     const gameId = `game-${++this.gameCounter}-${Date.now()}`;
     const gameName = name || `AI Game ${this.gameCounter}`;
+    console.log(`Creating game: ${gameId} (${gameName})`);
 
     const config: AgentRuntimeConfig = {
       gameId,
@@ -214,8 +217,11 @@ export class GameServer {
 
     // Initialize and run game
     try {
+      console.log(`[${gameId}] Initializing runtime...`);
       await runtime.initialize();
+      console.log(`[${gameId}] Runtime initialized, starting game loop...`);
       const result = await runtime.runGame();
+      console.log(`[${gameId}] Game finished:`, result);
 
       // Update history with final status
       activeGame.history.status = 'completed';
@@ -243,13 +249,53 @@ export class GameServer {
    */
   private handleRuntimeEvent(game: ActiveGame, event: RuntimeEvent): void {
     const { runtime } = game;
+    console.log(`[${game.gameId}] Event: ${event.type}`, event.data.power || '');
+
+    // Send real-time updates for agent activity
+    if (event.type === 'agent_turn_started' && event.data.power) {
+      this.broadcastToGame(game, {
+        type: 'GAME_UPDATED',
+        gameId: game.gameId,
+        updates: {
+          updatedAt: event.timestamp,
+          currentAgent: event.data.power,
+        },
+      });
+    }
+
+    // Send real-time update when agent completes
+    if (event.type === 'agent_turn_completed' && event.data.power) {
+      console.log(`[${game.gameId}] ${event.data.power} completed turn`);
+      // Send any new messages immediately
+      if (game.accumulatedMessages.length > 0) {
+        const latestMessages = [...game.accumulatedMessages];
+        this.broadcastToGame(game, {
+          type: 'GAME_UPDATED',
+          gameId: game.gameId,
+          updates: {
+            updatedAt: event.timestamp,
+            latestMessages,
+          },
+        });
+      }
+    }
 
     // Track orders as they're submitted
     if (event.type === 'orders_submitted' && event.data.power && event.data.orders) {
+      console.log(`[${game.gameId}] ${event.data.power} submitted ${event.data.orders.length} orders`);
       game.accumulatedOrders.set(event.data.power, event.data.orders);
+      // Send order update immediately
+      this.broadcastToGame(game, {
+        type: 'GAME_UPDATED',
+        gameId: game.gameId,
+        updates: {
+          updatedAt: event.timestamp,
+          latestOrders: { [event.data.power]: event.data.orders.map(o => engineToUIOrder(o)) },
+        },
+      });
     }
 
-    // Create snapshot when phase resolves
+    // Create full snapshot when phase resolves
     if (event.type === 'phase_resolved' || event.type === 'game_started') {
       const gameState = runtime.getGameState();
       const uiGameState = engineToUIGameState(gameState);
@@ -282,6 +328,7 @@ export class GameServer {
       game.accumulatedOrders.clear();
 
       // Broadcast snapshot to subscribers
+      console.log(`[${game.gameId}] Broadcasting snapshot: ${snapshot.id} (${snapshot.messages.length} msgs, ${uiOrders.length} orders) to ${game.subscribers.size} subscribers`);
       this.broadcastToGame(game, {
         type: 'SNAPSHOT_ADDED',
         gameId: game.gameId,
@@ -359,27 +406,79 @@ export class GameServer {
 }
 
 /**
- * Creates a mock LLM provider for testing.
+ * Creates a mock LLM provider for testing with random moves and diplomacy.
  */
 export function createMockLLMProvider(): LLMProvider {
+  const moveTypes = ['HOLD', 'MOVE', 'SUPPORT'];
+  const territories = [
+    'LON', 'EDI', 'LVP', 'YOR', 'WAL', 'NTH', 'NWG', 'ENG', 'IRI',
+    'PAR', 'BRE', 'MAR', 'BUR', 'GAS', 'PIC', 'MAO',
+    'BER', 'MUN', 'KIE', 'RUH', 'SIL', 'PRU', 'HEL', 'BAL',
+    'ROM', 'NAP', 'VEN', 'TUS', 'PIE', 'APU', 'TYS', 'ION', 'ADR',
+    'VIE', 'BUD', 'TRI', 'BOH', 'GAL', 'TYR',
+    'MOS', 'WAR', 'STP', 'SEV', 'UKR', 'LVN', 'FIN', 'BOT',
+    'CON', 'ANK', 'SMY', 'ARM', 'SYR', 'BLA', 'AEG', 'EAS'
+  ];
+  const diplomaticIntents = [
+    'I propose we form an alliance against our mutual enemy.',
+    'Your movements concern me. Can we discuss your intentions?',
+    'I suggest we coordinate our attacks this turn.',
+    'I will support your move if you support mine next turn.',
+    'Let us agree to a DMZ in the disputed territories.',
+    'I have no hostile intentions towards you... for now.',
+    'Perhaps we can work together to eliminate the leader?',
+    'I noticed your fleet movement. Care to explain?',
+  ];
+  const powers = ['ENGLAND', 'FRANCE', 'GERMANY', 'ITALY', 'AUSTRIA', 'RUSSIA', 'TURKEY'];
+
   return {
-    async complete(_params) {
-      // Simple mock that returns hold orders for all units
+    async complete(params) {
+      // Extract power from system message
+      const systemMsg = params.messages.find(m => m.role === 'system')?.content || '';
+      const powerMatch = systemMsg.match(/You are playing as (\w+)/i);
+      const myPower = powerMatch ? powerMatch[1].toUpperCase() : 'ENGLAND';
+
+      // Generate random orders
+      const numUnits = Math.floor(Math.random() * 3) + 2;
+      const orders: string[] = [];
+      for (let i = 0; i < numUnits; i++) {
+        const moveType = moveTypes[Math.floor(Math.random() * moveTypes.length)];
+        const from = territories[Math.floor(Math.random() * territories.length)];
+        if (moveType === 'HOLD') {
+          orders.push(`${from} HOLD`);
+        } else if (moveType === 'MOVE') {
+          const to = territories[Math.floor(Math.random() * territories.length)];
+          orders.push(`${from} - ${to}`);
+        } else {
+          const supportTarget = territories[Math.floor(Math.random() * territories.length)];
+          orders.push(`${from} S ${supportTarget}`);
+        }
+      }
+
+      // Generate random diplomatic messages (50% chance per other power)
+      const diplomacy: string[] = [];
+      for (const target of powers) {
+        if (target !== myPower && Math.random() > 0.5) {
+          const msg = diplomaticIntents[Math.floor(Math.random() * diplomaticIntents.length)];
+          diplomacy.push(`SEND ${target}: "${msg}"`);
+        }
+      }
+
       const content = `
-<thinking>
-I'll order all my units to hold for now.
-</thinking>
+REASONING:
+Analyzing the board position... I see opportunities for expansion.
+My strategic priorities this turn are securing key supply centers.
+I'll coordinate with potential allies while preparing for betrayal.
 
-<orders>
-All units HOLD
-</orders>
+ORDERS:
+${orders.join('\n')}
 
-<diplomatic_actions>
-</diplomatic_actions>
+DIPLOMACY:
+${diplomacy.join('\n')}
 `;
       return {
         content,
-        usage: { inputTokens: 100, outputTokens: 50 },
+        usage: { inputTokens: 100, outputTokens: 150 },
         stopReason: 'end_turn',
       };
     },

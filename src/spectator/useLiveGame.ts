@@ -102,6 +102,9 @@ export function useLiveGame(options: UseLiveGameOptions = {}): UseLiveGameReturn
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<number | null>(null);
 
+  // Use a ref for the message handler to avoid recreating connect() on context changes
+  const handleMessageRef = useRef<(event: MessageEvent) => void>(() => {});
+
   /**
    * Handles incoming server messages.
    */
@@ -151,8 +154,12 @@ export function useLiveGame(options: UseLiveGameOptions = {}): UseLiveGameReturn
     [addGame, updateGame, addSnapshot, dispatch]
   );
 
+  // Keep the ref updated with the latest handler
+  handleMessageRef.current = handleMessage;
+
   /**
    * Connects to the WebSocket server.
+   * Uses stable options ref to avoid dependency on changing callbacks.
    */
   const connect = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -170,7 +177,7 @@ export function useLiveGame(options: UseLiveGameOptions = {}): UseLiveGameReturn
         setError(null);
       };
 
-      ws.onmessage = handleMessage;
+      ws.onmessage = (event) => handleMessageRef.current(event);
 
       ws.onerror = () => {
         setConnectionState('error');
@@ -194,7 +201,7 @@ export function useLiveGame(options: UseLiveGameOptions = {}): UseLiveGameReturn
       setConnectionState('error');
       setError(`Failed to connect: ${err}`);
     }
-  }, [opts.serverUrl, opts.autoReconnect, opts.reconnectDelay, handleMessage]);
+  }, [opts.serverUrl, opts.autoReconnect, opts.reconnectDelay]);
 
   /**
    * Sends a message to the server.

@@ -13,12 +13,23 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "server": "tsx src/server/index.ts",
-    "server:mock": "USE_MOCK_LLM=true tsx src/server/index.ts"
+    "server:mock": "LLM_PROVIDER=mock tsx src/server/index.ts",
+    "server:openai": "LLM_PROVIDER=openai tsx src/server/index.ts",
+    "server:claude": "LLM_PROVIDER=anthropic tsx src/server/index.ts",
+    "server:ollama": "LLM_PROVIDER=ollama tsx src/server/index.ts",
+    "server:llama": "LLM_PROVIDER=ollama OLLAMA_MODEL=llama3.2 tsx src/server/index.ts",
+    "server:llama-small": "LLM_PROVIDER=ollama OLLAMA_MODEL=llama3.2:1b tsx src/server/index.ts",
+    "server:mistral": "LLM_PROVIDER=ollama OLLAMA_MODEL=mistral tsx src/server/index.ts",
+    "server:deepseek": "LLM_PROVIDER=ollama OLLAMA_MODEL=deepseek-r1:8b tsx src/server/index.ts",
+    "server:qwen": "LLM_PROVIDER=ollama OLLAMA_MODEL=qwen2.5:7b tsx src/server/index.ts",
+    "server:gemma": "LLM_PROVIDER=ollama OLLAMA_MODEL=gemma2:9b tsx src/server/index.ts",
+    "server:phi": "LLM_PROVIDER=ollama OLLAMA_MODEL=phi3:mini tsx src/server/index.ts",
+    "ollama:pull": "ollama pull llama3.2 && ollama pull llama3.2:1b && ollama pull mistral && ollama pull deepseek-r1:8b && ollama pull qwen2.5:7b && ollama pull gemma2:9b && ollama pull phi3:mini"
   },
   "dependencies": {
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "ws": "^8.16.0"
+    "ws": "^8.19.0"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^6.9.1",
@@ -26,7 +37,7 @@
     "@testing-library/user-event": "^14.6.1",
     "@types/react": "^19.0.8",
     "@types/react-dom": "^19.0.3",
-    "@types/ws": "^8.5.10",
+    "@types/ws": "^8.18.1",
     "@vitejs/plugin-react": "^4.3.1",
     "autoprefixer": "^10.4.20",
     "eslint": "^9.18.0",

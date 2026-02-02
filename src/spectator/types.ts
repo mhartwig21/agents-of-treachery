@@ -98,6 +98,12 @@ export interface GameHistory {
   createdAt: Date;
   /** Last activity time */
   updatedAt: Date;
+  /** Live: which agent is currently thinking */
+  currentAgent?: string;
+  /** Live: recent messages as they arrive */
+  latestMessages?: Message[];
+  /** Live: recent orders as submitted */
+  latestOrders?: Record<string, UIOrder[]>;
 }
 
 /**
@@ -274,7 +280,7 @@ export function createGameSummary(game: GameHistory): GameSummary {
 export function engineToUIGameState(engineState: EngineGameState): UIGameState {
   const supplyCenters: Record<string, UIPower | undefined> = {};
   engineState.supplyCenters.forEach((power, territory) => {
-    supplyCenters[territory] = toUIPower(power);
+    supplyCenters[territory.toLowerCase()] = toUIPower(power);
   });
 
   return {
@@ -283,7 +289,7 @@ export function engineToUIGameState(engineState: EngineGameState): UIGameState {
     units: engineState.units.map(u => ({
       type: u.type.toLowerCase() as 'army' | 'fleet',
       power: toUIPower(u.power),
-      territory: u.province,
+      territory: u.province.toLowerCase(),
     })),
     orders: [], // Orders need separate conversion
     supplyCenters,

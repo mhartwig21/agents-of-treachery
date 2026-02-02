@@ -335,6 +335,7 @@ export function DiplomacyMap({
         {/* Territories - render sea first, then land on top */}
         {territories
           .filter(t => !t.id.includes('_')) // Skip coastal variants for rendering
+          .filter(t => t.path.startsWith('M')) // Skip territories with invalid/placeholder paths
           .sort((a, b) => (a.type === 'sea' ? 0 : 1) - (b.type === 'sea' ? 0 : 1)) // Sea first, land on top
           .map((territory) => {
             const isSelected = selectedTerritory === territory.id
@@ -361,6 +362,7 @@ export function DiplomacyMap({
         {/* Territory labels - outlined text for readability */}
         {territories
           .filter(t => !t.id.includes('_'))
+          .filter(t => t.path.startsWith('M')) // Skip territories with invalid paths
           .map((territory) => {
             const center = getTerritoryCenter(territory.id)
             if (!center) return null
@@ -387,6 +389,7 @@ export function DiplomacyMap({
         {/* Supply center markers */}
         {territories
           .filter(t => t.supplyCenter && !t.id.includes('_'))
+          .filter(t => t.path.startsWith('M')) // Skip territories with invalid paths
           .map((territory) => {
             const center = getTerritoryCenter(territory.id)
             if (!center) return null

@@ -160,6 +160,8 @@ export class AgentRuntime {
 
     while (this.isRunning && !this.gameState.winner && !this.gameState.draw) {
       await this.runPhase();
+      // Throttle game loop to prevent memory exhaustion with fast LLM providers
+      await new Promise(resolve => setTimeout(resolve, 500));
     }
 
     this.isRunning = false;
@@ -422,12 +424,21 @@ export class AgentRuntime {
 
     // Call the LLM
     const llm = this.sessionManager.getLLMProvider();
-    const response = await llm.complete({
-      messages: session.conversationHistory,
-      model: session.config.model,
-      temperature: session.config.temperature,
-      maxTokens: session.config.maxTokens,
-    });
+    console.log(`[${power}] Calling LLM (${session.conversationHistory.length} messages, ~${fullPrompt.length} chars)...`);
+    const startTime = Date.now();
+    let response;
+    try {
+      response = await llm.complete({
+        messages: session.conversationHistory,
+        model: session.config.model,
+        temperature: session.config.temperature,
+        maxTokens: session.config.maxTokens,
+      });
+      console.log(`[${power}] LLM responded in ${((Date.now() - startTime) / 1000).toFixed(1)}s (${response.content.length} chars)`);
+    } catch (error) {
+      console.error(`[${power}] LLM error:`, error);
+      throw error;
+    }
 
     // Add assistant response to conversation
     this.sessionManager.addMessage(power, {
