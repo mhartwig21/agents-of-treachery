@@ -1,0 +1,70 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --map-bg: #c4b998;
+  --sea-color: #a8c5d8;
+  --land-color: #e8dcc4;
+  --border-color: #5c4a32;
+}
+
+body {
+  @apply bg-gray-900 text-white;
+}
+
+.map-container {
+  @apply w-full h-full overflow-hidden;
+}
+
+.territory {
+  @apply transition-opacity duration-150 cursor-pointer;
+  stroke: var(--border-color);
+  stroke-width: 1;
+}
+
+.territory:hover {
+  @apply opacity-80;
+}
+
+.territory.selected {
+  stroke-width: 2.5;
+  stroke: #ffd700;
+}
+
+.territory-land {
+  fill: var(--land-color);
+}
+
+.territory-sea {
+  fill: var(--sea-color);
+}
+
+.territory-land.england { fill: #1e3a5f; }
+.territory-land.france { fill: #5c8dc9; }
+.territory-land.germany { fill: #4a4a4a; }
+.territory-land.italy { fill: #2e7d32; }
+.territory-land.austria { fill: #c62828; }
+.territory-land.russia { fill: #7b1fa2; }
+.territory-land.turkey { fill: #f9a825; }
+
+.supply-center {
+  @apply fill-current;
+  stroke: #000;
+  stroke-width: 1;
+}
+
+.unit {
+  @apply transition-transform duration-200;
+}
+
+.order-arrow {
+  fill: none;
+  stroke-width: 3;
+  stroke-linecap: round;
+  marker-end: url(#arrowhead);
+}
+
+.order-support {
+  stroke-dasharray: 5, 5;
+}
