@@ -336,7 +336,12 @@ export class GameServer {
     // Create full snapshot when phase resolves
     if (event.type === 'phase_resolved' || event.type === 'game_started') {
       const gameState = runtime.getGameState();
-      logger.phaseResolved(gameState.phase, gameState.year, gameState.season);
+      // Use the phase/year/season from the event (the completed phase), not the current game state
+      // because the runtime has already transitioned to the next phase by now
+      const snapshotYear = event.data.year ?? gameState.year;
+      const snapshotSeason = event.data.season ?? gameState.season;
+      const snapshotPhase = event.data.phase ?? gameState.phase;
+      logger.phaseResolved(snapshotPhase, snapshotYear, snapshotSeason);
       const uiGameState = engineToUIGameState(gameState);
 
       // Convert accumulated orders to UI format
@@ -348,10 +353,10 @@ export class GameServer {
       }
 
       const snapshot: GameSnapshot = {
-        id: generateSnapshotId(gameState.year, gameState.season, gameState.phase),
-        year: gameState.year,
-        season: gameState.season,
-        phase: gameState.phase,
+        id: generateSnapshotId(snapshotYear, snapshotSeason, snapshotPhase),
+        year: snapshotYear,
+        season: snapshotSeason,
+        phase: snapshotPhase,
         gameState: uiGameState,
         orders: uiOrders,
         messages: [...game.accumulatedMessages],
