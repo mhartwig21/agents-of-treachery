@@ -420,11 +420,22 @@ Use double quotes around your message content.`;
       return `## Your Task: Submit Orders
 Submit orders for all ${view.myUnits.length} of your units.
 
-Respond with:
-1. **REASONING**: Brief explanation of your strategy
-2. **ORDERS**: Your orders in the exact format specified
+You MUST include an ORDERS section with one order per line.
+Example format:
+\`\`\`
+ORDERS:
+A Paris -> Burgundy
+F Brest -> English Channel
+A Marseilles HOLD
+A Munich SUPPORT A Paris -> Burgundy
+\`\`\`
 
-Remember: All orders are submitted simultaneously and revealed at once.`;
+Order types:
+- MOVE: \`A Province -> Destination\` or \`F Province -> Destination\`
+- HOLD: \`A Province HOLD\` or \`F Province HOLD\`
+- SUPPORT: \`A Province SUPPORT A OtherProvince -> Destination\`
+
+Every unit needs exactly one order. Use A for Army, F for Fleet.`;
 
     case 'RETREAT':
       return `## Your Task: Submit Retreats
