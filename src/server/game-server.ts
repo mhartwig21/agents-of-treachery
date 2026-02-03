@@ -5,6 +5,7 @@
  */
 
 import { WebSocketServer, WebSocket } from 'ws';
+import { createServer, IncomingMessage, ServerResponse } from 'http';
 import { AgentRuntime, type RuntimeEvent } from '../agent/runtime';
 import type { LLMProvider, AgentRuntimeConfig } from '../agent/types';
 import { SpectatorAPI } from '../press/spectator';
@@ -67,6 +68,7 @@ export interface GameServerConfig {
  */
 export class GameServer {
   private wss: WebSocketServer | null = null;
+  private httpServer: ReturnType<typeof createServer> | null = null;
   private games: Map<string, ActiveGame> = new Map();
   private clients: Set<WebSocket> = new Set();
   private llmProvider: LLMProvider;
@@ -77,10 +79,31 @@ export class GameServer {
   }
 
   /**
-   * Starts the WebSocket server.
+   * Handles HTTP requests (health check endpoint).
+   */
+  private handleHttpRequest(req: IncomingMessage, res: ServerResponse): void {
+    if (req.url === '/health' || req.url === '/') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        status: 'ok',
+        games: this.games.size,
+        clients: this.clients.size,
+      }));
+    } else {
+      res.writeHead(404);
+      res.end('Not found');
+    }
+  }
+
+  /**
+   * Starts the WebSocket server with HTTP health endpoint.
    */
   start(port: number): void {
-    this.wss = new WebSocketServer({ port });
+    // Create HTTP server for health checks
+    this.httpServer = createServer((req, res) => this.handleHttpRequest(req, res));
+
+    // Attach WebSocket server to HTTP server
+    this.wss = new WebSocketServer({ server: this.httpServer });
 
     this.wss.on('connection', (ws) => {
       this.clients.add(ws);
@@ -114,19 +137,27 @@ export class GameServer {
       });
     });
 
-    console.log(`Game server listening on port ${port}`);
+    // Start HTTP server (WebSocket is attached)
+    this.httpServer!.listen(port, () => {
+      console.log(`Game server listening on port ${port}`);
+      console.log(`Health check: http://localhost:${port}/health`);
+    });
   }
 
   /**
    * Stops the server.
    */
   stop(): void {
+    for (const game of this.games.values()) {
+      game.runtime.stop();
+    }
     if (this.wss) {
-      for (const game of this.games.values()) {
-        game.runtime.stop();
-      }
       this.wss.close();
       this.wss = null;
+    }
+    if (this.httpServer) {
+      this.httpServer.close();
+      this.httpServer = null;
     }
   }
 
