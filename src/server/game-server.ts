@@ -142,6 +142,7 @@ export class GameServer {
         break;
 
       case 'SUBSCRIBE_GAME':
+        console.log(`Subscribing to game: ${message.gameId} (available: ${Array.from(this.games.keys()).join(', ')})`);
         this.subscribeToGame(ws, message.gameId);
         break;
 
@@ -382,6 +383,9 @@ export class GameServer {
     const game = this.games.get(gameId);
     if (game) {
       game.subscribers.add(ws);
+      console.log(`[${gameId}] Client subscribed. Total subscribers: ${game.subscribers.size}`);
+    } else {
+      console.log(`[${gameId}] Game not found for subscription`);
     }
   }
 
