@@ -4,9 +4,10 @@
  * Layout with DiplomacyMap, side panels, and bottom scrubber.
  */
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useSpectator } from '../../spectator/SpectatorContext';
 import { type LowercasePower } from '../../spectator/types';
+import type { Message } from '../../press/types';
 import { DiplomacyMap } from '../DiplomacyMap';
 import { PowerStatsPanel } from './PowerStatsPanel';
 import { OrdersPanel } from './OrdersPanel';
@@ -16,6 +17,7 @@ import { TurnScrubber } from './TurnScrubber';
 import { LiveActivityPanel } from './LiveActivityPanel';
 import { PhaseIndicator, PhaseBadge } from '../shared/PhaseIndicator';
 import { CollapsiblePanel } from '../shared/CollapsiblePanel';
+import { MessageCard } from './MessageCard';
 
 /** State for which sidebar panels are collapsed */
 interface CollapsedPanels {
@@ -42,12 +44,20 @@ export function SpectatorGameView({ onBack }: SpectatorGameViewProps) {
   const [selectedPower, setSelectedPower] = useState<LowercasePower | undefined>();
   const [selectedTerritory, setSelectedTerritory] = useState<string | null>(null);
   const [orderFilterPower, setOrderFilterPower] = useState<LowercasePower | undefined>();
+  const [selectedChannelId, setSelectedChannelId] = useState<string | null>(null);
+  const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
   const [collapsedPanels, setCollapsedPanels] = useState<CollapsedPanels>({
     liveActivity: false,
     powerStats: false,
     orders: false,
     press: false,
   });
+
+  // Find the selected message for detail view
+  const selectedMessage = useMemo(() => {
+    if (!selectedMessageId || !currentSnapshot) return null;
+    return currentSnapshot.messages.find((m) => m.id === selectedMessageId) || null;
+  }, [selectedMessageId, currentSnapshot]);
 
   // Compute supply center counts from current snapshot
   const supplyCenterCounts = { england: 0, france: 0, germany: 0, italy: 0, austria: 0, russia: 0, turkey: 0 } as Record<LowercasePower, number>;
@@ -92,6 +102,8 @@ export function SpectatorGameView({ onBack }: SpectatorGameViewProps) {
         setSelectedTerritory={setSelectedTerritory}
         gameViewTab={state.gameViewTab}
         setGameViewTab={setGameViewTab}
+        selectedMessage={selectedMessage}
+        onMessageSelect={(msg) => setSelectedMessageId(msg?.id ?? null)}
         onBack={onBack}
       />
     );
@@ -205,10 +217,22 @@ export function SpectatorGameView({ onBack }: SpectatorGameViewProps) {
           >
             <ChannelPanel
               messages={currentSnapshot.messages}
+              selectedChannelId={selectedChannelId ?? undefined}
+              onChannelSelect={setSelectedChannelId}
+              selectedMessageId={selectedMessageId ?? undefined}
+              onMessageSelect={setSelectedMessageId}
               className="max-h-96"
             />
           </CollapsiblePanel>
         </div>
+
+        {/* Message detail overlay */}
+        {selectedMessage && (
+          <MessageDetailOverlay
+            message={selectedMessage}
+            onClose={() => setSelectedMessageId(null)}
+          />
+        )}
       </div>
 
       {/* Bottom turn scrubber */}
@@ -230,6 +254,8 @@ interface MobileGameViewProps {
   setSelectedTerritory: (id: string | null) => void;
   gameViewTab: 'map' | 'orders' | 'press';
   setGameViewTab: (tab: 'map' | 'orders' | 'press') => void;
+  selectedMessage: Message | null;
+  onMessageSelect: (message: Message | null) => void;
   onBack?: () => void;
 }
 
@@ -243,6 +269,8 @@ function MobileGameView({
   setSelectedTerritory,
   gameViewTab,
   setGameViewTab,
+  selectedMessage,
+  onMessageSelect,
   onBack,
 }: MobileGameViewProps) {
   return (
@@ -295,8 +323,19 @@ function MobileGameView({
         )}
         {gameViewTab === 'press' && (
           <div className="h-full overflow-auto">
-            <PressTimeline messages={currentSnapshot.messages} />
+            <PressTimeline
+              messages={currentSnapshot.messages}
+              onMessageSelect={(msg) => onMessageSelect(msg)}
+            />
           </div>
+        )}
+
+        {/* Message detail overlay */}
+        {selectedMessage && (
+          <MessageDetailOverlay
+            message={selectedMessage}
+            onClose={() => onMessageSelect(null)}
+          />
         )}
       </div>
 
@@ -323,6 +362,35 @@ function MobileGameView({
           </button>
         ))}
       </nav>
+    </div>
+  );
+}
+
+/**
+ * Overlay panel showing detailed message view.
+ */
+interface MessageDetailOverlayProps {
+  message: Message;
+  onClose: () => void;
+}
+
+function MessageDetailOverlay({ message, onClose }: MessageDetailOverlayProps) {
+  return (
+    <div className="absolute inset-0 bg-gray-900/80 backdrop-blur-sm flex items-center justify-center z-50">
+      <div className="bg-gray-800 rounded-lg shadow-xl max-w-lg w-full mx-4 max-h-[80vh] overflow-auto">
+        <div className="p-4 border-b border-gray-700 flex items-center justify-between">
+          <h3 className="font-semibold">Message Details</h3>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-white text-xl leading-none"
+          >
+            ×
+          </button>
+        </div>
+        <div className="p-4">
+          <MessageCard message={message} showChannel />
+        </div>
+      </div>
     </div>
   );
 }
