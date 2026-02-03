@@ -161,8 +161,9 @@ export class AgentRuntime {
 
     while (this.isRunning && !this.gameState.winner && !this.gameState.draw) {
       await this.runPhase();
-      // Throttle game loop to prevent memory exhaustion with fast LLM providers
-      await new Promise(resolve => setTimeout(resolve, 500));
+      // Throttle game loop - configurable via PHASE_DELAY_MS env var (default 2s)
+      const phaseDelay = parseInt(process.env.PHASE_DELAY_MS || '2000', 10);
+      await new Promise(resolve => setTimeout(resolve, phaseDelay));
     }
 
     this.isRunning = false;
