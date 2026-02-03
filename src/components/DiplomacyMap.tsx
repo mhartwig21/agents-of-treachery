@@ -23,9 +23,10 @@ const POWER_COLORS: Record<Power, string> = {
 }
 
 const VIEWBOX = { width: 1835, height: 1360 }
-// Initial offset to center Europe (eliminates dead space on left/top)
-// Map content starts around x=200, y=175 - offset centers UK-Turkey range
-const INITIAL_OFFSET = { x: 150, y: 50 }
+// Initial offset to center Europe and minimize dead space
+// NAO/ocean content starts at x=202, y=175 - offset past the empty margins
+// Shows UK through Turkey, Norway through North Africa
+const INITIAL_OFFSET = { x: 250, y: 100 }
 // Minimum drag distance (in pixels) before a click becomes a pan
 const DRAG_THRESHOLD = 5
 
