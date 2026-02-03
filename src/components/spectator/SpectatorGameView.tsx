@@ -8,16 +8,17 @@ import { useState, useMemo } from 'react';
 import { useSpectator } from '../../spectator/SpectatorContext';
 import { type LowercasePower } from '../../spectator/types';
 import type { Message } from '../../press/types';
+import type { Order as UIOrder } from '../../types/game';
 import { DiplomacyMap } from '../DiplomacyMap';
 import { PowerStatsPanel } from './PowerStatsPanel';
 import { OrdersPanel } from './OrdersPanel';
 import { ChannelPanel } from './ChannelPanel';
 import { PressTimeline } from './PressTimeline';
+import { PressMessageModal } from './PressMessageModal';
 import { TurnScrubber } from './TurnScrubber';
 import { LiveActivityPanel } from './LiveActivityPanel';
 import { PhaseIndicator, PhaseBadge } from '../shared/PhaseIndicator';
 import { CollapsiblePanel } from '../shared/CollapsiblePanel';
-import { MessageCard } from './MessageCard';
 
 /** State for which sidebar panels are collapsed */
 interface CollapsedPanels {
@@ -53,11 +54,69 @@ export function SpectatorGameView({ onBack }: SpectatorGameViewProps) {
     press: false,
   });
 
-  // Find the selected message for detail view
+  // Live Data Accumulator: Merge snapshot data with streaming data when live
+  // This shows messages/orders as they arrive, before phase resolution
+  const accumulatedMessages = useMemo(() => {
+    if (!currentSnapshot) return [];
+    const snapshotMessages = currentSnapshot.messages;
+
+    // In replay mode, just use snapshot data
+    if (!isLive || !activeGame?.latestMessages) {
+      return snapshotMessages;
+    }
+
+    // In live mode, merge snapshot messages with latest streaming messages
+    // Use a Set to dedupe by message ID
+    const messageIds = new Set(snapshotMessages.map((m: Message) => m.id));
+    const merged = [...snapshotMessages];
+
+    for (const msg of activeGame.latestMessages) {
+      if (!messageIds.has(msg.id)) {
+        merged.push(msg);
+        messageIds.add(msg.id);
+      }
+    }
+
+    // Sort by timestamp
+    return merged.sort((a, b) =>
+      new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+    );
+  }, [currentSnapshot, isLive, activeGame?.latestMessages]);
+
+  // Accumulate orders: merge snapshot orders with live streaming orders
+  const accumulatedOrders = useMemo(() => {
+    if (!currentSnapshot) return [];
+    const snapshotOrders = currentSnapshot.orders;
+
+    // In replay mode, just use snapshot data
+    if (!isLive || !activeGame?.latestOrders) {
+      return snapshotOrders;
+    }
+
+    // In live mode, merge snapshot orders with latest streaming orders
+    // latestOrders is Record<power, Order[]> - flatten and dedupe by unit
+    const ordersByUnit = new Map<string, typeof snapshotOrders[0]>();
+
+    // Add snapshot orders first
+    for (const order of snapshotOrders) {
+      ordersByUnit.set(order.unit, order);
+    }
+
+    // Override with latest streaming orders (more recent)
+    for (const orders of Object.values(activeGame.latestOrders)) {
+      for (const order of orders) {
+        ordersByUnit.set(order.unit, order);
+      }
+    }
+
+    return Array.from(ordersByUnit.values());
+  }, [currentSnapshot, isLive, activeGame?.latestOrders]);
+
+  // Find selected message from accumulated messages (includes live data)
   const selectedMessage = useMemo(() => {
-    if (!selectedMessageId || !currentSnapshot) return null;
-    return currentSnapshot.messages.find((m) => m.id === selectedMessageId) || null;
-  }, [selectedMessageId, currentSnapshot]);
+    if (!selectedMessageId) return null;
+    return accumulatedMessages.find((m: Message) => m.id === selectedMessageId) || null;
+  }, [selectedMessageId, accumulatedMessages]);
 
   // Compute supply center counts from current snapshot
   const supplyCenterCounts = { england: 0, france: 0, germany: 0, italy: 0, austria: 0, russia: 0, turkey: 0 } as Record<LowercasePower, number>;
@@ -102,9 +161,11 @@ export function SpectatorGameView({ onBack }: SpectatorGameViewProps) {
         setSelectedTerritory={setSelectedTerritory}
         gameViewTab={state.gameViewTab}
         setGameViewTab={setGameViewTab}
-        selectedMessage={selectedMessage}
-        onMessageSelect={(msg) => setSelectedMessageId(msg?.id ?? null)}
         onBack={onBack}
+        selectedMessageId={selectedMessageId}
+        setSelectedMessageId={setSelectedMessageId}
+        accumulatedMessages={accumulatedMessages}
+        accumulatedOrders={accumulatedOrders}
       />
     );
   }
@@ -194,13 +255,13 @@ export function SpectatorGameView({ onBack }: SpectatorGameViewProps) {
           {/* Orders */}
           <CollapsiblePanel
             title="Orders"
-            count={currentSnapshot.orders.length}
+            count={accumulatedOrders.length}
             collapsed={collapsedPanels.orders}
             onCollapsedChange={(v) => setCollapsedPanels((p) => ({ ...p, orders: v }))}
             className="border-b border-gray-700"
           >
             <OrdersPanel
-              orders={currentSnapshot.orders}
+              orders={accumulatedOrders}
               units={currentSnapshot.gameState.units}
               filterPower={orderFilterPower}
               onFilterChange={setOrderFilterPower}
@@ -210,13 +271,13 @@ export function SpectatorGameView({ onBack }: SpectatorGameViewProps) {
           {/* Press channels */}
           <CollapsiblePanel
             title="Press Channels"
-            count={currentSnapshot.messages.length}
+            count={accumulatedMessages.length}
             collapsed={collapsedPanels.press}
             onCollapsedChange={(v) => setCollapsedPanels((p) => ({ ...p, press: v }))}
             className="flex-1 min-h-0"
           >
             <ChannelPanel
-              messages={currentSnapshot.messages}
+              messages={accumulatedMessages}
               selectedChannelId={selectedChannelId ?? undefined}
               onChannelSelect={setSelectedChannelId}
               selectedMessageId={selectedMessageId ?? undefined}
@@ -225,18 +286,20 @@ export function SpectatorGameView({ onBack }: SpectatorGameViewProps) {
             />
           </CollapsiblePanel>
         </div>
-
-        {/* Message detail overlay */}
-        {selectedMessage && (
-          <MessageDetailOverlay
-            message={selectedMessage}
-            onClose={() => setSelectedMessageId(null)}
-          />
-        )}
       </div>
 
       {/* Bottom turn scrubber */}
       <TurnScrubber className="border-t border-gray-700" />
+
+      {/* Press message modal */}
+      {selectedMessage && (
+        <PressMessageModal
+          message={selectedMessage}
+          allMessages={accumulatedMessages}
+          onClose={() => setSelectedMessageId(null)}
+          onNavigate={setSelectedMessageId}
+        />
+      )}
     </div>
   );
 }
@@ -254,9 +317,13 @@ interface MobileGameViewProps {
   setSelectedTerritory: (id: string | null) => void;
   gameViewTab: 'map' | 'orders' | 'press';
   setGameViewTab: (tab: 'map' | 'orders' | 'press') => void;
-  selectedMessage: Message | null;
-  onMessageSelect: (message: Message | null) => void;
   onBack?: () => void;
+  selectedMessageId: string | null;
+  setSelectedMessageId: (id: string | null) => void;
+  /** Accumulated messages (snapshot + live) */
+  accumulatedMessages: Message[];
+  /** Accumulated orders (snapshot + live) */
+  accumulatedOrders: UIOrder[];
 }
 
 function MobileGameView({
@@ -269,10 +336,18 @@ function MobileGameView({
   setSelectedTerritory,
   gameViewTab,
   setGameViewTab,
-  selectedMessage,
-  onMessageSelect,
   onBack,
+  selectedMessageId,
+  setSelectedMessageId,
+  accumulatedMessages,
+  accumulatedOrders,
 }: MobileGameViewProps) {
+  // Find selected message from accumulated messages (includes live data)
+  const selectedMessage = useMemo(() => {
+    if (!selectedMessageId) return null;
+    return accumulatedMessages.find((m: Message) => m.id === selectedMessageId) || null;
+  }, [selectedMessageId, accumulatedMessages]);
+
   return (
     <div className="h-screen flex flex-col bg-gray-900 text-white">
       {/* Compact header */}
@@ -316,7 +391,7 @@ function MobileGameView({
         {gameViewTab === 'orders' && (
           <div className="h-full overflow-auto p-4">
             <OrdersPanel
-              orders={currentSnapshot.orders}
+              orders={accumulatedOrders}
               units={currentSnapshot.gameState.units}
             />
           </div>
@@ -324,23 +399,25 @@ function MobileGameView({
         {gameViewTab === 'press' && (
           <div className="h-full overflow-auto">
             <PressTimeline
-              messages={currentSnapshot.messages}
-              onMessageSelect={(msg) => onMessageSelect(msg)}
+              messages={accumulatedMessages}
+              onMessageSelect={(msg) => setSelectedMessageId(msg.id)}
             />
           </div>
-        )}
-
-        {/* Message detail overlay */}
-        {selectedMessage && (
-          <MessageDetailOverlay
-            message={selectedMessage}
-            onClose={() => onMessageSelect(null)}
-          />
         )}
       </div>
 
       {/* Compact scrubber */}
       <TurnScrubber compact className="border-t border-gray-700" />
+
+      {/* Press message modal */}
+      {selectedMessage && (
+        <PressMessageModal
+          message={selectedMessage}
+          allMessages={accumulatedMessages}
+          onClose={() => setSelectedMessageId(null)}
+          onNavigate={setSelectedMessageId}
+        />
+      )}
 
       {/* Bottom tab bar */}
       <nav className="bg-gray-800 border-t border-gray-700 flex">
@@ -362,35 +439,6 @@ function MobileGameView({
           </button>
         ))}
       </nav>
-    </div>
-  );
-}
-
-/**
- * Overlay panel showing detailed message view.
- */
-interface MessageDetailOverlayProps {
-  message: Message;
-  onClose: () => void;
-}
-
-function MessageDetailOverlay({ message, onClose }: MessageDetailOverlayProps) {
-  return (
-    <div className="absolute inset-0 bg-gray-900/80 backdrop-blur-sm flex items-center justify-center z-50">
-      <div className="bg-gray-800 rounded-lg shadow-xl max-w-lg w-full mx-4 max-h-[80vh] overflow-auto">
-        <div className="p-4 border-b border-gray-700 flex items-center justify-between">
-          <h3 className="font-semibold">Message Details</h3>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-white text-xl leading-none"
-          >
-            ×
-          </button>
-        </div>
-        <div className="p-4">
-          <MessageCard message={message} showChannel />
-        </div>
-      </div>
     </div>
   );
 }
