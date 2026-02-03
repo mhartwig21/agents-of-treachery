@@ -457,6 +457,24 @@ export class AgentRuntime {
     // Parse the response
     const parsed = parseAgentResponse(response.content);
 
+    // Debug: show what was parsed during MOVEMENT phase
+    if (this.gameState.phase === 'MOVEMENT') {
+      // Show raw ORDERS section from LLM
+      const ordersMatch = response.content.match(/ORDERS:\s*([\s\S]*?)(?=(?:RETREATS:|BUILDS:|REASONING:|DIPLOMACY:|$))/i);
+      if (ordersMatch) {
+        console.log(`[${power}] Raw ORDERS section:\n${ordersMatch[1].trim().slice(0, 300)}`);
+      } else {
+        console.log(`[${power}] No ORDERS section found in response`);
+      }
+      console.log(`[${power}] Parsed ${parsed.orders.length} orders`);
+      if (parsed.orders.length > 0) {
+        console.log(`[${power}] Orders:`, parsed.orders.map(o => `${o.unit} ${o.type}${o.target ? ' -> ' + o.target : ''}`).join(', '));
+      }
+      if (parsed.errors.length > 0) {
+        console.log(`[${power}] Parse errors:`, parsed.errors);
+      }
+    }
+
     // Validate orders
     const { valid, errors } = validateOrders(
       parsed.orders,
@@ -464,7 +482,7 @@ export class AgentRuntime {
       power
     );
 
-    if (errors.length > 0 && this.config.verbose) {
+    if (errors.length > 0) {
       console.warn(`[${power}] Order validation errors:`, errors);
     }
 
