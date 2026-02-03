@@ -243,13 +243,18 @@ export class MockLLMProvider implements LLMProvider {
   public calls: Array<{ messages: ConversationMessage[] }> = [];
 
   /**
-   * Default response that includes a valid ORDERS section.
-   * This ensures mock agents always submit parseable orders.
+   * Default response that includes valid ORDERS and DIPLOMACY sections.
+   * This ensures mock agents always submit parseable orders and engage in press.
    */
   private static readonly DEFAULT_RESPONSE = `REASONING: This is a mock agent response for testing purposes.
 
 ORDERS:
 # All units hold by default
+
+DIPLOMACY:
+SEND FRANCE: "Greetings! I hope we can maintain peaceful relations."
+SEND GERMANY: "Perhaps we could coordinate our efforts this turn?"
+SEND RUSSIA: "I propose a mutual non-aggression agreement for now."
 `;
 
   constructor(responses: string[] = []) {

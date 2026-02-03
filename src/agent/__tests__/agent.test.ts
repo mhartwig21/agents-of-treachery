@@ -765,4 +765,23 @@ describe('Mock LLM Provider', () => {
     const parsed = parseAgentResponse(result.content);
     expect(parsed.errors.length).toBe(0);
   });
+
+  it('returns default response with DIPLOMACY section (press)', async () => {
+    const provider = new MockLLMProvider();
+
+    const result = await provider.complete({ messages: [] });
+
+    // Default response should include DIPLOMACY section
+    expect(result.content).toContain('DIPLOMACY:');
+
+    // Should be parseable and produce diplomatic messages
+    const parsed = parseAgentResponse(result.content);
+    expect(parsed.diplomaticMessages.length).toBeGreaterThan(0);
+
+    // Verify format of diplomatic messages
+    const firstMessage = parsed.diplomaticMessages[0];
+    expect(firstMessage.type).toBe('SEND_MESSAGE');
+    expect(firstMessage.targetPowers.length).toBeGreaterThan(0);
+    expect(firstMessage.content).toBeTruthy();
+  });
 });
