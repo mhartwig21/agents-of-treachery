@@ -7,6 +7,7 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { useSpectator } from './SpectatorContext';
 import type { GameHistory, GameSnapshot } from './types';
+import { toUIPower, type UppercasePower } from './types';
 
 /**
  * Server message types (must match server).
@@ -143,7 +144,7 @@ export function useLiveGame(options: UseLiveGameOptions = {}): UseLiveGameReturn
           case 'GAME_ENDED':
             updateGame(message.gameId, {
               status: 'completed',
-              winner: message.winner?.toLowerCase() as any,
+              winner: message.winner ? toUIPower(message.winner as UppercasePower) : undefined,
             });
             break;
 

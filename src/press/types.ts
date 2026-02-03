@@ -5,18 +5,12 @@
  * This system supports bilateral, multi-party, and global messaging.
  */
 
-export type Power =
-  | 'ENGLAND'
-  | 'FRANCE'
-  | 'GERMANY'
-  | 'ITALY'
-  | 'AUSTRIA'
-  | 'RUSSIA'
-  | 'TURKEY';
+// Import canonical Power type from engine
+import { type Power, POWERS } from '../engine/types';
 
-export const POWERS: Power[] = [
-  'ENGLAND', 'FRANCE', 'GERMANY', 'ITALY', 'AUSTRIA', 'RUSSIA', 'TURKEY'
-];
+// Re-export for consumers of press types
+export type { Power };
+export { POWERS };
 
 /**
  * Types of press channels available in the game.

@@ -16,6 +16,7 @@ import {
   generateSnapshotId,
   engineToUIGameState,
   engineToUIOrder,
+  toUIPower,
 } from '../spectator/types';
 import type { Message } from '../press/types';
 import { GameLogger, getGameLogger, removeGameLogger, createLoggingLLMProvider } from './game-logger';
@@ -274,7 +275,7 @@ export class GameServer {
       // Update history with final status
       activeGame.history.status = 'completed';
       if (result.winner) {
-        activeGame.history.winner = result.winner.toLowerCase() as any;
+        activeGame.history.winner = toUIPower(result.winner);
       }
 
       // Log game ended

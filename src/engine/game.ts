@@ -359,7 +359,9 @@ export function submitBuilds(
   }
 
   // Store the build orders for resolution
-  state.orders.set(power, builds as any);
+  // Note: During BUILD phase, state.orders stores BuildOrder[] instead of Order[]
+  // This is a known type limitation - the orders map is reused for different phase types
+  state.orders.set(power, builds as unknown as Order[]);
 }
 
 /**
