@@ -68,3 +68,18 @@ body {
 .order-support {
   stroke-dasharray: 5, 5;
 }
+
+@keyframes arrow-flow {
+  to { stroke-dashoffset: -12; }
+}
+
+@keyframes battle-pulse {
+  0%, 100% { filter: drop-shadow(0 0 8px red); }
+  50% { filter: drop-shadow(0 0 16px red); }
+}
+
+@keyframes fail-bounce {
+  0% { transform: scale(0); }
+  50% { transform: scale(1.2); }
+  100% { transform: scale(1); }
+}
