@@ -187,9 +187,11 @@ export function MessageListItem({ message, isSelected, onClick }: MessageListIte
 
 /**
  * Formats a timestamp for display.
+ * Handles both Date objects and ISO date strings.
  */
-function formatTime(date: Date): string {
-  return date.toLocaleTimeString(undefined, {
+function formatTime(date: Date | string): string {
+  const d = typeof date === 'string' ? new Date(date) : date;
+  return d.toLocaleTimeString(undefined, {
     hour: '2-digit',
     minute: '2-digit',
   });
@@ -197,9 +199,11 @@ function formatTime(date: Date): string {
 
 /**
  * Formats a full timestamp with date.
+ * Handles both Date objects and ISO date strings.
  */
-export function formatFullTime(date: Date): string {
-  return date.toLocaleString(undefined, {
+export function formatFullTime(date: Date | string): string {
+  const d = typeof date === 'string' ? new Date(date) : date;
+  return d.toLocaleString(undefined, {
     month: 'short',
     day: 'numeric',
     hour: '2-digit',
