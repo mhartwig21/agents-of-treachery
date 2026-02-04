@@ -23,6 +23,7 @@ export type GameLogEvent =
   | { type: 'llm_error'; power: string; error: string; model?: string }
   | { type: 'orders_parsed'; power: string; orders: string[]; rawOutput?: string }
   | { type: 'orders_submitted'; power: string; orders: string[]; valid: boolean; invalidReason?: string }
+  | { type: 'invalid_order'; power: string; model?: string; orderText: string; error: string; year: number; season: string; phase: string }
   | { type: 'message_sent'; from: string; to: string | string[]; preview: string }
   | { type: 'error'; error: string; context?: string; stack?: string }
   | { type: 'warning'; message: string; context?: string }
@@ -128,6 +129,10 @@ export class GameLogger {
 
   ordersSubmitted(power: string, orders: string[], valid: boolean, invalidReason?: string): void {
     this.log({ type: 'orders_submitted', power, orders, valid, invalidReason });
+  }
+
+  invalidOrder(power: string, model: string | undefined, orderText: string, error: string, year: number, season: string, phase: string): void {
+    this.log({ type: 'invalid_order', power, model, orderText, error, year, season, phase });
   }
 
   messageSent(from: string, to: string | string[], preview: string): void {
@@ -319,4 +324,218 @@ export function createLoggingLLMProvider<T extends LLMProviderLike>(
       }
     },
   } as T;
+}
+
+/**
+ * Statistics for invalid orders aggregated by model.
+ */
+export interface InvalidOrderStats {
+  /** Model identifier */
+  model: string;
+  /** Total orders submitted by this model */
+  totalOrders: number;
+  /** Number of invalid orders */
+  invalidOrders: number;
+  /** Invalid order rate (0-1) */
+  invalidRate: number;
+  /** Breakdown of error types */
+  errorTypes: Record<string, number>;
+  /** Sample invalid orders for review */
+  samples: Array<{
+    power: string;
+    orderText: string;
+    error: string;
+    phase: string;
+  }>;
+}
+
+/**
+ * Aggregated statistics for all models in a game.
+ */
+export interface ModelStatsReport {
+  gameId: string;
+  totalInvalidOrders: number;
+  totalOrders: number;
+  overallInvalidRate: number;
+  byModel: InvalidOrderStats[];
+}
+
+/**
+ * Extracts invalid order statistics from game logs, aggregated by model.
+ */
+export function getInvalidOrderStats(gameId: string, logsDir?: string): ModelStatsReport {
+  const logs = readGameLogs(gameId, logsDir);
+
+  // Track orders and invalids per model
+  const modelData = new Map<string, {
+    totalOrders: number;
+    invalidOrders: number;
+    errorTypes: Record<string, number>;
+    samples: Array<{ power: string; orderText: string; error: string; phase: string }>;
+  }>();
+
+  // Count total orders from llm_response events (one per agent turn)
+  const ordersByPowerPhase = new Map<string, string>(); // power+phase -> model
+
+  for (const entry of logs) {
+    const event = entry.event;
+
+    // Track model used per power from llm_response events
+    if (event.type === 'llm_response' && event.model) {
+      const key = `${event.power}`;
+      ordersByPowerPhase.set(key, event.model);
+    }
+
+    // Track submitted orders (count total valid orders)
+    if (event.type === 'orders_submitted') {
+      const model = ordersByPowerPhase.get(event.power) || 'unknown';
+      if (!modelData.has(model)) {
+        modelData.set(model, {
+          totalOrders: 0,
+          invalidOrders: 0,
+          errorTypes: {},
+          samples: [],
+        });
+      }
+      const data = modelData.get(model)!;
+      data.totalOrders += event.orders.length;
+    }
+
+    // Track invalid orders
+    if (event.type === 'invalid_order') {
+      const model = event.model || 'unknown';
+      if (!modelData.has(model)) {
+        modelData.set(model, {
+          totalOrders: 0,
+          invalidOrders: 0,
+          errorTypes: {},
+          samples: [],
+        });
+      }
+      const data = modelData.get(model)!;
+      data.invalidOrders++;
+      data.totalOrders++; // Invalid orders still count toward total attempts
+
+      // Categorize error type
+      const errorType = categorizeError(event.error);
+      data.errorTypes[errorType] = (data.errorTypes[errorType] || 0) + 1;
+
+      // Keep sample (max 10 per model)
+      if (data.samples.length < 10) {
+        data.samples.push({
+          power: event.power,
+          orderText: event.orderText,
+          error: event.error,
+          phase: `${event.season} ${event.year} ${event.phase}`,
+        });
+      }
+    }
+  }
+
+  // Build report
+  const byModel: InvalidOrderStats[] = [];
+  let totalInvalid = 0;
+  let totalAll = 0;
+
+  for (const [model, data] of modelData) {
+    totalInvalid += data.invalidOrders;
+    totalAll += data.totalOrders;
+
+    byModel.push({
+      model,
+      totalOrders: data.totalOrders,
+      invalidOrders: data.invalidOrders,
+      invalidRate: data.totalOrders > 0 ? data.invalidOrders / data.totalOrders : 0,
+      errorTypes: data.errorTypes,
+      samples: data.samples,
+    });
+  }
+
+  // Sort by invalid rate descending
+  byModel.sort((a, b) => b.invalidRate - a.invalidRate);
+
+  return {
+    gameId,
+    totalInvalidOrders: totalInvalid,
+    totalOrders: totalAll,
+    overallInvalidRate: totalAll > 0 ? totalInvalid / totalAll : 0,
+    byModel,
+  };
+}
+
+/**
+ * Categorizes an order validation error into a general type.
+ */
+function categorizeError(error: string): string {
+  const lower = error.toLowerCase();
+
+  if (lower.includes('no unit') || lower.includes('unit at')) {
+    return 'NO_UNIT_AT_LOCATION';
+  }
+  if (lower.includes('cannot reach') || lower.includes('adjacent')) {
+    return 'INVALID_MOVE_TARGET';
+  }
+  if (lower.includes('support')) {
+    return 'INVALID_SUPPORT';
+  }
+  if (lower.includes('convoy') || lower.includes('fleet')) {
+    return 'INVALID_CONVOY';
+  }
+  if (lower.includes('province') || lower.includes('unknown')) {
+    return 'UNKNOWN_PROVINCE';
+  }
+  if (lower.includes('parse') || lower.includes('could not')) {
+    return 'PARSE_ERROR';
+  }
+
+  return 'OTHER';
+}
+
+/**
+ * Formats the model stats report for console output.
+ */
+export function formatModelStatsReport(report: ModelStatsReport): string {
+  const lines: string[] = [];
+
+  lines.push('');
+  lines.push('═'.repeat(60));
+  lines.push('INVALID ORDER STATISTICS BY MODEL');
+  lines.push('═'.repeat(60));
+  lines.push('');
+  lines.push(`Game: ${report.gameId}`);
+  lines.push(`Total Orders: ${report.totalOrders}`);
+  lines.push(`Invalid Orders: ${report.totalInvalidOrders}`);
+  lines.push(`Overall Invalid Rate: ${(report.overallInvalidRate * 100).toFixed(2)}%`);
+  lines.push('');
+
+  if (report.byModel.length === 0) {
+    lines.push('No model data available.');
+  } else {
+    for (const stats of report.byModel) {
+      lines.push('─'.repeat(60));
+      lines.push(`Model: ${stats.model}`);
+      lines.push(`  Total Orders: ${stats.totalOrders}`);
+      lines.push(`  Invalid Orders: ${stats.invalidOrders}`);
+      lines.push(`  Invalid Rate: ${(stats.invalidRate * 100).toFixed(2)}%`);
+
+      if (Object.keys(stats.errorTypes).length > 0) {
+        lines.push('  Error Types:');
+        for (const [type, count] of Object.entries(stats.errorTypes)) {
+          lines.push(`    ${type}: ${count}`);
+        }
+      }
+
+      if (stats.samples.length > 0) {
+        lines.push('  Sample Invalid Orders:');
+        for (const sample of stats.samples.slice(0, 3)) {
+          lines.push(`    [${sample.power}] "${sample.orderText}" - ${sample.error}`);
+        }
+      }
+    }
+  }
+
+  lines.push('');
+  lines.push('═'.repeat(60));
+
+  return lines.join('\n');
 }

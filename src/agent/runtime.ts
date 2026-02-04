@@ -34,6 +34,7 @@ import { InMemoryStore, MemoryStore, updateMemoryTimestamp } from './memory';
 import { buildSystemPrompt, buildTurnPrompt } from './prompts';
 import { createAgentGameView, createStrategicSummary } from './game-view';
 import { parseAgentResponse, validateOrders, fillDefaultOrders } from './order-parser';
+import { GameLogger, getGameLogger, getInvalidOrderStats, formatModelStatsReport } from '../server/game-logger';
 
 /**
  * Event types emitted by the runtime.
@@ -82,11 +83,13 @@ export class AgentRuntime {
   private eventCallbacks: RuntimeEventCallback[] = [];
   private isRunning: boolean = false;
   private turnNumber: number = 0;
+  private logger: GameLogger;
 
   constructor(
     config: AgentRuntimeConfig,
     llmProvider: LLMProvider,
-    memoryStore?: MemoryStore
+    memoryStore?: MemoryStore,
+    logger?: GameLogger
   ) {
     this.config = { ...DEFAULT_RUNTIME_CONFIG, ...config } as AgentRuntimeConfig;
 
@@ -113,6 +116,9 @@ export class AgentRuntime {
 
     // Create press APIs for all powers
     this.pressAPIs = createAgentAPIs(this.pressSystem);
+
+    // Initialize logger (use provided or create default)
+    this.logger = logger ?? getGameLogger(this.config.gameId);
   }
 
   /**
@@ -179,6 +185,12 @@ export class AgentRuntime {
 
     // Save all memories
     await this.sessionManager.saveAllMemories();
+
+    // Print invalid order statistics by model
+    if (this.config.verbose) {
+      const stats = getInvalidOrderStats(this.config.gameId);
+      console.log(formatModelStatsReport(stats));
+    }
 
     return {
       winner: this.gameState.winner,
@@ -468,7 +480,7 @@ export class AgentRuntime {
       }
       console.log(`[${power}] Parsed ${parsed.orders.length} orders`);
       if (parsed.orders.length > 0) {
-        console.log(`[${power}] Orders:`, parsed.orders.map(o => `${o.unit} ${o.type}${o.target ? ' -> ' + o.target : ''}`).join(', '));
+        console.log(`[${power}] Orders:`, parsed.orders.map(o => `${o.unit} ${o.type}${'destination' in o ? ' -> ' + o.destination : ''}`).join(', '));
       }
       if (parsed.errors.length > 0) {
         console.log(`[${power}] Parse errors:`, parsed.errors);
@@ -482,8 +494,44 @@ export class AgentRuntime {
       power
     );
 
+    // Log invalid orders with model info for statistics tracking
     if (errors.length > 0) {
       console.warn(`[${power}] Order validation errors:`, errors);
+
+      // Find invalid orders (orders that didn't make it to valid list)
+      const validUnits = new Set(valid.map(o => o.unit));
+      const invalidOrders = parsed.orders.filter(o => !validUnits.has(o.unit));
+
+      // Log each invalid order
+      for (let i = 0; i < errors.length; i++) {
+        const orderText = invalidOrders[i]
+          ? `${invalidOrders[i].unit} ${invalidOrders[i].type}`
+          : `unknown order ${i}`;
+        this.logger.invalidOrder(
+          power,
+          session.config.model,
+          orderText,
+          errors[i],
+          this.gameState.year,
+          this.gameState.season,
+          this.gameState.phase
+        );
+      }
+    }
+
+    // Also log parse errors as invalid orders
+    if (parsed.errors.length > 0) {
+      for (const error of parsed.errors) {
+        this.logger.invalidOrder(
+          power,
+          session.config.model,
+          'parse_failure',
+          error,
+          this.gameState.year,
+          this.gameState.season,
+          this.gameState.phase
+        );
+      }
     }
 
     const result: AgentTurnResult = {
@@ -576,6 +624,13 @@ export class AgentRuntime {
    */
   getSessionManager(): AgentSessionManager {
     return this.sessionManager;
+  }
+
+  /**
+   * Get the game logger.
+   */
+  getLogger(): GameLogger {
+    return this.logger;
   }
 }
 
