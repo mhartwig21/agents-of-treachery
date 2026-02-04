@@ -17,6 +17,7 @@ import { PressTimeline } from './PressTimeline';
 import { PressMessageModal } from './PressMessageModal';
 import { TurnScrubber } from './TurnScrubber';
 import { LiveActivityPanel } from './LiveActivityPanel';
+import { SupplyCenterBalanceChart } from './SupplyCenterBalanceChart';
 import { PhaseIndicator, PhaseBadge } from '../shared/PhaseIndicator';
 import { CollapsiblePanel } from '../shared/CollapsiblePanel';
 import { GameEventOverlay } from './GameEventOverlay';
@@ -26,6 +27,7 @@ import { useGameSounds } from '../../audio';
 interface CollapsedPanels {
   liveActivity: boolean;
   powerStats: boolean;
+  scBalance: boolean;
   orders: boolean;
   press: boolean;
 }
@@ -52,6 +54,7 @@ export function SpectatorGameView({ onBack }: SpectatorGameViewProps) {
   const [collapsedPanels, setCollapsedPanels] = useState<CollapsedPanels>({
     liveActivity: false,
     powerStats: false,
+    scBalance: false,
     orders: false,
     press: false,
   });
@@ -256,6 +259,16 @@ export function SpectatorGameView({ onBack }: SpectatorGameViewProps) {
               selectedPower={selectedPower}
               onPowerClick={setSelectedPower}
             />
+          </CollapsiblePanel>
+
+          {/* Supply Center Balance Chart */}
+          <CollapsiblePanel
+            title="SC Balance"
+            collapsed={collapsedPanels.scBalance}
+            onCollapsedChange={(v) => setCollapsedPanels((p) => ({ ...p, scBalance: v }))}
+            className="border-b border-gray-700"
+          >
+            <SupplyCenterBalanceChart height={180} />
           </CollapsiblePanel>
 
           {/* Orders */}
