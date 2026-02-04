@@ -26,8 +26,9 @@ function generateSessionId(): AgentSessionId {
 
 /**
  * Default maximum conversation history size (sliding window).
+ * Reduced to 20 to avoid context overflow on long games with models like gpt-4o-mini.
  */
-const DEFAULT_MAX_CONVERSATION_HISTORY = 50;
+const DEFAULT_MAX_CONVERSATION_HISTORY = 20;
 
 /**
  * Manages agent sessions for all powers in a game.

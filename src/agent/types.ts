@@ -280,7 +280,7 @@ export const DEFAULT_RUNTIME_CONFIG: Partial<AgentRuntimeConfig> = {
   turnTimeout: 120000, // 2 minutes
   persistMemory: true,
   verbose: false,
-  maxConversationHistory: 50,
+  maxConversationHistory: 20, // Reduced from 50 to avoid context overflow on long games
   maxPressMessagesPerChannel: 100,
 };
 
