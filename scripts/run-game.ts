@@ -109,18 +109,30 @@ F Brest HOLD
 }
 
 /**
+ * Sleep for a given number of milliseconds.
+ */
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
  * OpenAI-compatible LLM Provider.
  * Works with OpenAI, Ollama, and other compatible APIs.
+ * Includes exponential backoff for rate limits.
  */
 class OpenAICompatibleProvider implements LLMProvider {
   private baseUrl: string;
   private model: string;
   private apiKey: string | null;
+  private maxRetries: number;
+  private baseDelay: number;
 
-  constructor(baseUrl: string, model: string, apiKey: string | null = null) {
+  constructor(baseUrl: string, model: string, apiKey: string | null = null, maxRetries = 5, baseDelay = 5000) {
     this.baseUrl = baseUrl;
     this.model = model;
     this.apiKey = apiKey;
+    this.maxRetries = maxRetries;
+    this.baseDelay = baseDelay;
   }
 
   async complete(params: LLMCompletionParams): Promise<LLMCompletionResult> {
@@ -134,37 +146,67 @@ class OpenAICompatibleProvider implements LLMProvider {
       headers['Authorization'] = `Bearer ${this.apiKey}`;
     }
 
-    const response = await fetch(`${this.baseUrl}/v1/chat/completions`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        model: this.model,
-        max_tokens: maxTokens,
-        temperature,
-        messages: params.messages.map(m => ({
-          role: m.role,
-          content: m.content,
-        })),
-      }),
+    const body = JSON.stringify({
+      model: this.model,
+      max_tokens: maxTokens,
+      temperature,
+      messages: params.messages.map(m => ({
+        role: m.role,
+        content: m.content,
+      })),
     });
 
-    if (!response.ok) {
+    // Retry loop with exponential backoff for rate limits
+    for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
+      const response = await fetch(`${this.baseUrl}/v1/chat/completions`, {
+        method: 'POST',
+        headers,
+        body,
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const content = data.choices?.[0]?.message?.content || '';
+        const finishReason = data.choices?.[0]?.finish_reason;
+
+        return {
+          content,
+          usage: {
+            inputTokens: data.usage?.prompt_tokens || 0,
+            outputTokens: data.usage?.completion_tokens || 0,
+          },
+          stopReason: finishReason === 'stop' ? 'end_turn' : 'max_tokens',
+        };
+      }
+
+      // Handle rate limits (429) with exponential backoff
+      if (response.status === 429) {
+        if (attempt === this.maxRetries) {
+          const error = await response.text();
+          throw new Error(`Rate limit exceeded after ${this.maxRetries} retries: ${error}`);
+        }
+
+        // Parse retry-after header or use exponential backoff
+        const retryAfter = response.headers.get('retry-after');
+        let waitTime: number;
+        if (retryAfter) {
+          waitTime = parseInt(retryAfter, 10) * 1000;
+        } else {
+          // Exponential backoff: 5s, 10s, 20s, 40s, 80s
+          waitTime = this.baseDelay * Math.pow(2, attempt);
+        }
+
+        console.log(`  ⏳ Rate limited. Waiting ${Math.round(waitTime / 1000)}s before retry ${attempt + 1}/${this.maxRetries}...`);
+        await sleep(waitTime);
+        continue;
+      }
+
+      // Other errors are not retried
       const error = await response.text();
       throw new Error(`LLM API error: ${response.status} - ${error}`);
     }
 
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content || '';
-    const finishReason = data.choices?.[0]?.finish_reason;
-
-    return {
-      content,
-      usage: {
-        inputTokens: data.usage?.prompt_tokens || 0,
-        outputTokens: data.usage?.completion_tokens || 0,
-      },
-      stopReason: finishReason === 'stop' ? 'end_turn' : 'max_tokens',
-    };
+    throw new Error('Unexpected end of retry loop');
   }
 }
 
@@ -178,11 +220,12 @@ class OllamaLLMProvider extends OpenAICompatibleProvider {
 }
 
 /**
- * OpenAI LLM Provider.
+ * OpenAI LLM Provider with rate limit handling.
  */
 class OpenAILLMProvider extends OpenAICompatibleProvider {
   constructor(apiKey: string, model = 'gpt-4o-mini') {
-    super('https://api.openai.com', model, apiKey);
+    // Use longer delays for OpenAI rate limits (10s base, up to 5 retries)
+    super('https://api.openai.com', model, apiKey, 5, 10000);
   }
 }
 
