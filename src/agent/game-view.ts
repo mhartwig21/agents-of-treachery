@@ -10,6 +10,7 @@ import { POWERS } from '../engine/types';
 import { getHomeCenters, getProvince, PROVINCES } from '../engine/map';
 import { getSupplyCenterCounts, getUnitCounts } from '../engine/game';
 import type { AgentGameView, UnitView } from './types';
+import { findShortestPath } from './pathfinding';
 
 /**
  * Create an agent's view of the game state.
@@ -258,15 +259,34 @@ export function getNeutralSupplyCenters(state: GameState): string[] {
 
 /**
  * Calculate the distance (in provinces) between two locations.
- * This is a simplified calculation that doesn't account for unit types.
+ * Uses BFS pathfinding for accurate distance calculation.
+ *
+ * @param from - Starting province ID
+ * @param to - Destination province ID
+ * @param unitType - Optional unit type for movement constraints (default: considers both)
+ * @returns Distance in moves, or -1 if unreachable
  */
-export function estimateDistance(from: string, to: string): number {
-  // This would ideally use a proper pathfinding algorithm
-  // For now, return a placeholder
+export function estimateDistance(
+  from: string,
+  to: string,
+  unitType?: 'ARMY' | 'FLEET'
+): number {
   if (from === to) return 0;
 
-  // Could implement BFS on adjacency graph here
-  return -1; // -1 indicates unknown
+  // If unit type specified, use type-specific pathfinding
+  if (unitType) {
+    const result = findShortestPath(from, to, unitType);
+    return result.distance;
+  }
+
+  // Otherwise, try both and return the shorter one
+  const armyResult = findShortestPath(from, to, 'ARMY');
+  const fleetResult = findShortestPath(from, to, 'FLEET');
+
+  if (armyResult.distance === -1) return fleetResult.distance;
+  if (fleetResult.distance === -1) return armyResult.distance;
+
+  return Math.min(armyResult.distance, fleetResult.distance);
 }
 
 /**

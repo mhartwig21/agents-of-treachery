@@ -5,10 +5,15 @@
  * for AI agents playing Diplomacy.
  */
 
-import type { Power, Phase } from '../engine/types';
+import type { Power, Phase, GameState } from '../engine/types';
 import type { AgentPersonality, AgentMemory, AgentGameView } from './types';
 import { getRelationshipSummary, getRecentEvents, getHighPriorityNotes } from './memory';
 import { getPowerPersonalityPrompt } from './personalities';
+import {
+  generatePowerStrategicContext,
+  formatStrategicContextMarkdown,
+  type PowerStrategicContext
+} from './pathfinding';
 
 /**
  * Core Diplomacy rules and mechanics for the system prompt.
@@ -290,17 +295,33 @@ function describePersonality(personality: AgentPersonality): string {
 
 /**
  * Build the turn prompt with current game state and context.
+ *
+ * @param gameView - The agent's view of the game state
+ * @param memory - The agent's memory
+ * @param recentMessages - Recent diplomatic messages
+ * @param phase - Current game phase
+ * @param gameState - Optional full game state for strategic analysis
  */
 export function buildTurnPrompt(
   gameView: AgentGameView,
   memory: AgentMemory,
   recentMessages: string[],
-  phase: Phase
+  phase: Phase,
+  gameState?: GameState
 ): string {
   const sections: string[] = [];
 
   // Current game state
   sections.push(buildGameStateSection(gameView));
+
+  // Strategic analysis (if game state provided)
+  if (gameState && (phase === 'MOVEMENT' || phase === 'DIPLOMACY')) {
+    const strategicContext = generatePowerStrategicContext(
+      gameView.viewingPower,
+      gameState
+    );
+    sections.push(formatStrategicContextMarkdown(strategicContext));
+  }
 
   // Relationships and trust
   sections.push(`## Your Relationships\n${getRelationshipSummary(memory)}`);
@@ -330,6 +351,23 @@ export function buildTurnPrompt(
   sections.push(getPhaseInstructions(phase, gameView));
 
   return sections.join('\n\n');
+}
+
+/**
+ * Build strategic context separately for cases where it's needed independently.
+ */
+export function buildStrategicContext(
+  power: Power,
+  gameState: GameState
+): PowerStrategicContext {
+  return generatePowerStrategicContext(power, gameState);
+}
+
+/**
+ * Format strategic context as markdown for inclusion in prompts.
+ */
+export function formatStrategicContext(context: PowerStrategicContext): string {
+  return formatStrategicContextMarkdown(context);
 }
 
 /**

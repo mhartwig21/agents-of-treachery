@@ -424,12 +424,13 @@ export class AgentRuntime {
       `[${m.sender}]: ${m.content}`
     );
 
-    // Build the turn prompt
+    // Build the turn prompt with strategic context
     const turnPrompt = buildTurnPrompt(
       gameView,
       session.memory,
       recentMessages,
-      this.gameState.phase
+      this.gameState.phase,
+      this.gameState
     );
 
     // Add strategic summary

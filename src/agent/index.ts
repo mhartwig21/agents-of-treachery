@@ -77,6 +77,8 @@ export {
   buildTurnPrompt,
   buildDiplomacyPrompt,
   buildMemoryUpdatePrompt,
+  buildStrategicContext,
+  formatStrategicContext,
 } from './prompts';
 
 // Power-specific personalities
@@ -100,6 +102,33 @@ export {
   getProvinceName,
   formatProvinceList,
 } from './game-view';
+
+// Pathfinding and strategic analysis
+export {
+  findShortestPath,
+  calculateDistances,
+  findNearestThreats,
+  findNearestOpportunities,
+  findConvoyRoutes,
+  getAdjacentStatus,
+  generateUnitStrategicContext,
+  calculateThreatLevel,
+  findImmediateThreatPowers,
+  findReachableTargets,
+  generatePowerStrategicContext,
+  formatStrategicContextXML,
+  formatStrategicContextMarkdown,
+} from './pathfinding';
+
+export type {
+  PathResult,
+  UnitStrategicContext,
+  ThreatInfo,
+  OpportunityInfo,
+  ConvoyRoute,
+  AdjacentProvince,
+  PowerStrategicContext,
+} from './pathfinding';
 
 // Order parsing
 export {
