@@ -14,8 +14,8 @@ import type {
   LLMProvider,
   AgentMemory,
 } from './types';
-import { DEFAULT_PERSONALITY as defaultPersonality } from './types';
 import { MemoryManager, MemoryStore, InMemoryStore } from './memory';
+import { getPowerPersonality } from './personalities';
 
 /**
  * Generate a unique session ID.
@@ -54,7 +54,7 @@ export class AgentSessionManager {
       power: config.power,
       config: {
         ...config,
-        personality: config.personality ?? defaultPersonality,
+        personality: config.personality ?? getPowerPersonality(config.power),
       },
       memory,
       createdAt: new Date(),

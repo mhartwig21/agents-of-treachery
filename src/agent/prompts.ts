@@ -8,6 +8,7 @@
 import type { Power, Phase } from '../engine/types';
 import type { AgentPersonality, AgentMemory, AgentGameView } from './types';
 import { getRelationshipSummary, getRecentEvents, getHighPriorityNotes } from './memory';
+import { getPowerPersonalityPrompt } from './personalities';
 
 /**
  * Core Diplomacy rules and mechanics for the system prompt.
@@ -203,6 +204,7 @@ Use \`A\` for Army and \`F\` for Fleet. Province names should be standard abbrev
  */
 export function buildSystemPrompt(power: Power, personality: AgentPersonality): string {
   const personalityDesc = describePersonality(personality);
+  const powerPersonalityPrompt = getPowerPersonalityPrompt(power);
 
   return `You are an AI playing as ${power} in a game of Diplomacy.
 
@@ -213,6 +215,11 @@ ${STRATEGY_CONCEPTS}
 ${POWER_STRATEGIES[power]}
 
 ## Your Personality
+
+### Character
+${powerPersonalityPrompt}
+
+### Traits
 ${personalityDesc}
 
 ${ORDER_FORMAT}

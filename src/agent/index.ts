@@ -79,6 +79,14 @@ export {
   buildMemoryUpdatePrompt,
 } from './prompts';
 
+// Power-specific personalities
+export {
+  POWER_PERSONALITIES,
+  POWER_PERSONALITY_PROMPTS,
+  getPowerPersonality,
+  getPowerPersonalityPrompt,
+} from './personalities';
+
 // Game view
 export {
   createAgentGameView,
