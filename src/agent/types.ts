@@ -377,6 +377,8 @@ export interface UnitView {
   type: 'ARMY' | 'FLEET';
   province: string;
   coast?: string;
+  /** Adjacent provinces this unit can move to */
+  adjacentProvinces?: string[];
 }
 
 /**

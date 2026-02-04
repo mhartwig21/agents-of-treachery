@@ -464,37 +464,40 @@ Use double quotes around your message content.`;
     case 'MOVEMENT':
       // Generate unit-specific examples for the prompt using actual territory abbreviations
       const unitExamples = view.myUnits.slice(0, 3).map(u => {
-        const unitType = u.type === 'army' ? 'A' : 'F';
-        return `${unitType} ${u.territory} HOLD`;
+        const unitType = u.type === 'ARMY' ? 'A' : 'F';
+        return `${unitType} ${u.province} HOLD`;
       }).join('\n');
 
-      // List the unit territories with their abbreviations
-      const unitList = view.myUnits.map(u => {
-        const unitType = u.type === 'army' ? 'A' : 'F';
-        return `${unitType} ${u.territory}`;
-      }).join(', ');
+      // List the unit territories with their adjacent provinces
+      const unitListWithAdjacent = view.myUnits.map(u => {
+        const unitType = u.type === 'ARMY' ? 'A' : 'F';
+        const adjacent = u.adjacentProvinces || [];
+        return `- ${unitType} ${u.province} (can move to: ${adjacent.length > 0 ? adjacent.join(', ') : 'HOLD only'})`;
+      }).join('\n');
 
       return `## Your Task: Submit Orders
 
-Your units: ${unitList}
+**Your units and their VALID move destinations:**
+${unitListWithAdjacent}
 
 **CRITICAL RULES:**
 1. Start with "ORDERS:" on the FIRST LINE
-2. One order per line, NO explanations in the ORDERS section
-3. Use ONLY the 3-letter territory abbreviations shown above
-4. Do NOT use full names like "Warsaw" - use "WAR" instead
+2. One order per line, NO text after the orders
+3. Use ONLY 3-letter province abbreviations
+4. **MOVES CAN ONLY GO TO ADJACENT PROVINCES** - see destinations listed above!
+5. Do NOT attempt multi-turn moves (e.g., LON cannot reach NWY in one turn)
 
-**Format:**
+**Format (EXACTLY like this, no explanations after):**
 ORDERS:
 ${unitExamples || 'A LON HOLD\nF ENG -> NTH'}
 
 **Order types:**
 - HOLD: A PAR HOLD
-- MOVE: A PAR -> BUR (use -> for moves)
+- MOVE: A PAR -> BUR (ONLY to adjacent province!)
 - SUPPORT HOLD: A MUN SUPPORT A PAR
 - SUPPORT MOVE: A MUN SUPPORT A PAR -> BUR
 
-Put any reasoning AFTER the orders section, not mixed in.`;
+**IMPORTANT:** End your response immediately after the last order. No explanations.`;
 
     case 'RETREAT':
       return `## Your Task: Submit Retreats

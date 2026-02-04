@@ -109,25 +109,34 @@ F Brest HOLD
 }
 
 /**
- * Ollama LLM Provider for local open-source models.
- * Uses OpenAI-compatible API.
+ * OpenAI-compatible LLM Provider.
+ * Works with OpenAI, Ollama, and other compatible APIs.
  */
-class OllamaLLMProvider implements LLMProvider {
+class OpenAICompatibleProvider implements LLMProvider {
   private baseUrl: string;
   private model: string;
+  private apiKey: string | null;
 
-  constructor(model: string, baseUrl = 'http://localhost:11434') {
+  constructor(baseUrl: string, model: string, apiKey: string | null = null) {
     this.baseUrl = baseUrl;
     this.model = model;
+    this.apiKey = apiKey;
   }
 
   async complete(params: LLMCompletionParams): Promise<LLMCompletionResult> {
     const maxTokens = params.maxTokens || 2048;
     const temperature = params.temperature ?? 0.7;
 
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (this.apiKey) {
+      headers['Authorization'] = `Bearer ${this.apiKey}`;
+    }
+
     const response = await fetch(`${this.baseUrl}/v1/chat/completions`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({
         model: this.model,
         max_tokens: maxTokens,
@@ -141,7 +150,7 @@ class OllamaLLMProvider implements LLMProvider {
 
     if (!response.ok) {
       const error = await response.text();
-      throw new Error(`Ollama API error: ${response.status} - ${error}`);
+      throw new Error(`LLM API error: ${response.status} - ${error}`);
     }
 
     const data = await response.json();
@@ -159,29 +168,59 @@ class OllamaLLMProvider implements LLMProvider {
   }
 }
 
+/**
+ * Ollama LLM Provider for local open-source models.
+ */
+class OllamaLLMProvider extends OpenAICompatibleProvider {
+  constructor(model: string, baseUrl = 'http://localhost:11434') {
+    super(baseUrl, model, null);
+  }
+}
+
+/**
+ * OpenAI LLM Provider.
+ */
+class OpenAILLMProvider extends OpenAICompatibleProvider {
+  constructor(apiKey: string, model = 'gpt-4o-mini') {
+    super('https://api.openai.com', model, apiKey);
+  }
+}
+
 function parseArgs(): {
   useMock: boolean;
   useOllama: boolean;
+  useOpenAI: boolean;
   ollamaModel: string;
+  openaiModel: string;
   maxTurns: number;
+  maxYears: number;
   outputFile?: string
 } {
   const args = process.argv.slice(2);
   let useMock = false;
   let useOllama = false;
+  let useOpenAI = false;
   let ollamaModel = 'qwen2.5:7b'; // Default to best-performing model
+  let openaiModel = 'gpt-4o-mini';
   let maxTurns = 0; // 0 means unlimited
+  let maxYears = 0; // 0 means unlimited
   let outputFile: string | undefined;
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--mock') useMock = true;
     if (args[i] === '--ollama') useOllama = true;
+    if (args[i] === '--openai') useOpenAI = true;
     if (args[i] === '--model' && args[i + 1]) {
       ollamaModel = args[i + 1];
+      openaiModel = args[i + 1];
       i++;
     }
     if (args[i] === '--turns' && args[i + 1]) {
       maxTurns = parseInt(args[i + 1], 10);
+      i++;
+    }
+    if (args[i] === '--years' && args[i + 1]) {
+      maxYears = parseInt(args[i + 1], 10);
       i++;
     }
     if (args[i] === '--output' && args[i + 1]) {
@@ -190,7 +229,7 @@ function parseArgs(): {
     }
   }
 
-  return { useMock, useOllama, ollamaModel, maxTurns, outputFile };
+  return { useMock, useOllama, useOpenAI, ollamaModel, openaiModel, maxTurns, maxYears, outputFile };
 }
 
 // Game state snapshots for export
@@ -205,20 +244,26 @@ interface GameSnapshot {
 }
 
 async function main() {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  const { useMock, useOllama, ollamaModel, maxTurns, outputFile } = parseArgs();
+  const anthropicKey = process.env.ANTHROPIC_API_KEY;
+  const openaiKey = process.env.OPENAI_API_KEY;
+  const { useMock, useOllama, useOpenAI, ollamaModel, openaiModel, maxTurns, maxYears, outputFile } = parseArgs();
 
-  if (!apiKey && !useMock && !useOllama) {
-    console.error('Error: ANTHROPIC_API_KEY environment variable is required.');
-    console.error('Set it with: export ANTHROPIC_API_KEY=your-key');
-    console.error('Or run with --mock for testing without API calls.');
-    console.error('Or run with --ollama to use local Ollama models.');
+  if (!anthropicKey && !openaiKey && !useMock && !useOllama && !useOpenAI) {
+    console.error('Error: API key required.');
+    console.error('Set ANTHROPIC_API_KEY or OPENAI_API_KEY, or use --mock/--ollama.');
     console.error('\nOptions:');
     console.error('  --mock          Run with mock AI (for testing)');
     console.error('  --ollama        Use local Ollama models');
-    console.error('  --model NAME    Specify Ollama model (default: qwen2.5:7b)');
-    console.error('  --turns N       Limit to N turns');
+    console.error('  --openai        Use OpenAI API (requires OPENAI_API_KEY)');
+    console.error('  --model NAME    Specify model name');
+    console.error('  --turns N       Limit to N turns (phases)');
+    console.error('  --years N       Limit to N game years');
     console.error('  --output FILE   Save game state to JSON file');
+    process.exit(1);
+  }
+
+  if (useOpenAI && !openaiKey) {
+    console.error('Error: OPENAI_API_KEY environment variable is required for --openai.');
     process.exit(1);
   }
 
@@ -232,18 +277,25 @@ async function main() {
     llmProvider = new MockLLMProvider();
     modelName = 'mock';
     console.log('⚠️  Running in MOCK mode (no real AI calls)\n');
+  } else if (useOpenAI) {
+    llmProvider = new OpenAILLMProvider(openaiKey!, openaiModel);
+    modelName = openaiModel;
+    console.log(`🤖 Running with OpenAI: ${openaiModel}\n`);
   } else if (useOllama) {
     llmProvider = new OllamaLLMProvider(ollamaModel);
     modelName = ollamaModel;
     console.log(`🦙 Running with Ollama model: ${ollamaModel}\n`);
   } else {
-    llmProvider = new ClaudeLLMProvider(apiKey!);
+    llmProvider = new ClaudeLLMProvider(anthropicKey!);
     modelName = 'claude-sonnet-4-20250514';
     console.log('🤖 Running with Claude AI\n');
   }
 
   if (maxTurns > 0) {
     console.log(`📊 Limited to ${maxTurns} turns\n`);
+  }
+  if (maxYears > 0) {
+    console.log(`📊 Limited to ${maxYears} game years\n`);
   }
 
   const gameId = `game-${Date.now()}`;
@@ -326,6 +378,11 @@ async function main() {
         // Check turn limit
         if (maxTurns > 0 && turnCount >= maxTurns) {
           console.log(`\n[${ts}] ⏱️  Turn limit reached (${maxTurns} turns)`);
+          runtime.stop();
+        }
+        // Check year limit (game starts in 1901)
+        if (maxYears > 0 && state.year >= 1901 + maxYears) {
+          console.log(`\n[${ts}] ⏱️  Year limit reached (year ${state.year}, limit ${maxYears} years from 1901)`);
           runtime.stop();
         }
         break;

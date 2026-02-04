@@ -7,7 +7,7 @@
 
 import type { Power, GameState, Unit, OrderResolution } from '../engine/types';
 import { POWERS } from '../engine/types';
-import { getHomeCenters, getProvince, PROVINCES } from '../engine/map';
+import { getHomeCenters, getProvince, PROVINCES, ADJACENCIES, canArmyOccupy, canFleetOccupy } from '../engine/map';
 import { getSupplyCenterCounts, getUnitCounts } from '../engine/game';
 import type { AgentGameView, UnitView } from './types';
 import { findShortestPath } from './pathfinding';
@@ -114,13 +114,33 @@ export function createAgentGameView(
 }
 
 /**
- * Convert a Unit to a UnitView.
+ * Convert a Unit to a UnitView with adjacent provinces.
  */
 function unitToView(unit: Unit): UnitView {
+  // Get adjacent provinces based on unit type
+  const canOccupy = unit.type === 'ARMY' ? canArmyOccupy : canFleetOccupy;
+
+  // Get adjacencies, handling coasted provinces
+  let adjacencies: string[] = [];
+  if (unit.coast) {
+    const coastCode = unit.coast.charAt(0).toUpperCase() + 'C';
+    const coastedKey = `${unit.province}/${coastCode}`;
+    adjacencies = ADJACENCIES[coastedKey] || ADJACENCIES[unit.province] || [];
+  } else {
+    adjacencies = ADJACENCIES[unit.province] || [];
+  }
+
+  // Filter to only provinces this unit can actually occupy
+  const validAdjacent = adjacencies
+    .map(adj => adj.replace(/\/[A-Z]C$/, '')) // Normalize coast suffixes
+    .filter(adj => canOccupy(adj))
+    .filter((adj, idx, arr) => arr.indexOf(adj) === idx); // Dedupe
+
   return {
     type: unit.type,
     province: unit.province,
     coast: unit.coast,
+    adjacentProvinces: validAdjacent,
   };
 }
 
