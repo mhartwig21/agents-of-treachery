@@ -3,6 +3,14 @@
  *
  * Contains system prompts, strategic guidance, and output format specifications
  * for AI agents playing Diplomacy.
+ *
+ * Prompts are loaded from external files in the prompts/ directory when available,
+ * with inline fallbacks for robustness. This allows:
+ * - Iterating prompts without recompiling
+ * - A/B testing prompt variations
+ * - Model-specific optimizations (prompts/claude/, prompts/gpt4/)
+ * - Power-specific personality overrides (prompts/powers/)
+ * - Hot-reload in development mode
  */
 
 import type { Power, Phase, GameState } from '../engine/types';
@@ -14,6 +22,61 @@ import {
   formatStrategicContextMarkdown,
   type PowerStrategicContext
 } from './pathfinding';
+import {
+  PromptLoader,
+  getPromptLoader,
+  type ModelFamily,
+  type PromptVariables
+} from './prompt-loader';
+
+/**
+ * Try to load a prompt from external files, falling back to inline content.
+ */
+function tryLoadPrompt(
+  loader: PromptLoader,
+  relativePath: string,
+  fallback: string,
+  variables?: PromptVariables
+): string {
+  try {
+    return loader.load(relativePath, variables);
+  } catch {
+    return variables ? substituteFallback(fallback, variables) : fallback;
+  }
+}
+
+/**
+ * Substitute variables in fallback content.
+ */
+function substituteFallback(content: string, variables: PromptVariables): string {
+  return content.replace(/\{\{(\w+)\}\}/g, (match, key) => {
+    const value = variables[key];
+    return value !== undefined ? String(value) : match;
+  });
+}
+
+/**
+ * Try to load a power personality from external files.
+ */
+function tryLoadPowerPersonality(loader: PromptLoader, power: Power, fallback: string): string {
+  try {
+    const content = loader.loadPowerPersonality(power);
+    return content || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+/**
+ * Try to load a power strategy from external files.
+ */
+function tryLoadPowerStrategy(loader: PromptLoader, power: Power, fallback: string): string {
+  try {
+    return loader.loadPowerStrategy(power);
+  } catch {
+    return fallback;
+  }
+}
 
 /**
  * Core Diplomacy rules and mechanics for the system prompt.
@@ -205,31 +268,9 @@ Use \`A\` for Army and \`F\` for Fleet. Province names should be standard abbrev
 `;
 
 /**
- * Build the system prompt for an agent.
+ * Response guidelines fallback (inline).
  */
-export function buildSystemPrompt(power: Power, personality: AgentPersonality): string {
-  const personalityDesc = describePersonality(personality);
-  const powerPersonalityPrompt = getPowerPersonalityPrompt(power);
-
-  return `You are an AI playing as ${power} in a game of Diplomacy.
-
-${DIPLOMACY_RULES}
-
-${STRATEGY_CONCEPTS}
-
-${POWER_STRATEGIES[power]}
-
-## Your Personality
-
-### Character
-${powerPersonalityPrompt}
-
-### Traits
-${personalityDesc}
-
-${ORDER_FORMAT}
-
-## Response Guidelines
+const RESPONSE_GUIDELINES = `## Response Guidelines
 1. Always think strategically about the board position.
 2. Consider your relationships and trust levels with other powers.
 3. Remember past betrayals and keep promises when strategically beneficial.
@@ -244,6 +285,56 @@ You will receive:
 - Specific instructions for what to do this turn
 
 Respond with your orders and brief strategic reasoning.`;
+
+/**
+ * Build the system prompt for an agent.
+ *
+ * @param power - The power the agent is playing as
+ * @param personality - The agent's personality traits
+ * @param modelFamily - Optional model family for model-specific prompts
+ */
+export function buildSystemPrompt(
+  power: Power,
+  personality: AgentPersonality,
+  modelFamily?: ModelFamily
+): string {
+  const loader = modelFamily
+    ? getPromptLoader().withModelFamily(modelFamily)
+    : getPromptLoader();
+
+  const personalityDesc = describePersonality(personality);
+
+  // Load prompts from external files with inline fallbacks
+  const rules = tryLoadPrompt(loader, 'rules.md', DIPLOMACY_RULES);
+  const strategy = tryLoadPrompt(loader, 'strategy.md', STRATEGY_CONCEPTS);
+  const powerStrategy = tryLoadPowerStrategy(loader, power, POWER_STRATEGIES[power]);
+  const powerPersonality = tryLoadPowerPersonality(
+    loader,
+    power,
+    getPowerPersonalityPrompt(power)
+  );
+  const orderFormat = tryLoadPrompt(loader, 'orders.md', ORDER_FORMAT);
+  const guidelines = tryLoadPrompt(loader, 'guidelines.md', RESPONSE_GUIDELINES);
+
+  return `You are an AI playing as ${power} in a game of Diplomacy.
+
+${rules}
+
+${strategy}
+
+${powerStrategy}
+
+## Your Personality
+
+### Character
+${powerPersonality}
+
+### Traits
+${personalityDesc}
+
+${orderFormat}
+
+${guidelines}`;
 }
 
 /**

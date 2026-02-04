@@ -4,6 +4,9 @@
  * Each power has a distinct personality preset based on their historical
  * character and strategic position, plus narrative flavor text that shapes
  * their diplomatic style.
+ *
+ * Personality prompts can be overridden via external files in prompts/powers/.
+ * The PromptLoader handles loading these files with hot-reload support.
  */
 
 import type { Power } from '../engine/types';

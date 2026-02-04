@@ -81,6 +81,20 @@ export {
   formatStrategicContext,
 } from './prompts';
 
+// Prompt loader for external prompt files
+export {
+  PromptLoader,
+  getPromptLoader,
+  setPromptLoader,
+  loadPrompt,
+} from './prompt-loader';
+
+export type {
+  ModelFamily,
+  PromptVariables,
+  PromptLoaderConfig,
+} from './prompt-loader';
+
 // Power-specific personalities
 export {
   POWER_PERSONALITIES,
