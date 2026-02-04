@@ -373,7 +373,7 @@ function parseAction(
   const viaConvoy = /VIA\s+CONVOY/i.test(action);
   const actionClean = action.replace(/\s+VIA\s+CONVOY/gi, '').trim();
 
-  const moveMatch = actionClean.match(/^(?:->|-|MOVE\s+)([A-Za-z\s.]+?)(?:\s*\(([^)]+)\))?$/i);
+  const moveMatch = actionClean.match(/^(?:->|-|MOVE\s+)([A-Za-z\s.\-]+?)(?:\s*\(([^)]+)\))?$/i);
   if (moveMatch) {
     const destination = normalizeProvince(moveMatch[1]);
     if (!destination) {

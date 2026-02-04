@@ -1,6 +1,6 @@
 #!/usr/bin/env npx tsx
 /**
- * Test Ollama models for Diplomacy order generation.
+ * Test LLM models for Diplomacy order generation.
  *
  * Compares different models on their ability to:
  * 1. Generate valid ORDERS sections
@@ -10,10 +10,12 @@
  * Usage:
  *   npx tsx scripts/test-ollama-models.ts
  *   npx tsx scripts/test-ollama-models.ts --model mistral:7b
+ *   npx tsx scripts/test-ollama-models.ts --openai --model gpt-4o-mini
  *   npx tsx scripts/test-ollama-models.ts --trials 5
  */
 
 const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || 'http://localhost:11434';
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
 
 interface TestResult {
   model: string;
@@ -98,11 +100,12 @@ function normalizeOrder(order: string): string {
 }
 
 // Valid order patterns (applied after normalization)
+// Province names can include hyphens (e.g., Mid-Atlantic Ocean)
 const ORDER_PATTERNS = [
-  /^[AF]\s+\w+(?:\s+\w+)?\s+HOLD$/i,
-  /^[AF]\s+\w+(?:\s+\w+)?\s*->\s*\w+(?:\s+\w+)?$/i,
-  /^[AF]\s+\w+(?:\s+\w+)?\s+SUPPORT\s+(?:[AF]\s+)?\w+(?:\s+\w+)?(?:\s*->\s*\w+(?:\s+\w+)?)?$/i,
-  /^[AF]\s+\w+(?:\s+\w+)?\s+CONVOY\s+[AF]\s+\w+(?:\s+\w+)?\s*->\s*\w+(?:\s+\w+)?$/i,
+  /^[AF]\s+[\w-]+(?:\s+[\w-]+)?\s+HOLD$/i,
+  /^[AF]\s+[\w-]+(?:\s+[\w-]+)?\s*->\s*[\w-]+(?:\s+[\w-]+)?(?:\s+[\w-]+)?$/i,
+  /^[AF]\s+[\w-]+(?:\s+[\w-]+)?\s+SUPPORT\s+(?:[AF]\s+)?[\w-]+(?:\s+[\w-]+)?(?:\s*->\s*[\w-]+(?:\s+[\w-]+)?)?$/i,
+  /^[AF]\s+[\w-]+(?:\s+[\w-]+)?\s+CONVOY\s+[AF]\s+[\w-]+(?:\s+[\w-]+)?\s*->\s*[\w-]+(?:\s+[\w-]+)?$/i,
 ];
 
 function isValidOrder(order: string): boolean {
@@ -147,7 +150,7 @@ function parseOrders(response: string): { orders: string[]; normalizedOrders: st
   return { orders, normalizedOrders, validCount };
 }
 
-async function testModel(model: string, trial: number): Promise<TestResult> {
+async function testOllamaModel(model: string, trial: number): Promise<TestResult> {
   const startTime = Date.now();
 
   try {
@@ -217,6 +220,80 @@ async function testModel(model: string, trial: number): Promise<TestResult> {
   }
 }
 
+async function testOpenAIModel(model: string, trial: number): Promise<TestResult> {
+  const startTime = Date.now();
+
+  try {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${OPENAI_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages: [{ role: 'user', content: TEST_PROMPT }],
+        temperature: 0.7,
+        max_tokens: 512,
+      }),
+    });
+
+    const responseTime = Date.now() - startTime;
+
+    if (!response.ok) {
+      const error = await response.text();
+      return {
+        model,
+        trial,
+        success: false,
+        responseTime,
+        ordersFound: false,
+        orderCount: 0,
+        orders: [],
+        normalizedOrders: [],
+        validOrders: 0,
+        error: `HTTP ${response.status}: ${error}`,
+      };
+    }
+
+    const result = await response.json();
+    const content = result.choices?.[0]?.message?.content || '';
+
+    const { orders, normalizedOrders, validCount } = parseOrders(content);
+    const ordersFound = orders.length > 0;
+
+    return {
+      model,
+      trial,
+      success: ordersFound && validCount >= 3, // France has 3 units
+      responseTime,
+      ordersFound,
+      orderCount: orders.length,
+      orders,
+      normalizedOrders,
+      validOrders: validCount,
+      rawResponse: content.substring(0, 500),
+    };
+  } catch (error) {
+    return {
+      model,
+      trial,
+      success: false,
+      responseTime: Date.now() - startTime,
+      ordersFound: false,
+      orderCount: 0,
+      orders: [],
+      normalizedOrders: [],
+      validOrders: 0,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+async function testModel(model: string, trial: number, useOpenAI: boolean): Promise<TestResult> {
+  return useOpenAI ? testOpenAIModel(model, trial) : testOllamaModel(model, trial);
+}
+
 function calculateStats(results: TestResult[]): ModelStats {
   const model = results[0].model;
   const successes = results.filter(r => r.success).length;
@@ -269,10 +346,11 @@ function printResults(results: TestResult[], stats: ModelStats) {
   }
 }
 
-function parseArgs(): { models: string[]; trials: number } {
+function parseArgs(): { models: string[]; trials: number; useOpenAI: boolean } {
   const args = process.argv.slice(2);
   let models: string[] = [];
   let trials = 3;
+  let useOpenAI = false;
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--model' && args[i + 1]) {
@@ -281,15 +359,17 @@ function parseArgs(): { models: string[]; trials: number } {
     } else if (args[i] === '--trials' && args[i + 1]) {
       trials = parseInt(args[i + 1], 10);
       i++;
+    } else if (args[i] === '--openai') {
+      useOpenAI = true;
     }
   }
 
   // Default models if none specified
   if (models.length === 0) {
-    models = ['llama3.2:1b', 'mistral:7b'];
+    models = useOpenAI ? ['gpt-4o-mini', 'gpt-4o'] : ['llama3.2:1b', 'mistral:7b'];
   }
 
-  return { models, trials };
+  return { models, trials, useOpenAI };
 }
 
 async function checkOllama(): Promise<boolean> {
@@ -313,38 +393,55 @@ async function listAvailableModels(): Promise<string[]> {
 }
 
 async function main() {
-  console.log('🧪 Ollama Model Testing for Diplomacy Order Generation');
-  console.log('======================================================\n');
+  const { models, trials, useOpenAI } = parseArgs();
 
-  // Check Ollama is running
-  const ollamaRunning = await checkOllama();
-  if (!ollamaRunning) {
-    console.error('Error: Cannot connect to Ollama at', OLLAMA_BASE_URL);
-    console.error('Make sure Ollama is running: ollama serve');
-    process.exit(1);
-  }
+  if (useOpenAI) {
+    console.log('🧪 OpenAI Model Testing for Diplomacy Order Generation');
+    console.log('======================================================\n');
 
-  const available = await listAvailableModels();
-  console.log(`Available models: ${available.join(', ')}\n`);
-
-  const { models, trials } = parseArgs();
-
-  // Verify requested models are available
-  for (const model of models) {
-    if (!available.includes(model)) {
-      console.warn(`Warning: Model "${model}" not found. Pull it with: ollama pull ${model}`);
+    if (!OPENAI_API_KEY) {
+      console.error('Error: OPENAI_API_KEY environment variable not set');
+      console.error('Set it with: export OPENAI_API_KEY=sk-...');
+      process.exit(1);
     }
-  }
 
-  console.log(`Testing models: ${models.join(', ')}`);
-  console.log(`Trials per model: ${trials}\n`);
+    console.log(`Testing OpenAI models: ${models.join(', ')}`);
+    console.log(`Trials per model: ${trials}\n`);
+  } else {
+    console.log('🧪 Ollama Model Testing for Diplomacy Order Generation');
+    console.log('======================================================\n');
+
+    // Check Ollama is running
+    const ollamaRunning = await checkOllama();
+    if (!ollamaRunning) {
+      console.error('Error: Cannot connect to Ollama at', OLLAMA_BASE_URL);
+      console.error('Make sure Ollama is running: ollama serve');
+      process.exit(1);
+    }
+
+    const available = await listAvailableModels();
+    console.log(`Available models: ${available.join(', ')}\n`);
+
+    // Verify requested models are available
+    for (const model of models) {
+      if (!available.includes(model)) {
+        console.warn(`Warning: Model "${model}" not found. Pull it with: ollama pull ${model}`);
+      }
+    }
+
+    console.log(`Testing models: ${models.join(', ')}`);
+    console.log(`Trials per model: ${trials}\n`);
+  }
 
   const allStats: ModelStats[] = [];
 
   for (const model of models) {
-    if (!available.includes(model)) {
-      console.log(`\nSkipping ${model} (not available)`);
-      continue;
+    if (!useOpenAI) {
+      const available = await listAvailableModels();
+      if (!available.includes(model)) {
+        console.log(`\nSkipping ${model} (not available)`);
+        continue;
+      }
     }
 
     console.log(`\nTesting ${model}...`);
@@ -352,7 +449,7 @@ async function main() {
 
     for (let i = 1; i <= trials; i++) {
       process.stdout.write(`  Trial ${i}/${trials}...`);
-      const result = await testModel(model, i);
+      const result = await testModel(model, i, useOpenAI);
       results.push(result);
       console.log(` ${result.success ? '✓' : '✗'} (${(result.responseTime / 1000).toFixed(2)}s)`);
     }
