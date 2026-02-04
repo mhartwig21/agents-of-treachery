@@ -52,10 +52,12 @@ const PROVINCE_ALIASES: Record<string, string> = {
   'vienna': 'VIE',
   'budapest': 'BUD',
   'trieste': 'TRI',
+  'tripoli': 'TRI', // Common confusion
   'moscow': 'MOS',
   'warsaw': 'WAR',
   'st. petersburg': 'STP',
   'st petersburg': 'STP',
+  'stettin': 'STP', // Common mistaken name for St Petersburg
   'sevastopol': 'SEV',
   'constantinople': 'CON',
   'ankara': 'ANK',
@@ -64,15 +66,18 @@ const PROVINCE_ALIASES: Record<string, string> = {
   'sweden': 'SWE',
   'denmark': 'DEN',
   'holland': 'HOL',
+  'netherlands': 'HOL',
   'belgium': 'BEL',
   'spain': 'SPA',
   'portugal': 'POR',
   'tunis': 'TUN',
+  'tunisia': 'TUN',
   'serbia': 'SER',
   'rumania': 'RUM',
   'romania': 'RUM',
   'bulgaria': 'BUL',
   'greece': 'GRE',
+  'athens': 'GRE', // Common alias
   'clyde': 'CLY',
   'yorkshire': 'YOR',
   'wales': 'WAL',
@@ -80,7 +85,9 @@ const PROVINCE_ALIASES: Record<string, string> = {
   'burgundy': 'BUR',
   'gascony': 'GAS',
   'ruhr': 'RUH',
+  'rhineland': 'RUH', // Common mistaken name
   'prussia': 'PRU',
+  'east prussia': 'PRU',
   'silesia': 'SIL',
   'piedmont': 'PIE',
   'tuscany': 'TUS',
@@ -192,13 +199,19 @@ export function extractOrdersSection(response: string): string | null {
   // Look for ORDERS: section
   const ordersMatch = response.match(/ORDERS:\s*([\s\S]*?)(?=(?:RETREATS:|BUILDS:|REASONING:|DIPLOMACY:|$))/i);
   if (ordersMatch) {
-    return ordersMatch[1].trim();
+    let content = ordersMatch[1].trim();
+    // Remove any trailing code block markers
+    content = content.replace(/```\s*$/g, '');
+    return content;
   }
 
   // Look for code block with orders
   const codeBlockMatch = response.match(/```(?:\w*\n)?([\s\S]*?)```/);
   if (codeBlockMatch) {
-    return codeBlockMatch[1].trim();
+    let content = codeBlockMatch[1].trim();
+    // Strip "ORDERS:" prefix if it appears at the start of the code block
+    content = content.replace(/^ORDERS:\s*/i, '');
+    return content;
   }
 
   return null;
@@ -252,6 +265,11 @@ export function parseOrderLine(line: string): {
 
   // Remove leading dashes or bullets
   cleaned = cleaned.replace(/^[-*•]\s*/, '');
+
+  // Normalize "MOVE TO" and "MOVES TO" to "->"
+  cleaned = cleaned.replace(/\s+MOVES?\s+TO\s+/gi, ' -> ');
+  // Normalize "MOVE" followed by destination to "->"
+  cleaned = cleaned.replace(/\s+MOVE\s+(?!.*(?:SUPPORT|CONVOY|HOLD))/gi, ' -> ');
 
   // Try to find the action keyword and split there
   const actionKeywords = ['HOLD', 'SUPPORT', 'CONVOY', '->'];
@@ -350,8 +368,12 @@ function parseAction(
     };
   }
 
-  // MOVE: -> Destination or MOVE Destination
-  const moveMatch = action.match(/^(?:->|-|MOVE\s+)([A-Za-z\s.]+?)(?:\s*\(([^)]+)\))?(?:\s+VIA\s+CONVOY)?$/i);
+  // MOVE: -> Destination or MOVE Destination (with optional VIA CONVOY)
+  // First, strip VIA CONVOY from the action string for cleaner parsing
+  const viaConvoy = /VIA\s+CONVOY/i.test(action);
+  const actionClean = action.replace(/\s+VIA\s+CONVOY/gi, '').trim();
+
+  const moveMatch = actionClean.match(/^(?:->|-|MOVE\s+)([A-Za-z\s.]+?)(?:\s*\(([^)]+)\))?$/i);
   if (moveMatch) {
     const destination = normalizeProvince(moveMatch[1]);
     if (!destination) {
@@ -359,7 +381,6 @@ function parseAction(
     }
 
     const coast = moveMatch[2] ? parseCoast(moveMatch[2]) : undefined;
-    const viaConvoy = /VIA\s+CONVOY/i.test(action);
 
     const order: MoveOrder = {
       type: 'MOVE',
@@ -414,11 +435,13 @@ function parseAction(
     };
   }
 
-  // CONVOY: CONVOY [Unit] [Province] -> [Destination]
-  const convoyMatch = action.match(/^CONVOY\s+([AF])?\s*([A-Za-z\s.]+?)\s*(?:->|-|to)\s*([A-Za-z\s.]+)$/i);
+  // CONVOY: CONVOY [Unit] [Province] -> [Destination] (VIA CONVOY)?
+  const convoyMatch = action.match(/^CONVOY\s+([AF])?\s*([A-Za-z\s.]+?)\s*(?:->|-|to)\s*([A-Za-z\s.]+?)(?:\s+VIA\s+CONVOY)?$/i);
   if (convoyMatch) {
     const convoyedProvince = normalizeProvince(convoyMatch[2]);
-    const destination = normalizeProvince(convoyMatch[3]);
+    // Strip VIA CONVOY from destination if somehow included
+    const destStr = convoyMatch[3].replace(/\s+VIA\s+CONVOY$/i, '').trim();
+    const destination = normalizeProvince(destStr);
 
     if (!convoyedProvince) {
       return { order: null, error: `Unknown convoyed unit: ${convoyMatch[2]}` };

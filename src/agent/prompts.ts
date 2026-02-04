@@ -424,25 +424,39 @@ SEND RUSSIA: "Let's coordinate our movements in the Black Sea."
 Use double quotes around your message content.`;
 
     case 'MOVEMENT':
+      // Generate unit-specific examples for the prompt using actual territory abbreviations
+      const unitExamples = view.myUnits.slice(0, 3).map(u => {
+        const unitType = u.type === 'army' ? 'A' : 'F';
+        return `${unitType} ${u.territory} HOLD`;
+      }).join('\n');
+
+      // List the unit territories with their abbreviations
+      const unitList = view.myUnits.map(u => {
+        const unitType = u.type === 'army' ? 'A' : 'F';
+        return `${unitType} ${u.territory}`;
+      }).join(', ');
+
       return `## Your Task: Submit Orders
-Submit orders for all ${view.myUnits.length} of your units.
 
-You MUST include an ORDERS section with one order per line.
-Example format:
-\`\`\`
+Your units: ${unitList}
+
+**CRITICAL RULES:**
+1. Start with "ORDERS:" on the FIRST LINE
+2. One order per line, NO explanations in the ORDERS section
+3. Use ONLY the 3-letter territory abbreviations shown above
+4. Do NOT use full names like "Warsaw" - use "WAR" instead
+
+**Format:**
 ORDERS:
-A Paris -> Burgundy
-F Brest -> English Channel
-A Marseilles HOLD
-A Munich SUPPORT A Paris -> Burgundy
-\`\`\`
+${unitExamples || 'A LON HOLD\nF ENG -> NTH'}
 
-Order types:
-- MOVE: \`A Province -> Destination\` or \`F Province -> Destination\`
-- HOLD: \`A Province HOLD\` or \`F Province HOLD\`
-- SUPPORT: \`A Province SUPPORT A OtherProvince -> Destination\`
+**Order types:**
+- HOLD: A PAR HOLD
+- MOVE: A PAR -> BUR (use -> for moves)
+- SUPPORT HOLD: A MUN SUPPORT A PAR
+- SUPPORT MOVE: A MUN SUPPORT A PAR -> BUR
 
-Every unit needs exactly one order. Use A for Army, F for Fleet.`;
+Put any reasoning AFTER the orders section, not mixed in.`;
 
     case 'RETREAT':
       return `## Your Task: Submit Retreats

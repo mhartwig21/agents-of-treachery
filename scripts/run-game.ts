@@ -3,12 +3,14 @@
  * Run a full Diplomacy game simulation with AI agents.
  *
  * Usage:
- *   npx tsx scripts/run-game.ts              # Run with real AI
+ *   npx tsx scripts/run-game.ts              # Run with real AI (Claude)
  *   npx tsx scripts/run-game.ts --mock       # Run with mock AI
+ *   npx tsx scripts/run-game.ts --ollama     # Run with Ollama (local models)
+ *   npx tsx scripts/run-game.ts --model qwen2.5:7b  # Specify Ollama model
  *   npx tsx scripts/run-game.ts --turns 10   # Limit to 10 turns
  *   npx tsx scripts/run-game.ts --output game.json  # Save game state
  *
- * Requires ANTHROPIC_API_KEY environment variable (unless --mock).
+ * Requires ANTHROPIC_API_KEY environment variable (unless --mock or --ollama).
  */
 
 import * as fs from 'fs';
@@ -106,23 +108,89 @@ F Brest HOLD
   }
 }
 
-function parseArgs(): { useMock: boolean; maxTurns: number; outputFile?: string } {
+/**
+ * Ollama LLM Provider for local open-source models.
+ * Uses OpenAI-compatible API.
+ */
+class OllamaLLMProvider implements LLMProvider {
+  private baseUrl: string;
+  private model: string;
+
+  constructor(model: string, baseUrl = 'http://localhost:11434') {
+    this.baseUrl = baseUrl;
+    this.model = model;
+  }
+
+  async complete(params: LLMCompletionParams): Promise<LLMCompletionResult> {
+    const maxTokens = params.maxTokens || 2048;
+    const temperature = params.temperature ?? 0.7;
+
+    const response = await fetch(`${this.baseUrl}/v1/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: this.model,
+        max_tokens: maxTokens,
+        temperature,
+        messages: params.messages.map(m => ({
+          role: m.role,
+          content: m.content,
+        })),
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Ollama API error: ${response.status} - ${error}`);
+    }
+
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content || '';
+    const finishReason = data.choices?.[0]?.finish_reason;
+
+    return {
+      content,
+      usage: {
+        inputTokens: data.usage?.prompt_tokens || 0,
+        outputTokens: data.usage?.completion_tokens || 0,
+      },
+      stopReason: finishReason === 'stop' ? 'end_turn' : 'max_tokens',
+    };
+  }
+}
+
+function parseArgs(): {
+  useMock: boolean;
+  useOllama: boolean;
+  ollamaModel: string;
+  maxTurns: number;
+  outputFile?: string
+} {
   const args = process.argv.slice(2);
   let useMock = false;
+  let useOllama = false;
+  let ollamaModel = 'qwen2.5:7b'; // Default to best-performing model
   let maxTurns = 0; // 0 means unlimited
   let outputFile: string | undefined;
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--mock') useMock = true;
+    if (args[i] === '--ollama') useOllama = true;
+    if (args[i] === '--model' && args[i + 1]) {
+      ollamaModel = args[i + 1];
+      i++;
+    }
     if (args[i] === '--turns' && args[i + 1]) {
       maxTurns = parseInt(args[i + 1], 10);
+      i++;
     }
     if (args[i] === '--output' && args[i + 1]) {
       outputFile = args[i + 1];
+      i++;
     }
   }
 
-  return { useMock, maxTurns, outputFile };
+  return { useMock, useOllama, ollamaModel, maxTurns, outputFile };
 }
 
 // Game state snapshots for export
@@ -138,14 +206,17 @@ interface GameSnapshot {
 
 async function main() {
   const apiKey = process.env.ANTHROPIC_API_KEY;
-  const { useMock, maxTurns, outputFile } = parseArgs();
+  const { useMock, useOllama, ollamaModel, maxTurns, outputFile } = parseArgs();
 
-  if (!apiKey && !useMock) {
+  if (!apiKey && !useMock && !useOllama) {
     console.error('Error: ANTHROPIC_API_KEY environment variable is required.');
     console.error('Set it with: export ANTHROPIC_API_KEY=your-key');
     console.error('Or run with --mock for testing without API calls.');
+    console.error('Or run with --ollama to use local Ollama models.');
     console.error('\nOptions:');
     console.error('  --mock          Run with mock AI (for testing)');
+    console.error('  --ollama        Use local Ollama models');
+    console.error('  --model NAME    Specify Ollama model (default: qwen2.5:7b)');
     console.error('  --turns N       Limit to N turns');
     console.error('  --output FILE   Save game state to JSON file');
     process.exit(1);
@@ -154,13 +225,23 @@ async function main() {
   console.log('🎯 Agents of Treachery - Game Simulation');
   console.log('========================================\n');
 
-  const llmProvider = useMock
-    ? new MockLLMProvider()
-    : new ClaudeLLMProvider(apiKey!);
+  let llmProvider: LLMProvider;
+  let modelName: string;
 
   if (useMock) {
+    llmProvider = new MockLLMProvider();
+    modelName = 'mock';
     console.log('⚠️  Running in MOCK mode (no real AI calls)\n');
+  } else if (useOllama) {
+    llmProvider = new OllamaLLMProvider(ollamaModel);
+    modelName = ollamaModel;
+    console.log(`🦙 Running with Ollama model: ${ollamaModel}\n`);
+  } else {
+    llmProvider = new ClaudeLLMProvider(apiKey!);
+    modelName = 'claude-sonnet-4-20250514';
+    console.log('🤖 Running with Claude AI\n');
   }
+
   if (maxTurns > 0) {
     console.log(`📊 Limited to ${maxTurns} turns\n`);
   }
@@ -179,7 +260,7 @@ async function main() {
       paranoia: 0.3 + (i % 3) * 0.15,
       deceptiveness: 0.2 + (i % 4) * 0.1,
     },
-    model: useMock ? 'mock' : 'claude-sonnet-4-20250514',
+    model: modelName,
     temperature: 0.7,
     maxTokens: 2048,
   }));
