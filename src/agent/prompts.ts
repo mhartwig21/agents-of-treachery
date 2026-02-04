@@ -462,9 +462,14 @@ SEND RUSSIA: "Let's coordinate our movements in the Black Sea."
 Use double quotes around your message content.`;
 
     case 'MOVEMENT':
-      // Generate unit-specific examples for the prompt using actual territory abbreviations
+      // Generate unit-specific examples showing MOVES, not just HOLDs
       const unitExamples = view.myUnits.slice(0, 3).map(u => {
         const unitType = u.type === 'ARMY' ? 'A' : 'F';
+        const adjacent = u.adjacentProvinces || [];
+        // Show a MOVE example if possible, otherwise HOLD
+        if (adjacent.length > 0) {
+          return `${unitType} ${u.province} -> ${adjacent[0]}`;
+        }
         return `${unitType} ${u.province} HOLD`;
       }).join('\n');
 
@@ -477,6 +482,8 @@ Use double quotes around your message content.`;
 
       return `## Your Task: Submit Orders
 
+**STRATEGY REMINDER:** To win, you MUST capture 18 supply centers! You cannot win by holding - you must ATTACK and EXPAND. Move your units aggressively toward uncontrolled supply centers and enemy territories.
+
 **Your units and their VALID move destinations:**
 ${unitListWithAdjacent}
 
@@ -486,14 +493,15 @@ ${unitListWithAdjacent}
 3. Use ONLY 3-letter province abbreviations
 4. **MOVES CAN ONLY GO TO ADJACENT PROVINCES** - see destinations listed above!
 5. Do NOT attempt multi-turn moves (e.g., LON cannot reach NWY in one turn)
+6. **BE AGGRESSIVE** - holding all units is a losing strategy!
 
 **Format (EXACTLY like this, no explanations after):**
 ORDERS:
-${unitExamples || 'A LON HOLD\nF ENG -> NTH'}
+${unitExamples || 'A LON -> NTH\nF ENG -> BEL'}
 
 **Order types:**
-- HOLD: A PAR HOLD
-- MOVE: A PAR -> BUR (ONLY to adjacent province!)
+- MOVE: A PAR -> BUR (attack/expand toward SCs!)
+- HOLD: A PAR HOLD (only when defending)
 - SUPPORT HOLD: A MUN SUPPORT A PAR
 - SUPPORT MOVE: A MUN SUPPORT A PAR -> BUR
 
