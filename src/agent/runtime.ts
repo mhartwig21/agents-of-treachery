@@ -35,6 +35,10 @@ import { buildSystemPrompt, buildTurnPrompt } from './prompts';
 import { createAgentGameView, createStrategicSummary } from './game-view';
 import { parseAgentResponse, validateOrders, fillDefaultOrders } from './order-parser';
 import { GameLogger, getGameLogger, getInvalidOrderStats, formatModelStatsReport } from '../server/game-logger';
+import {
+  createDiaryEntry,
+  analyzeDiaryForDeception,
+} from '../analysis/deception';
 
 /**
  * Event types emitted by the runtime.
@@ -533,6 +537,43 @@ export class AgentRuntime {
           this.gameState.phase
         );
       }
+    }
+
+    // Log diary entry and detect deception
+    const diaryEntry = createDiaryEntry(
+      power,
+      this.gameState.year,
+      this.gameState.season,
+      this.gameState.phase,
+      response.content,
+      session.config.model
+    );
+
+    // Log the diary entry
+    this.logger.diaryEntry(
+      power,
+      session.config.model,
+      this.gameState.year,
+      this.gameState.season,
+      this.gameState.phase,
+      diaryEntry.intentions,
+      diaryEntry.reasoning,
+      diaryEntry.analysis
+    );
+
+    // Detect and log deception
+    const deceptions = analyzeDiaryForDeception(diaryEntry);
+    for (const deception of deceptions) {
+      this.logger.deceptionDetected(
+        deception.deceiver,
+        session.config.model,
+        deception.type,
+        deception.targets,
+        deception.year,
+        deception.season,
+        deception.diaryEvidence,
+        deception.confidence
+      );
     }
 
     const result: AgentTurnResult = {

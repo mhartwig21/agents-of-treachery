@@ -15,6 +15,8 @@ import {
   listGameLogs,
   getInvalidOrderStats,
   formatModelStatsReport,
+  getLieStats,
+  formatLieStatsReport,
   filterLogsByType,
   type GameLogEntry,
 } from '../src/server/game-logger';
@@ -117,6 +119,10 @@ function analyzeGame(gameId: string) {
   // Invalid order analysis by model
   const invalidStats = getInvalidOrderStats(gameId);
   console.log(formatModelStatsReport(invalidStats));
+
+  // Lie detection analysis by model and power
+  const lieStats = getLieStats(gameId);
+  console.log(formatLieStatsReport(lieStats));
 
   // Error summary
   const errors = filterLogsByType(logs, ['error']);

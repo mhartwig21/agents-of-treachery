@@ -9,6 +9,11 @@ import { existsSync, mkdirSync, appendFileSync, readFileSync, readdirSync, statS
 import { join, dirname, basename } from 'path';
 
 /**
+ * Deception type for lie detection.
+ */
+export type DeceptionType = 'INTENTIONAL_LIE' | 'CONTRADICTORY_CLAIM' | 'BROKEN_PROMISE' | 'MISDIRECTION';
+
+/**
  * Log event types for game debugging.
  */
 export type GameLogEvent =
@@ -25,6 +30,8 @@ export type GameLogEvent =
   | { type: 'orders_submitted'; power: string; orders: string[]; valid: boolean; invalidReason?: string }
   | { type: 'invalid_order'; power: string; model?: string; orderText: string; error: string; year: number; season: string; phase: string }
   | { type: 'message_sent'; from: string; to: string | string[]; preview: string }
+  | { type: 'diary_entry'; power: string; model?: string; year: number; season: string; phase: string; intentions: string; reasoning: string; analysis: string }
+  | { type: 'deception_detected'; power: string; model?: string; deceptionType: DeceptionType; targets: string[]; year: number; season: string; evidence: string; confidence: number }
   | { type: 'error'; error: string; context?: string; stack?: string }
   | { type: 'warning'; message: string; context?: string }
   | { type: 'debug'; message: string; data?: unknown };
@@ -137,6 +144,52 @@ export class GameLogger {
 
   messageSent(from: string, to: string | string[], preview: string): void {
     this.log({ type: 'message_sent', from, to, preview });
+  }
+
+  diaryEntry(
+    power: string,
+    model: string | undefined,
+    year: number,
+    season: string,
+    phase: string,
+    intentions: string,
+    reasoning: string,
+    analysis: string
+  ): void {
+    this.log({
+      type: 'diary_entry',
+      power,
+      model,
+      year,
+      season,
+      phase,
+      intentions,
+      reasoning,
+      analysis,
+    });
+  }
+
+  deceptionDetected(
+    power: string,
+    model: string | undefined,
+    deceptionType: DeceptionType,
+    targets: string[],
+    year: number,
+    season: string,
+    evidence: string,
+    confidence: number
+  ): void {
+    this.log({
+      type: 'deception_detected',
+      power,
+      model,
+      deceptionType,
+      targets,
+      year,
+      season,
+      evidence,
+      confidence,
+    });
   }
 
   error(error: string, context?: string, stack?: string): void {
@@ -529,6 +582,332 @@ export function formatModelStatsReport(report: ModelStatsReport): string {
         lines.push('  Sample Invalid Orders:');
         for (const sample of stats.samples.slice(0, 3)) {
           lines.push(`    [${sample.power}] "${sample.orderText}" - ${sample.error}`);
+        }
+      }
+    }
+  }
+
+  lines.push('');
+  lines.push('═'.repeat(60));
+
+  return lines.join('\n');
+}
+
+/**
+ * Statistics for deception/lies aggregated by model.
+ */
+export interface LieStats {
+  /** Model identifier */
+  model: string;
+  /** Total diary entries from this model */
+  totalDiaryEntries: number;
+  /** Number of deception events detected */
+  deceptionCount: number;
+  /** Deception rate (0-1) */
+  deceptionRate: number;
+  /** Breakdown by deception type */
+  byType: Record<DeceptionType, number>;
+  /** Sample deceptions for review */
+  samples: Array<{
+    power: string;
+    targets: string[];
+    type: DeceptionType;
+    evidence: string;
+    confidence: number;
+    phase: string;
+  }>;
+}
+
+/**
+ * Statistics for deception/lies aggregated by power.
+ */
+export interface PowerLieStats {
+  /** Power name */
+  power: string;
+  /** Total diary entries from this power */
+  totalDiaryEntries: number;
+  /** Number of deception events detected */
+  deceptionCount: number;
+  /** Deception rate (0-1) */
+  deceptionRate: number;
+  /** Breakdown by deception type */
+  byType: Record<DeceptionType, number>;
+  /** Powers most frequently targeted */
+  topTargets: Array<{ power: string; count: number }>;
+}
+
+/**
+ * Aggregated lie statistics for a game.
+ */
+export interface LieStatsReport {
+  gameId: string;
+  totalDiaryEntries: number;
+  totalDeceptions: number;
+  overallDeceptionRate: number;
+  byModel: LieStats[];
+  byPower: PowerLieStats[];
+}
+
+/**
+ * Extracts lie/deception statistics from game logs, aggregated by model and power.
+ */
+export function getLieStats(gameId: string, logsDir?: string): LieStatsReport {
+  const logs = readGameLogs(gameId, logsDir);
+
+  // Track data per model
+  const modelData = new Map<string, {
+    diaryEntries: number;
+    deceptions: number;
+    byType: Record<DeceptionType, number>;
+    samples: Array<{
+      power: string;
+      targets: string[];
+      type: DeceptionType;
+      evidence: string;
+      confidence: number;
+      phase: string;
+    }>;
+  }>();
+
+  // Track data per power
+  const powerData = new Map<string, {
+    diaryEntries: number;
+    deceptions: number;
+    byType: Record<DeceptionType, number>;
+    targetCounts: Map<string, number>;
+  }>();
+
+  // Initialize deception type record
+  const initByType = (): Record<DeceptionType, number> => ({
+    'INTENTIONAL_LIE': 0,
+    'CONTRADICTORY_CLAIM': 0,
+    'BROKEN_PROMISE': 0,
+    'MISDIRECTION': 0,
+  });
+
+  for (const entry of logs) {
+    const event = entry.event;
+
+    // Track diary entries
+    if (event.type === 'diary_entry') {
+      const model = event.model || 'unknown';
+      const power = event.power;
+
+      // Model tracking
+      if (!modelData.has(model)) {
+        modelData.set(model, {
+          diaryEntries: 0,
+          deceptions: 0,
+          byType: initByType(),
+          samples: [],
+        });
+      }
+      modelData.get(model)!.diaryEntries++;
+
+      // Power tracking
+      if (!powerData.has(power)) {
+        powerData.set(power, {
+          diaryEntries: 0,
+          deceptions: 0,
+          byType: initByType(),
+          targetCounts: new Map(),
+        });
+      }
+      powerData.get(power)!.diaryEntries++;
+    }
+
+    // Track deceptions
+    if (event.type === 'deception_detected') {
+      const model = event.model || 'unknown';
+      const power = event.power;
+
+      // Model tracking
+      if (!modelData.has(model)) {
+        modelData.set(model, {
+          diaryEntries: 0,
+          deceptions: 0,
+          byType: initByType(),
+          samples: [],
+        });
+      }
+      const mData = modelData.get(model)!;
+      mData.deceptions++;
+      mData.byType[event.deceptionType]++;
+
+      // Keep sample (max 10 per model)
+      if (mData.samples.length < 10) {
+        mData.samples.push({
+          power: event.power,
+          targets: event.targets,
+          type: event.deceptionType,
+          evidence: event.evidence,
+          confidence: event.confidence,
+          phase: `${event.season} ${event.year}`,
+        });
+      }
+
+      // Power tracking
+      if (!powerData.has(power)) {
+        powerData.set(power, {
+          diaryEntries: 0,
+          deceptions: 0,
+          byType: initByType(),
+          targetCounts: new Map(),
+        });
+      }
+      const pData = powerData.get(power)!;
+      pData.deceptions++;
+      pData.byType[event.deceptionType]++;
+
+      // Track targets
+      for (const target of event.targets) {
+        pData.targetCounts.set(target, (pData.targetCounts.get(target) || 0) + 1);
+      }
+    }
+  }
+
+  // Build model stats
+  const byModel: LieStats[] = [];
+  let totalDiary = 0;
+  let totalDeceptions = 0;
+
+  for (const [model, data] of modelData) {
+    totalDiary += data.diaryEntries;
+    totalDeceptions += data.deceptions;
+
+    byModel.push({
+      model,
+      totalDiaryEntries: data.diaryEntries,
+      deceptionCount: data.deceptions,
+      deceptionRate: data.diaryEntries > 0 ? data.deceptions / data.diaryEntries : 0,
+      byType: data.byType,
+      samples: data.samples,
+    });
+  }
+
+  // Sort by deception rate descending
+  byModel.sort((a, b) => b.deceptionRate - a.deceptionRate);
+
+  // Build power stats
+  const byPower: PowerLieStats[] = [];
+
+  for (const [power, data] of powerData) {
+    // Get top targets
+    const topTargets = Array.from(data.targetCounts.entries())
+      .map(([p, count]) => ({ power: p, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 3);
+
+    byPower.push({
+      power,
+      totalDiaryEntries: data.diaryEntries,
+      deceptionCount: data.deceptions,
+      deceptionRate: data.diaryEntries > 0 ? data.deceptions / data.diaryEntries : 0,
+      byType: data.byType,
+      topTargets,
+    });
+  }
+
+  // Sort by deception rate descending
+  byPower.sort((a, b) => b.deceptionRate - a.deceptionRate);
+
+  return {
+    gameId,
+    totalDiaryEntries: totalDiary,
+    totalDeceptions,
+    overallDeceptionRate: totalDiary > 0 ? totalDeceptions / totalDiary : 0,
+    byModel,
+    byPower,
+  };
+}
+
+/**
+ * Formats the lie stats report for console output.
+ */
+export function formatLieStatsReport(report: LieStatsReport): string {
+  const lines: string[] = [];
+
+  lines.push('');
+  lines.push('═'.repeat(60));
+  lines.push('LIE DETECTION STATISTICS');
+  lines.push('═'.repeat(60));
+  lines.push('');
+  lines.push(`Game: ${report.gameId}`);
+  lines.push(`Total Diary Entries Analyzed: ${report.totalDiaryEntries}`);
+  lines.push(`Total Deceptions Detected: ${report.totalDeceptions}`);
+  lines.push(`Overall Deception Rate: ${(report.overallDeceptionRate * 100).toFixed(2)}%`);
+  lines.push('');
+
+  if (report.totalDiaryEntries === 0) {
+    lines.push('No diary entries found. Enable diary logging to track deception.');
+    lines.push('');
+    lines.push('═'.repeat(60));
+    return lines.join('\n');
+  }
+
+  // By Model section
+  if (report.byModel.length > 0) {
+    lines.push('─'.repeat(60));
+    lines.push('DECEPTION BY MODEL');
+    lines.push('─'.repeat(60));
+
+    for (const stats of report.byModel) {
+      lines.push('');
+      lines.push(`Model: ${stats.model}`);
+      lines.push(`  Diary Entries: ${stats.totalDiaryEntries}`);
+      lines.push(`  Deceptions Detected: ${stats.deceptionCount}`);
+      lines.push(`  Deception Rate: ${(stats.deceptionRate * 100).toFixed(2)}%`);
+
+      const hasTypes = Object.values(stats.byType).some(v => v > 0);
+      if (hasTypes) {
+        lines.push('  By Type:');
+        for (const [type, count] of Object.entries(stats.byType)) {
+          if (count > 0) {
+            lines.push(`    ${type}: ${count}`);
+          }
+        }
+      }
+
+      if (stats.samples.length > 0) {
+        lines.push('  Sample Deceptions:');
+        for (const sample of stats.samples.slice(0, 3)) {
+          const targets = sample.targets.join(', ');
+          const evidencePreview = sample.evidence.slice(0, 60).replace(/\n/g, ' ');
+          lines.push(`    [${sample.type}] ${sample.power} vs ${targets}`);
+          lines.push(`      "${evidencePreview}..." (${(sample.confidence * 100).toFixed(0)}% conf)`);
+        }
+      }
+    }
+  }
+
+  // By Power section
+  if (report.byPower.length > 0) {
+    lines.push('');
+    lines.push('─'.repeat(60));
+    lines.push('DECEPTION BY POWER');
+    lines.push('─'.repeat(60));
+
+    for (const stats of report.byPower) {
+      lines.push('');
+      lines.push(`Power: ${stats.power}`);
+      lines.push(`  Diary Entries: ${stats.totalDiaryEntries}`);
+      lines.push(`  Deceptions Detected: ${stats.deceptionCount}`);
+      lines.push(`  Deception Rate: ${(stats.deceptionRate * 100).toFixed(2)}%`);
+
+      const hasTypes = Object.values(stats.byType).some(v => v > 0);
+      if (hasTypes) {
+        lines.push('  By Type:');
+        for (const [type, count] of Object.entries(stats.byType)) {
+          if (count > 0) {
+            lines.push(`    ${type}: ${count}`);
+          }
+        }
+      }
+
+      if (stats.topTargets.length > 0) {
+        lines.push('  Most Frequent Targets:');
+        for (const target of stats.topTargets) {
+          lines.push(`    ${target.power}: ${target.count} times`);
         }
       }
     }
