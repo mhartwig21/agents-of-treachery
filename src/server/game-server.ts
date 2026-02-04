@@ -383,6 +383,7 @@ export class GameServer {
           uiOrders.push(engineToUIOrder(order));
         }
       }
+      uiGameState.orders = uiOrders;
 
       const snapshot: GameSnapshot = {
         id: generateSnapshotId(snapshotYear, snapshotSeason, snapshotPhase),
