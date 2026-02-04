@@ -191,11 +191,12 @@ class OpenAICompatibleProvider implements LLMProvider {
         };
       }
 
-      // Handle rate limits (429) with exponential backoff
-      if (response.status === 429) {
+      // Handle rate limits (429) and server errors (5xx) with exponential backoff
+      if (response.status === 429 || (response.status >= 500 && response.status < 600)) {
         if (attempt === this.maxRetries) {
           const error = await response.text();
-          throw new Error(`Rate limit exceeded after ${this.maxRetries} retries: ${error}`);
+          const errorType = response.status === 429 ? 'Rate limit' : 'Server error';
+          throw new Error(`${errorType} (${response.status}) after ${this.maxRetries} retries: ${error}`);
         }
 
         // Parse retry-after header or use exponential backoff
@@ -208,12 +209,13 @@ class OpenAICompatibleProvider implements LLMProvider {
           waitTime = this.baseDelay * Math.pow(2, attempt);
         }
 
-        console.log(`  ⏳ Rate limited. Waiting ${Math.round(waitTime / 1000)}s before retry ${attempt + 1}/${this.maxRetries}...`);
+        const errorType = response.status === 429 ? 'Rate limited' : `Server error (${response.status})`;
+        console.log(`  ⏳ ${errorType}. Waiting ${Math.round(waitTime / 1000)}s before retry ${attempt + 1}/${this.maxRetries}...`);
         await sleep(waitTime);
         continue;
       }
 
-      // Other errors are not retried
+      // Other errors (4xx except 429) are not retried
       const error = await response.text();
       throw new Error(`LLM API error: ${response.status} - ${error}`);
     }
