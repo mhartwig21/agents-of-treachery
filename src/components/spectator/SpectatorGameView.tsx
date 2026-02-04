@@ -19,6 +19,8 @@ import { TurnScrubber } from './TurnScrubber';
 import { LiveActivityPanel } from './LiveActivityPanel';
 import { PhaseIndicator, PhaseBadge } from '../shared/PhaseIndicator';
 import { CollapsiblePanel } from '../shared/CollapsiblePanel';
+import { GameEventOverlay } from './GameEventOverlay';
+import { useGameSounds } from '../../audio';
 
 /** State for which sidebar panels are collapsed */
 interface CollapsedPanels {
@@ -53,6 +55,9 @@ export function SpectatorGameView({ onBack }: SpectatorGameViewProps) {
     orders: false,
     press: false,
   });
+
+  // Game sounds for audio feedback on events
+  const { lastEvents } = useGameSounds(currentSnapshot);
 
   // Live Data Accumulator: Merge snapshot data with streaming data when live
   // This shows messages/orders as they arrive, before phase resolution
@@ -166,6 +171,7 @@ export function SpectatorGameView({ onBack }: SpectatorGameViewProps) {
         setSelectedMessageId={setSelectedMessageId}
         accumulatedMessages={accumulatedMessages}
         accumulatedOrders={accumulatedOrders}
+        lastEvents={lastEvents}
       />
     );
   }
@@ -300,6 +306,9 @@ export function SpectatorGameView({ onBack }: SpectatorGameViewProps) {
           onNavigate={setSelectedMessageId}
         />
       )}
+
+      {/* Game event overlay for dramatic moments */}
+      <GameEventOverlay events={lastEvents} />
     </div>
   );
 }
@@ -324,6 +333,8 @@ interface MobileGameViewProps {
   accumulatedMessages: Message[];
   /** Accumulated orders (snapshot + live) */
   accumulatedOrders: UIOrder[];
+  /** Last detected game events for sound/visual effects */
+  lastEvents: import('../../audio').DetectedGameEvent[];
 }
 
 function MobileGameView({
@@ -341,6 +352,7 @@ function MobileGameView({
   setSelectedMessageId,
   accumulatedMessages,
   accumulatedOrders,
+  lastEvents,
 }: MobileGameViewProps) {
   // Find selected message from accumulated messages (includes live data)
   const selectedMessage = useMemo(() => {
@@ -439,6 +451,9 @@ function MobileGameView({
           </button>
         ))}
       </nav>
+
+      {/* Game event overlay for dramatic moments */}
+      <GameEventOverlay events={lastEvents} />
     </div>
   );
 }
