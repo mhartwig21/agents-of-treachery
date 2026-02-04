@@ -121,7 +121,7 @@ export interface SpectatorState {
   /** Press filtering options */
   pressFilters: PressFilters;
   /** Current view within a game */
-  gameViewTab: 'map' | 'orders' | 'press';
+  gameViewTab: 'map' | 'orders' | 'press' | 'relationships';
   /** Whether mobile layout is active */
   isMobile: boolean;
 }
@@ -155,7 +155,7 @@ export type SpectatorAction =
   | { type: 'ADD_SNAPSHOT'; gameId: string; snapshot: GameSnapshot }
   | { type: 'SET_PRESS_FILTERS'; filters: Partial<PressFilters> }
   | { type: 'CLEAR_PRESS_FILTERS' }
-  | { type: 'SET_GAME_VIEW_TAB'; tab: 'map' | 'orders' | 'press' }
+  | { type: 'SET_GAME_VIEW_TAB'; tab: 'map' | 'orders' | 'press' | 'relationships' }
   | { type: 'SET_MOBILE'; isMobile: boolean };
 
 /**

@@ -18,6 +18,7 @@ import { PressMessageModal } from './PressMessageModal';
 import { TurnScrubber } from './TurnScrubber';
 import { LiveActivityPanel } from './LiveActivityPanel';
 import { SupplyCenterBalanceChart } from './SupplyCenterBalanceChart';
+import { RelationshipGraphPanel } from './RelationshipGraphPanel';
 import { PhaseIndicator, PhaseBadge } from '../shared/PhaseIndicator';
 import { CollapsiblePanel } from '../shared/CollapsiblePanel';
 import { GameEventOverlay } from './GameEventOverlay';
@@ -30,6 +31,7 @@ interface CollapsedPanels {
   scBalance: boolean;
   orders: boolean;
   press: boolean;
+  relationships: boolean;
 }
 
 interface SpectatorGameViewProps {
@@ -57,6 +59,7 @@ export function SpectatorGameView({ onBack }: SpectatorGameViewProps) {
     scBalance: false,
     orders: false,
     press: false,
+    relationships: false,
   });
 
   // Game sounds for audio feedback on events
@@ -261,7 +264,7 @@ export function SpectatorGameView({ onBack }: SpectatorGameViewProps) {
             />
           </CollapsiblePanel>
 
-          {/* Supply Center Balance Chart */}
+{/* Supply Center Balance Chart */}
           <CollapsiblePanel
             title="SC Balance"
             collapsed={collapsedPanels.scBalance}
@@ -269,6 +272,20 @@ export function SpectatorGameView({ onBack }: SpectatorGameViewProps) {
             className="border-b border-gray-700"
           >
             <SupplyCenterBalanceChart height={180} />
+          </CollapsiblePanel>
+
+          {/* Relationships */}
+          <CollapsiblePanel
+            title="Relationships"
+            collapsed={collapsedPanels.relationships}
+            onCollapsedChange={(v) => setCollapsedPanels((p) => ({ ...p, relationships: v }))}
+            className="border-b border-gray-700"
+          >
+            <RelationshipGraphPanel
+              messages={accumulatedMessages}
+              selectedPower={selectedPower}
+              onPowerClick={setSelectedPower}
+            />
           </CollapsiblePanel>
 
           {/* Orders */}
@@ -337,8 +354,8 @@ interface MobileGameViewProps {
   isLive: boolean;
   selectedTerritory: string | null;
   setSelectedTerritory: (id: string | null) => void;
-  gameViewTab: 'map' | 'orders' | 'press';
-  setGameViewTab: (tab: 'map' | 'orders' | 'press') => void;
+  gameViewTab: 'map' | 'orders' | 'press' | 'relationships';
+  setGameViewTab: (tab: 'map' | 'orders' | 'press' | 'relationships') => void;
   onBack?: () => void;
   selectedMessageId: string | null;
   setSelectedMessageId: (id: string | null) => void;
@@ -429,6 +446,13 @@ function MobileGameView({
             />
           </div>
         )}
+        {gameViewTab === 'relationships' && (
+          <div className="h-full overflow-auto p-4">
+            <RelationshipGraphPanel
+              messages={accumulatedMessages}
+            />
+          </div>
+        )}
       </div>
 
       {/* Compact scrubber */}
@@ -446,7 +470,7 @@ function MobileGameView({
 
       {/* Bottom tab bar */}
       <nav className="bg-gray-800 border-t border-gray-700 flex">
-        {(['map', 'orders', 'press'] as const).map((tab) => (
+        {(['map', 'orders', 'press', 'relationships'] as const).map((tab) => (
           <button
             key={tab}
             onClick={() => setGameViewTab(tab)}
@@ -461,6 +485,7 @@ function MobileGameView({
             {tab === 'map' && 'Map'}
             {tab === 'orders' && 'Orders'}
             {tab === 'press' && 'Press'}
+            {tab === 'relationships' && 'Graph'}
           </button>
         ))}
       </nav>

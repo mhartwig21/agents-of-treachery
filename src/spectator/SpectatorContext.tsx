@@ -150,7 +150,7 @@ interface SpectatorContextValue {
   goToLive: () => void;
   setPressFilters: (filters: Partial<PressFilters>) => void;
   clearPressFilters: () => void;
-  setGameViewTab: (tab: 'map' | 'orders' | 'press') => void;
+  setGameViewTab: (tab: 'map' | 'orders' | 'press' | 'relationships') => void;
 
   // Game management
   addGame: (game: GameHistory) => void;
@@ -240,7 +240,7 @@ export function SpectatorProvider({ children, initialGames = [] }: SpectatorProv
     dispatch({ type: 'CLEAR_PRESS_FILTERS' });
   }, []);
 
-  const setGameViewTab = useCallback((tab: 'map' | 'orders' | 'press') => {
+  const setGameViewTab = useCallback((tab: 'map' | 'orders' | 'press' | 'relationships') => {
     dispatch({ type: 'SET_GAME_VIEW_TAB', tab });
   }, []);
 
