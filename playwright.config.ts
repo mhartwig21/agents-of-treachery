@@ -38,8 +38,13 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'] },
     },
     {
+      name: 'simulation',
+      testMatch: /game-simulation\.spec\.ts/,
+      use: { ...devices['Desktop Chrome'] },
+    },
+    {
       name: 'chromium',
-      testIgnore: /live\.spec\.ts/,
+      testIgnore: /(live|game-simulation)\.spec\.ts/,
       use: { ...devices['Desktop Chrome'] },
     },
   ],

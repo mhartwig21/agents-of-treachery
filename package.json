@@ -17,6 +17,8 @@
     "test:e2e:smoke": "playwright test --project=smoke",
     "test:e2e:live": "E2E_LIVE=true playwright test --project=live",
     "test:e2e:live:ui": "E2E_LIVE=true playwright test --project=live --ui",
+    "test:e2e:sim": "E2E_LIVE=true playwright test --project=simulation",
+    "test:e2e:sim:ui": "E2E_LIVE=true playwright test --project=simulation --ui",
     "typecheck": "tsc --noEmit",
     "server": "tsx src/server/index.ts",
     "server:mock": "LLM_PROVIDER=mock tsx src/server/index.ts",
