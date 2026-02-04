@@ -17,6 +17,7 @@ import {
   resolveBuilds,
   cloneState,
 } from '../engine/game';
+import { getHomeCenters } from '../engine/map';
 
 import { PressSystem } from '../press/press-system';
 import { AgentPressAPI, createAgentAPIs } from '../press/agent-api';
@@ -363,10 +364,51 @@ export class AgentRuntime {
 
     const agentTurns = await this.runAgentTurns('build', powersWithBuilds);
 
-    // Submit build orders
+    // Get currently occupied provinces
+    const occupiedProvinces = new Set(this.gameState.units.map(u => u.province));
+
+    // Submit build orders with validation
     for (const [power, result] of agentTurns) {
       if (result.buildOrders && result.buildOrders.length > 0) {
-        submitBuilds(this.gameState, power, result.buildOrders);
+        // Filter out invalid builds
+        const homeCenters = getHomeCenters(power).map(h => h.id);
+        const validBuilds = result.buildOrders.filter(build => {
+          if (build.type === 'BUILD') {
+            // Must be unoccupied home center we control
+            if (!build.province) return false;
+            if (occupiedProvinces.has(build.province)) {
+              if (this.config.verbose) {
+                console.log(`[${power}] Invalid build: ${build.province} is occupied`);
+              }
+              return false;
+            }
+            if (!homeCenters.includes(build.province)) {
+              if (this.config.verbose) {
+                console.log(`[${power}] Invalid build: ${build.province} is not a home center`);
+              }
+              return false;
+            }
+            if (this.gameState.supplyCenters.get(build.province) !== power) {
+              if (this.config.verbose) {
+                console.log(`[${power}] Invalid build: ${power} does not control ${build.province}`);
+              }
+              return false;
+            }
+            // Mark province as occupied for subsequent builds in this phase
+            occupiedProvinces.add(build.province);
+          }
+          return true;
+        });
+
+        if (validBuilds.length > 0) {
+          try {
+            submitBuilds(this.gameState, power, validBuilds);
+          } catch (error) {
+            if (this.config.verbose) {
+              console.log(`[${power}] Build submission error: ${error}`);
+            }
+          }
+        }
       }
     }
 

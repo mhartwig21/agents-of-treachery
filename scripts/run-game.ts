@@ -156,13 +156,25 @@ class OpenAICompatibleProvider implements LLMProvider {
       })),
     });
 
-    // Retry loop with exponential backoff for rate limits
+    // Retry loop with exponential backoff for rate limits and network errors
     for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
-      const response = await fetch(`${this.baseUrl}/v1/chat/completions`, {
-        method: 'POST',
-        headers,
-        body,
-      });
+      let response: Response;
+      try {
+        response = await fetch(`${this.baseUrl}/v1/chat/completions`, {
+          method: 'POST',
+          headers,
+          body,
+        });
+      } catch (networkError) {
+        // Handle network errors (ECONNRESET, timeout, etc.)
+        if (attempt === this.maxRetries) {
+          throw new Error(`Network error after ${this.maxRetries} retries: ${networkError}`);
+        }
+        const waitTime = this.baseDelay * Math.pow(2, attempt);
+        console.log(`  ⏳ Network error. Waiting ${Math.round(waitTime / 1000)}s before retry ${attempt + 1}/${this.maxRetries}...`);
+        await sleep(waitTime);
+        continue;
+      }
 
       if (response.ok) {
         const data = await response.json();
@@ -224,8 +236,9 @@ class OllamaLLMProvider extends OpenAICompatibleProvider {
  */
 class OpenAILLMProvider extends OpenAICompatibleProvider {
   constructor(apiKey: string, model = 'gpt-4o-mini') {
-    // Use longer delays for OpenAI rate limits (10s base, up to 5 retries)
-    super('https://api.openai.com', model, apiKey, 5, 10000);
+    // Use longer delays for OpenAI rate limits (15s base, up to 8 retries)
+    // This handles the 200k TPM limit more gracefully
+    super('https://api.openai.com', model, apiKey, 8, 15000);
   }
 }
 
@@ -360,10 +373,12 @@ async function main() {
     maxTokens: 2048,
   }));
 
+  // Disable parallel execution for OpenAI to avoid rate limits
+  // (7 agents * ~5k tokens = 35k per batch, quickly exhausts 200k/min limit)
   const config: AgentRuntimeConfig = {
     gameId,
     agents: agentConfigs,
-    parallelExecution: true,
+    parallelExecution: !useOpenAI,
     turnTimeout: 120000,
     persistMemory: false,
     verbose: true,
