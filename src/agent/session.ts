@@ -25,6 +25,11 @@ function generateSessionId(): AgentSessionId {
 }
 
 /**
+ * Default maximum conversation history size (sliding window).
+ */
+const DEFAULT_MAX_CONVERSATION_HISTORY = 50;
+
+/**
  * Manages agent sessions for all powers in a game.
  */
 export class AgentSessionManager {
@@ -32,15 +37,18 @@ export class AgentSessionManager {
   private memoryManager: MemoryManager;
   private gameId: string;
   private llmProvider: LLMProvider;
+  private maxConversationHistory: number;
 
   constructor(
     gameId: string,
     memoryStore: MemoryStore,
-    llmProvider: LLMProvider
+    llmProvider: LLMProvider,
+    maxConversationHistory: number = DEFAULT_MAX_CONVERSATION_HISTORY
   ) {
     this.gameId = gameId;
     this.memoryManager = new MemoryManager(memoryStore);
     this.llmProvider = llmProvider;
+    this.maxConversationHistory = maxConversationHistory;
   }
 
   /**
@@ -111,6 +119,7 @@ export class AgentSessionManager {
 
   /**
    * Add a message to a session's conversation history.
+   * Implements sliding window to bound memory - keeps system message + most recent N messages.
    */
   addMessage(power: Power, message: Omit<ConversationMessage, 'timestamp'>): void {
     const session = this.sessions.get(power);
@@ -120,7 +129,40 @@ export class AgentSessionManager {
         timestamp: new Date(),
       });
       session.lastActiveAt = new Date();
+
+      // Apply sliding window - preserve system message, keep only recent messages
+      this.applyConversationWindow(session);
     }
+  }
+
+  /**
+   * Apply sliding window to conversation history.
+   * Preserves the system message (if any) and keeps only the most recent messages.
+   */
+  private applyConversationWindow(session: AgentSession): void {
+    const history = session.conversationHistory;
+    if (history.length <= this.maxConversationHistory) {
+      return;
+    }
+
+    // Find system message (usually first)
+    const systemMessage = history.find(m => m.role === 'system');
+
+    // Calculate how many non-system messages to keep
+    const maxNonSystem = systemMessage
+      ? this.maxConversationHistory - 1
+      : this.maxConversationHistory;
+
+    // Get non-system messages
+    const nonSystemMessages = history.filter(m => m.role !== 'system');
+
+    // Keep only the most recent
+    const recentMessages = nonSystemMessages.slice(-maxNonSystem);
+
+    // Rebuild history with system message first (if present)
+    session.conversationHistory = systemMessage
+      ? [systemMessage, ...recentMessages]
+      : recentMessages;
   }
 
   /**
@@ -191,6 +233,18 @@ export class AgentSessionManager {
   }
 
   /**
+   * Destroy all sessions and clear memory.
+   * Call this when the game is complete to free resources.
+   */
+  destroyAll(): void {
+    for (const session of this.sessions.values()) {
+      session.conversationHistory = [];
+      session.isActive = false;
+    }
+    this.sessions.clear();
+  }
+
+  /**
    * Get session statistics.
    */
   getStats(): SessionStats {
@@ -229,9 +283,10 @@ export interface SessionStats {
  */
 export function createTestSessionManager(
   gameId: string,
-  llmProvider: LLMProvider
+  llmProvider: LLMProvider,
+  maxConversationHistory?: number
 ): AgentSessionManager {
-  return new AgentSessionManager(gameId, new InMemoryStore(), llmProvider);
+  return new AgentSessionManager(gameId, new InMemoryStore(), llmProvider, maxConversationHistory);
 }
 
 /**

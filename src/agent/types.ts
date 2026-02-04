@@ -264,6 +264,12 @@ export interface AgentRuntimeConfig {
 
   /** Base URL for LLM API */
   apiBaseUrl?: string;
+
+  /** Maximum conversation history messages per agent (sliding window). Default: 50 */
+  maxConversationHistory?: number;
+
+  /** Maximum press messages to retain per channel (sliding window). Default: 100 */
+  maxPressMessagesPerChannel?: number;
 }
 
 /**
@@ -274,6 +280,8 @@ export const DEFAULT_RUNTIME_CONFIG: Partial<AgentRuntimeConfig> = {
   turnTimeout: 120000, // 2 minutes
   persistMemory: true,
   verbose: false,
+  maxConversationHistory: 50,
+  maxPressMessagesPerChannel: 100,
 };
 
 /**

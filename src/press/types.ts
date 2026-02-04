@@ -163,6 +163,8 @@ export interface PressConfig {
   maxMessageLength: number;
   /** Rate limiting: max messages per phase per power */
   maxMessagesPerPhase: number;
+  /** Maximum messages to retain per channel (sliding window for memory bounds) */
+  maxMessagesPerChannel: number;
 }
 
 export const DEFAULT_PRESS_CONFIG: PressConfig = {
@@ -170,4 +172,5 @@ export const DEFAULT_PRESS_CONFIG: PressConfig = {
   includeMetadata: true,
   maxMessageLength: 2000,
   maxMessagesPerPhase: 100,
+  maxMessagesPerChannel: 100,
 };

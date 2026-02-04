@@ -169,11 +169,35 @@ export class PressSystem {
     // Store the message
     this.messages.set(message.id, message);
 
-    // Add to channel messages
+    // Add to channel messages with sliding window
     if (!this.messagesByChannel.has(request.channelId)) {
       this.messagesByChannel.set(request.channelId, []);
     }
-    this.messagesByChannel.get(request.channelId)!.push(message);
+    const channelMessages = this.messagesByChannel.get(request.channelId)!;
+    channelMessages.push(message);
+
+    // Apply sliding window - keep only most recent messages per channel
+    if (channelMessages.length > this.config.maxMessagesPerChannel) {
+      const toRemove = channelMessages.splice(
+        0,
+        channelMessages.length - this.config.maxMessagesPerChannel
+      );
+      // Also remove from main message map to free memory
+      for (const oldMsg of toRemove) {
+        this.messages.delete(oldMsg.id);
+        // Remove from thread tracking if needed
+        if (oldMsg.replyTo) {
+          const threadRoot = this.getThreadRoot(oldMsg.replyTo);
+          const threadMessages = this.messagesByThread.get(threadRoot);
+          if (threadMessages) {
+            const idx = threadMessages.indexOf(oldMsg);
+            if (idx !== -1) {
+              threadMessages.splice(idx, 1);
+            }
+          }
+        }
+      }
+    }
 
     // Add to thread if it's a reply
     if (request.replyTo) {
@@ -352,5 +376,17 @@ export class PressSystem {
    */
   getConfig(): PressConfig {
     return { ...this.config };
+  }
+
+  /**
+   * Clear all stored messages and reset state.
+   * Call this when the game is complete to free memory.
+   */
+  clear(): void {
+    this.messages.clear();
+    this.messagesByChannel.clear();
+    this.messagesByThread.clear();
+    this.messageCountByPowerAndPhase.clear();
+    this.notificationCallbacks = [];
   }
 }

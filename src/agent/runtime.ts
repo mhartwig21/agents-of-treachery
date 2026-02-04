@@ -100,23 +100,29 @@ export class AgentRuntime {
     // Initialize memory store
     const store = memoryStore ?? new InMemoryStore();
 
-    // Initialize session manager
+    // Initialize session manager with memory bounds
     this.sessionManager = new AgentSessionManager(
       this.config.gameId,
       store,
-      llmProvider
+      llmProvider,
+      this.config.maxConversationHistory
     );
 
     // Initialize game state
     this.gameState = createInitialState();
 
-    // Initialize press system
-    this.pressSystem = new PressSystem({
-      gameId: this.config.gameId,
-      year: this.gameState.year,
-      season: this.gameState.season,
-      phase: this.gameState.phase,
-    });
+    // Initialize press system with memory bounds
+    this.pressSystem = new PressSystem(
+      {
+        gameId: this.config.gameId,
+        year: this.gameState.year,
+        season: this.gameState.season,
+        phase: this.gameState.phase,
+      },
+      {
+        maxMessagesPerChannel: this.config.maxPressMessagesPerChannel,
+      }
+    );
 
     // Create press APIs for all powers
     this.pressAPIs = createAgentAPIs(this.pressSystem);
@@ -630,6 +636,18 @@ export class AgentRuntime {
    */
   stop(): void {
     this.isRunning = false;
+  }
+
+  /**
+   * Clean up all resources.
+   * Call this after the game ends to free memory.
+   */
+  cleanup(): void {
+    this.isRunning = false;
+    this.sessionManager.destroyAll();
+    this.pressSystem.clear();
+    this.pressAPIs.clear();
+    this.eventCallbacks = [];
   }
 
   /**

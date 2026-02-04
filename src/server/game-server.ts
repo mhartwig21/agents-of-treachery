@@ -22,24 +22,41 @@ import type { Message } from '../press/types';
 import { GameLogger, getGameLogger, removeGameLogger, createLoggingLLMProvider } from './game-logger';
 
 /**
+ * Protocol version for API evolution.
+ * Increment when making breaking changes to message format.
+ */
+export const PROTOCOL_VERSION = 1;
+
+/**
+ * Base message interface with version.
+ */
+interface VersionedMessage {
+  v?: number; // Protocol version (defaults to 1 if absent)
+}
+
+/**
  * Message types sent to clients.
  */
-export type ServerMessage =
+export type ServerMessage = VersionedMessage & (
   | { type: 'GAME_LIST'; games: GameHistory[] }
   | { type: 'GAME_CREATED'; game: GameHistory }
   | { type: 'GAME_UPDATED'; gameId: string; updates: Partial<GameHistory> }
   | { type: 'SNAPSHOT_ADDED'; gameId: string; snapshot: GameSnapshot }
   | { type: 'GAME_ENDED'; gameId: string; winner?: string; draw?: boolean }
-  | { type: 'ERROR'; message: string };
+  | { type: 'ERROR'; message: string }
+  | { type: 'PROTOCOL_INFO'; version: number; minSupported: number }
+);
 
 /**
  * Message types received from clients.
  */
-export type ClientMessage =
+export type ClientMessage = VersionedMessage & (
   | { type: 'START_GAME'; name?: string }
   | { type: 'SUBSCRIBE_GAME'; gameId: string }
   | { type: 'UNSUBSCRIBE_GAME'; gameId: string }
-  | { type: 'GET_GAMES' };
+  | { type: 'GET_GAMES' }
+  | { type: 'GET_PROTOCOL_INFO' }
+);
 
 /**
  * Active game state.
@@ -188,6 +205,14 @@ export class GameServer {
           games: Array.from(this.games.values()).map((g) => g.history),
         });
         break;
+
+      case 'GET_PROTOCOL_INFO':
+        this.sendToClient(ws, {
+          type: 'PROTOCOL_INFO',
+          version: PROTOCOL_VERSION,
+          minSupported: 1, // Minimum protocol version we support
+        });
+        break;
     }
   }
 
@@ -300,7 +325,37 @@ export class GameServer {
     } finally {
       // Clean up logger registry
       removeGameLogger(gameId);
+      // Clean up game resources (schedule for next tick to allow final messages to be sent)
+      setTimeout(() => this.cleanupGame(gameId), 1000);
     }
+  }
+
+  /**
+   * Cleans up a completed game, freeing memory resources.
+   * Retains history for spectator access but releases runtime resources.
+   */
+  private cleanupGame(gameId: string): void {
+    const game = this.games.get(gameId);
+    if (!game) {
+      return;
+    }
+
+    console.log(`[${gameId}] Cleaning up game resources`);
+
+    // Stop and cleanup the runtime
+    game.runtime.cleanup();
+
+    // Clear accumulated data
+    game.accumulatedMessages = [];
+    game.accumulatedOrders.clear();
+    game.subscribers.clear();
+
+    // Keep the game in the map for history access but mark as cleaned
+    // Remove after a delay to allow late subscribers to get final state
+    setTimeout(() => {
+      this.games.delete(gameId);
+      console.log(`[${gameId}] Game removed from active games`);
+    }, 60000); // Keep for 1 minute after cleanup
   }
 
   /**
@@ -437,19 +492,19 @@ export class GameServer {
   }
 
   /**
-   * Sends a message to a specific client.
+   * Sends a message to a specific client with protocol version.
    */
   private sendToClient(ws: WebSocket, message: ServerMessage): void {
     if (ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify(message));
+      ws.send(JSON.stringify({ v: PROTOCOL_VERSION, ...message }));
     }
   }
 
   /**
-   * Broadcasts a message to all connected clients.
+   * Broadcasts a message to all connected clients with protocol version.
    */
   private broadcast(message: ServerMessage): void {
-    const data = JSON.stringify(message);
+    const data = JSON.stringify({ v: PROTOCOL_VERSION, ...message });
     for (const client of this.clients) {
       if (client.readyState === WebSocket.OPEN) {
         client.send(data);
@@ -458,10 +513,10 @@ export class GameServer {
   }
 
   /**
-   * Broadcasts a message to all subscribers of a game.
+   * Broadcasts a message to all subscribers of a game with protocol version.
    */
   private broadcastToGame(game: ActiveGame, message: ServerMessage): void {
-    const data = JSON.stringify(message);
+    const data = JSON.stringify({ v: PROTOCOL_VERSION, ...message });
     for (const client of game.subscribers) {
       if (client.readyState === WebSocket.OPEN) {
         client.send(data);
