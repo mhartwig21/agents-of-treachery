@@ -298,26 +298,27 @@ export function engineToUIGameState(engineState: EngineGameState): UIGameState {
 
 /**
  * Converts engine Order to UI Order format.
+ * Province IDs are converted to lowercase to match territory data.
  */
 export function engineToUIOrder(order: EngineOrder): UIOrder {
   switch (order.type) {
     case 'HOLD':
-      return { type: 'hold', unit: order.unit };
+      return { type: 'hold', unit: order.unit.toLowerCase() };
     case 'MOVE':
-      return { type: 'move', unit: order.unit, target: order.destination };
+      return { type: 'move', unit: order.unit.toLowerCase(), target: order.destination.toLowerCase() };
     case 'SUPPORT':
       return {
         type: 'support',
-        unit: order.unit,
-        target: order.supportedUnit,
-        supportTarget: order.destination,
+        unit: order.unit.toLowerCase(),
+        target: order.supportedUnit.toLowerCase(),
+        supportTarget: order.destination?.toLowerCase(),
       };
     case 'CONVOY':
       return {
         type: 'convoy',
-        unit: order.unit,
-        target: order.convoyedUnit,
-        supportTarget: order.destination,
+        unit: order.unit.toLowerCase(),
+        target: order.convoyedUnit.toLowerCase(),
+        supportTarget: order.destination.toLowerCase(),
       };
   }
 }
