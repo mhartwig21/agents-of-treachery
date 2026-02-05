@@ -90,14 +90,15 @@ export function OrderArrow({
   }, [fromX, fromY, toX, toY, curved])
 
   // Style configuration based on order type
+  // Patterns match existing DiplomacyMap styles for consistency
   const strokeDasharray = useMemo(() => {
     switch (type) {
       case 'move':
         return undefined // Solid line
       case 'support':
-        return '8 6' // Dashed
+        return '5 5' // Dashed (matches DiplomacyMap support)
       case 'convoy':
-        return '3 6' // Dotted
+        return '10 5' // Long dash (matches DiplomacyMap convoy)
     }
   }, [type])
 
