@@ -3,11 +3,14 @@
  *
  * Shows all 7 powers as nodes with edges representing their relationships.
  * Edge color indicates alliance status, thickness indicates strength.
+ * Trust badges show "say vs do" reliability for each power.
  */
 
 import { useMemo, useState } from 'react';
 import { type LowercasePower, POWER_COLORS, UI_POWERS } from '../../spectator/types';
 import type { Message } from '../../press/types';
+import type { TrustMetrics, PairwiseTrust } from '../../analysis/trust';
+import { TrustIndicatorBadgeSVG, TrustBadgeInline } from './TrustIndicatorBadge';
 
 /**
  * Relationship data for a pair of powers.
@@ -32,6 +35,12 @@ interface RelationshipGraphPanelProps {
   onPowerClick?: (power: LowercasePower) => void;
   /** Optional CSS class */
   className?: string;
+  /** Trust metrics for each power (from TrustTracker) */
+  trustMetrics?: TrustMetrics[];
+  /** Pairwise trust data for edge labels */
+  pairwiseTrust?: PairwiseTrust[];
+  /** Whether to show trust indicators */
+  showTrustIndicators?: boolean;
 }
 
 /** Power abbreviations for display */
@@ -154,16 +163,50 @@ function calculateNodePositions(
   return positions;
 }
 
+/** Convert Power to LowercasePower */
+function toLowerPower(power: string): LowercasePower {
+  return power.toLowerCase() as LowercasePower;
+}
+
+/** Get trust level from score */
+function getTrustLevel(score: number, promiseCount: number): 'high' | 'medium' | 'low' | 'unknown' {
+  if (promiseCount === 0) return 'unknown';
+  if (score >= 70) return 'high';
+  if (score >= 40) return 'medium';
+  return 'low';
+}
+
 export function RelationshipGraphPanel({
   messages,
   selectedPower,
   onPowerClick,
   className = '',
+  trustMetrics = [],
+  pairwiseTrust = [],
+  showTrustIndicators = true,
 }: RelationshipGraphPanelProps) {
   const [hoveredPower, setHoveredPower] = useState<LowercasePower | null>(null);
 
   // Compute relationships from messages
   const relationships = useMemo(() => computeRelationships(messages), [messages]);
+
+  // Create trust lookup maps
+  const trustByPower = useMemo(() => {
+    const map = new Map<LowercasePower, TrustMetrics>();
+    for (const metrics of trustMetrics) {
+      map.set(toLowerPower(metrics.power), metrics);
+    }
+    return map;
+  }, [trustMetrics]);
+
+  const trustByPair = useMemo(() => {
+    const map = new Map<string, PairwiseTrust>();
+    for (const trust of pairwiseTrust) {
+      const key = [trust.power1, trust.power2].sort().join('-').toLowerCase();
+      map.set(key, trust);
+    }
+    return map;
+  }, [pairwiseTrust]);
 
   // Graph dimensions
   const width = 400;
@@ -203,6 +246,13 @@ export function RelationshipGraphPanel({
     return power1 === activePower || power2 === activePower;
   };
 
+  // Get broken promise count for an edge
+  const getBrokenPromiseCount = (power1: LowercasePower, power2: LowercasePower): number => {
+    const key = [power1, power2].sort().join('-');
+    const trust = trustByPair.get(key);
+    return trust?.brokenPromises.length ?? 0;
+  };
+
   // Statistics for the selected/hovered power
   const activePower = hoveredPower || selectedPower;
   const activeStats = useMemo(() => {
@@ -238,19 +288,39 @@ export function RelationshipGraphPanel({
               const pos1 = nodePositions.get(rel.power1)!;
               const pos2 = nodePositions.get(rel.power2)!;
               const highlighted = isEdgeHighlighted(rel.power1, rel.power2);
+              const brokenCount = showTrustIndicators ? getBrokenPromiseCount(rel.power1, rel.power2) : 0;
+              const midX = (pos1.x + pos2.x) / 2;
+              const midY = (pos1.y + pos2.y) / 2;
 
               return (
-                <line
-                  key={`${rel.power1}-${rel.power2}`}
-                  x1={pos1.x}
-                  y1={pos1.y}
-                  x2={pos2.x}
-                  y2={pos2.y}
-                  stroke={getEdgeColor(rel.status)}
-                  strokeWidth={getEdgeWidth(rel.strength)}
-                  strokeOpacity={highlighted ? 0.8 : 0.15}
-                  className="transition-opacity duration-200"
-                />
+                <g key={`${rel.power1}-${rel.power2}`}>
+                  <line
+                    x1={pos1.x}
+                    y1={pos1.y}
+                    x2={pos2.x}
+                    y2={pos2.y}
+                    stroke={getEdgeColor(rel.status)}
+                    strokeWidth={getEdgeWidth(rel.strength)}
+                    strokeOpacity={highlighted ? 0.8 : 0.15}
+                    className="transition-opacity duration-200"
+                  />
+                  {/* Broken promise indicator on edge */}
+                  {brokenCount > 0 && highlighted && (
+                    <g transform={`translate(${midX}, ${midY})`}>
+                      <title>{`${brokenCount} broken promise${brokenCount > 1 ? 's' : ''}`}</title>
+                      <circle r={8} fill="#ef444440" stroke="#ef4444" strokeWidth="1" />
+                      <text
+                        textAnchor="middle"
+                        dominantBaseline="central"
+                        fill="#ef4444"
+                        fontSize="8"
+                        fontWeight="bold"
+                      >
+                        {brokenCount}
+                      </text>
+                    </g>
+                  )}
+                </g>
               );
             })}
           </g>
@@ -261,6 +331,13 @@ export function RelationshipGraphPanel({
               const pos = nodePositions.get(power)!;
               const isActive = power === activePower;
               const isSelected = power === selectedPower;
+              const trust = trustByPower.get(power);
+              const trustLevel = trust
+                ? getTrustLevel(trust.trustScore, trust.promisesMade)
+                : 'unknown';
+              const trustTooltip = trust
+                ? `${trust.trustScore}% reliable (${trust.promisesKept}/${trust.promisesKept + trust.promisesBroken} kept)`
+                : 'No promise data';
 
               return (
                 <g
@@ -307,6 +384,17 @@ export function RelationshipGraphPanel({
                   >
                     {POWER_ABBREV[power]}
                   </text>
+
+                  {/* Trust indicator badge */}
+                  {showTrustIndicators && (
+                    <TrustIndicatorBadgeSVG
+                      level={trustLevel}
+                      x={pos.x + nodeRadius - 4}
+                      y={pos.y - nodeRadius + 4}
+                      size={8}
+                      tooltip={trustTooltip}
+                    />
+                  )}
                 </g>
               );
             })}
@@ -315,19 +403,40 @@ export function RelationshipGraphPanel({
       </div>
 
       {/* Legend */}
-      <div className="flex justify-center gap-4 mt-2 text-xs text-gray-400">
-        <div className="flex items-center gap-1">
-          <div className="w-4 h-1 bg-green-500 rounded" />
-          <span>Allied</span>
+      <div className="flex flex-col items-center gap-2 mt-2">
+        {/* Relationship legend */}
+        <div className="flex justify-center gap-4 text-xs text-gray-400">
+          <div className="flex items-center gap-1">
+            <div className="w-4 h-1 bg-green-500 rounded" />
+            <span>Allied</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <div className="w-4 h-1 bg-red-500 rounded" />
+            <span>Hostile</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <div className="w-4 h-1 bg-gray-500 rounded" />
+            <span>Neutral</span>
+          </div>
         </div>
-        <div className="flex items-center gap-1">
-          <div className="w-4 h-1 bg-red-500 rounded" />
-          <span>Hostile</span>
-        </div>
-        <div className="flex items-center gap-1">
-          <div className="w-4 h-1 bg-gray-500 rounded" />
-          <span>Neutral</span>
-        </div>
+
+        {/* Trust legend */}
+        {showTrustIndicators && (
+          <div className="flex justify-center gap-3 text-xs text-gray-400">
+            <div className="flex items-center gap-1">
+              <span className="w-3 h-3 rounded-full bg-green-500/20 border border-green-500 flex items-center justify-center text-green-500 text-[8px] font-bold">{'\u2713'}</span>
+              <span>Reliable</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <span className="w-3 h-3 rounded-full bg-yellow-500/20 border border-yellow-500 flex items-center justify-center text-yellow-500 text-[8px] font-bold">!</span>
+              <span>Caution</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <span className="w-3 h-3 rounded-full bg-red-500/20 border border-red-500 flex items-center justify-center text-red-500 text-[8px] font-bold">{'\u2717'}</span>
+              <span>Unreliable</span>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Active power info */}
@@ -339,6 +448,13 @@ export function RelationshipGraphPanel({
               style={{ backgroundColor: POWER_COLORS[activePower] }}
             />
             <span className="font-medium text-white">{POWER_NAMES[activePower]}</span>
+            {/* Trust badge inline */}
+            {showTrustIndicators && (() => {
+              const trust = trustByPower.get(activePower);
+              if (!trust) return null;
+              const level = getTrustLevel(trust.trustScore, trust.promisesMade);
+              return <TrustBadgeInline level={level} score={trust.trustScore} showScore />;
+            })()}
           </div>
           <div className="text-sm text-gray-400 space-y-1">
             <div>
@@ -360,6 +476,36 @@ export function RelationshipGraphPanel({
                 </span>
               </div>
             )}
+            {/* Trust metrics */}
+            {showTrustIndicators && (() => {
+              const trust = trustByPower.get(activePower);
+              if (!trust || trust.promisesMade === 0) return null;
+              return (
+                <div className="mt-2 pt-2 border-t border-gray-700">
+                  <div className="text-xs text-gray-500 mb-1">Promise Reliability</div>
+                  <div>
+                    Promises made: <span className="text-white">{trust.promisesMade}</span>
+                  </div>
+                  <div>
+                    Kept:{' '}
+                    <span className="text-green-400">{trust.promisesKept}</span>
+                    {trust.promisesBroken > 0 && (
+                      <span className="text-red-400 ml-2">
+                        Broken: {trust.promisesBroken}
+                      </span>
+                    )}
+                  </div>
+                  {trust.trend !== 'stable' && (
+                    <div className="text-xs mt-1">
+                      Trend:{' '}
+                      <span className={trust.trend === 'improving' ? 'text-green-400' : 'text-red-400'}>
+                        {trust.trend === 'improving' ? '\u2191 Improving' : '\u2193 Declining'}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </div>
         </div>
       )}
