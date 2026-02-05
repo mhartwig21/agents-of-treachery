@@ -5,6 +5,7 @@
  * gathers artifacts, and runs analysis after completion.
  */
 
+import 'dotenv/config';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { EventEmitter } from 'events';
