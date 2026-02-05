@@ -189,6 +189,20 @@ export {
 
 export type { ParseResult } from './order-parser';
 
+// Negotiation analysis
+export {
+  analyzeIncomingMessage,
+  analyzeUnreadMessages,
+  summarizeAnalyses,
+} from './negotiation';
+
+export type {
+  MessageAnalysis,
+  SenderIntent,
+  StrategicValue,
+  RecommendedResponse,
+} from './types';
+
 // Runtime
 export {
   AgentRuntime,

@@ -508,3 +508,64 @@ export interface StructuredBuildOrder {
   unitType?: 'ARMY' | 'FLEET';
   coast?: string;
 }
+
+/**
+ * Sender intent classification for incoming messages.
+ */
+export type SenderIntent =
+  | 'alliance_proposal'
+  | 'threat'
+  | 'information'
+  | 'deception'
+  | 'neutral'
+  | 'request'
+  | 'counter_proposal';
+
+/**
+ * Strategic value assessment.
+ */
+export type StrategicValue = 'high' | 'medium' | 'low';
+
+/**
+ * Recommended response action.
+ */
+export type RecommendedResponse = 'accept' | 'counter' | 'reject' | 'stall' | 'investigate';
+
+/**
+ * Analysis of an incoming diplomatic message.
+ * Generated before responding to help agents make strategic decisions.
+ */
+export interface MessageAnalysis {
+  /** The message ID being analyzed */
+  messageId: string;
+
+  /** Sender of the message */
+  sender: Power;
+
+  /** Classified intent of the sender */
+  senderIntent: SenderIntent;
+
+  /** Credibility score 0-1 based on sender's history */
+  credibilityScore: number;
+
+  /** Strategic value of responding positively */
+  strategicValue: StrategicValue;
+
+  /** Recommended response action */
+  recommendedResponse: RecommendedResponse;
+
+  /** Detailed reasoning for the analysis */
+  reasoning: string;
+
+  /** Potential deception indicators detected */
+  redFlags: string[];
+
+  /** Key points or proposals extracted from the message */
+  keyPoints: string[];
+
+  /** How this aligns with known sender behavior patterns */
+  historyAlignment: 'consistent' | 'inconsistent' | 'no_history';
+
+  /** Analysis timestamp */
+  timestamp: Date;
+}
