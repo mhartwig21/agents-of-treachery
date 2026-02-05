@@ -10,8 +10,26 @@
  * Inspired by GoodStartLabs/AI_Diplomacy agent.py implementation.
  */
 
-import type { Season, Phase, Power } from '../engine/types';
+import type { Season, Phase, Power, GameState } from '../engine/types';
 import type { AgentMemory, DiaryEntry, DiaryEntryType, YearSummary, LLMProvider } from './types';
+
+/**
+ * Context for generating game-state-aware yearly summaries.
+ */
+export interface YearlyGameContext {
+  /** Supply centers owned at end of year */
+  currentSCs: string[];
+  /** Supply centers gained this year */
+  gainedSCs: string[];
+  /** Supply centers lost this year */
+  lostSCs: string[];
+  /** Current alliance status from memory */
+  alliances: Map<Power, 'solid' | 'shaky' | 'deteriorating' | 'none'>;
+  /** Betrayal events from this year */
+  betrayals: string[];
+  /** Total SC count */
+  totalSCs: number;
+}
 
 /**
  * Format a game phase as a diary phase identifier.
@@ -149,6 +167,278 @@ TERRITORIAL: [comma-separated list of territorial changes, or "None"]
 DIPLOMATIC: [comma-separated list of diplomatic changes, or "None"]
 
 Keep it concise - this will be used for context in future turns.`;
+}
+
+/**
+ * Extract alliance status from memory trust levels.
+ */
+function getAllianceStatus(trust: number): 'solid' | 'shaky' | 'deteriorating' | 'none' {
+  if (trust >= 0.6) return 'solid';
+  if (trust >= 0.3) return 'shaky';
+  if (trust >= 0) return 'deteriorating';
+  return 'none';
+}
+
+/**
+ * Extract yearly game context from game state and memory.
+ */
+export function extractYearlyGameContext(
+  power: Power,
+  gameState: GameState,
+  memory: AgentMemory,
+  previousYearSCs?: string[]
+): YearlyGameContext {
+  // Get current SCs for this power
+  const currentSCs: string[] = [];
+  for (const [province, owner] of gameState.supplyCenters) {
+    if (owner === power) {
+      currentSCs.push(province);
+    }
+  }
+
+  // Calculate gained/lost SCs compared to previous year
+  const prevSCs = previousYearSCs || [];
+  const gainedSCs = currentSCs.filter(sc => !prevSCs.includes(sc));
+  const lostSCs = prevSCs.filter(sc => !currentSCs.includes(sc));
+
+  // Extract alliance status from trust levels
+  const alliances = new Map<Power, 'solid' | 'shaky' | 'deteriorating' | 'none'>();
+  for (const [targetPower, trust] of memory.trustLevels) {
+    if (targetPower !== power) {
+      alliances.set(targetPower, getAllianceStatus(trust));
+    }
+  }
+
+  // Extract betrayals from memory events this year
+  const betrayals: string[] = [];
+  for (const event of memory.events) {
+    if (event.year === gameState.year && event.type === 'BETRAYAL') {
+      betrayals.push(event.description);
+    }
+  }
+
+  return {
+    currentSCs,
+    gainedSCs,
+    lostSCs,
+    alliances,
+    betrayals,
+    totalSCs: currentSCs.length,
+  };
+}
+
+/**
+ * Build an enhanced consolidation prompt with game state context.
+ */
+export function buildEnhancedConsolidationPrompt(
+  year: number,
+  power: Power,
+  entries: DiaryEntry[],
+  gameContext: YearlyGameContext
+): string {
+  const entriesText = entries
+    .map(e => `${e.phase} [${e.type}]: ${e.content}`)
+    .join('\n\n');
+
+  // Format SC changes
+  const gainedStr = gameContext.gainedSCs.length > 0
+    ? gameContext.gainedSCs.join(', ')
+    : 'None';
+  const lostStr = gameContext.lostSCs.length > 0
+    ? gameContext.lostSCs.join(', ')
+    : 'None';
+  const scDelta = gameContext.gainedSCs.length - gameContext.lostSCs.length;
+  const scDeltaStr = scDelta >= 0 ? `+${scDelta}` : `${scDelta}`;
+
+  // Format alliance status
+  const allianceLines: string[] = [];
+  for (const [targetPower, status] of gameContext.alliances) {
+    if (status !== 'none') {
+      allianceLines.push(`${targetPower}: ${status}`);
+    }
+  }
+  const alliancesStr = allianceLines.length > 0
+    ? allianceLines.join(', ')
+    : 'None established';
+
+  // Format betrayals
+  const betrayalsStr = gameContext.betrayals.length > 0
+    ? gameContext.betrayals.join('; ')
+    : 'None';
+
+  return `You are consolidating a Diplomacy agent's diary for ${power} in year ${year}.
+
+GAME STATE CONTEXT:
+- Supply Centers: ${gameContext.totalSCs} total
+- Gained: ${gainedStr} (${scDeltaStr} SCs, now at ${gameContext.totalSCs})
+- Lost: ${lostStr}
+- Alliances: ${alliancesStr}
+- Betrayals: ${betrayalsStr}
+
+DIARY ENTRIES FOR ${year}:
+${entriesText}
+
+Create a strategic summary using this EXACT format:
+Year ${year} Summary:
+- Gained: [SCs gained, or "None"] ([change] SCs, now at [total])
+- Lost: [SCs lost, or "None"]
+- Alliances: [power (status), power (status), or "None"]
+- Betrayals: [brief description, or "None"]
+- Key events: [1-2 most important events]
+- Strategic position: [1 sentence assessment]
+
+IMPORTANT: Match the format exactly. Be concise.`;
+}
+
+/**
+ * Parse the enhanced consolidation response from the LLM.
+ */
+export function parseEnhancedConsolidationResponse(
+  response: string,
+  year: number,
+  gameContext: YearlyGameContext
+): YearSummary {
+  // The summary is the entire formatted response
+  const lines = response.trim().split('\n');
+
+  // Extract key information from the response
+  const territorialChanges: string[] = [];
+  const diplomaticChanges: string[] = [];
+
+  // Look for Gained/Lost lines for territorial
+  for (const line of lines) {
+    const lowerLine = line.toLowerCase();
+    if (lowerLine.includes('gained:') && !lowerLine.includes('none')) {
+      const match = line.match(/Gained:\s*(.+?)(?:\s*\(|$)/i);
+      if (match && match[1].trim().toLowerCase() !== 'none') {
+        territorialChanges.push(`Gained: ${match[1].trim()}`);
+      }
+    }
+    if (lowerLine.includes('lost:') && !lowerLine.includes('none')) {
+      const match = line.match(/Lost:\s*(.+?)$/i);
+      if (match && match[1].trim().toLowerCase() !== 'none') {
+        territorialChanges.push(`Lost: ${match[1].trim()}`);
+      }
+    }
+    if (lowerLine.includes('alliances:') && !lowerLine.includes('none')) {
+      const match = line.match(/Alliances:\s*(.+?)$/i);
+      if (match && match[1].trim().toLowerCase() !== 'none') {
+        diplomaticChanges.push(match[1].trim());
+      }
+    }
+    if (lowerLine.includes('betrayals:') && !lowerLine.includes('none')) {
+      const match = line.match(/Betrayals:\s*(.+?)$/i);
+      if (match && match[1].trim().toLowerCase() !== 'none') {
+        diplomaticChanges.push(`Betrayal: ${match[1].trim()}`);
+      }
+    }
+  }
+
+  // Use game context to ensure accurate SC info even if LLM response is imperfect
+  if (territorialChanges.length === 0 && gameContext.gainedSCs.length > 0) {
+    territorialChanges.push(`Gained: ${gameContext.gainedSCs.join(', ')}`);
+  }
+  if (gameContext.lostSCs.length > 0) {
+    const hasLost = territorialChanges.some(t => t.toLowerCase().includes('lost:'));
+    if (!hasLost) {
+      territorialChanges.push(`Lost: ${gameContext.lostSCs.join(', ')}`);
+    }
+  }
+
+  return {
+    year,
+    summary: response.trim(),
+    territorialChanges,
+    diplomaticChanges,
+    consolidatedAt: new Date(),
+  };
+}
+
+/**
+ * Generate a game-state-aware yearly summary.
+ */
+export async function generateYearlySummary(
+  power: Power,
+  year: number,
+  diaryEntries: DiaryEntry[],
+  gameState: GameState,
+  memory: AgentMemory,
+  llmProvider: LLMProvider,
+  previousYearSCs?: string[]
+): Promise<YearSummary> {
+  // Extract game context
+  const gameContext = extractYearlyGameContext(power, gameState, memory, previousYearSCs);
+
+  // If no entries, create a minimal summary with game state info
+  if (diaryEntries.length === 0) {
+    const scDelta = gameContext.gainedSCs.length - gameContext.lostSCs.length;
+    const scDeltaStr = scDelta >= 0 ? `+${scDelta}` : `${scDelta}`;
+
+    return {
+      year,
+      summary: `Year ${year} Summary:
+- Gained: ${gameContext.gainedSCs.length > 0 ? gameContext.gainedSCs.join(', ') : 'None'} (${scDeltaStr} SCs, now at ${gameContext.totalSCs})
+- Lost: ${gameContext.lostSCs.length > 0 ? gameContext.lostSCs.join(', ') : 'None'}
+- Alliances: None established
+- Betrayals: None
+- Key events: No significant events recorded
+- Strategic position: Position maintained`,
+      territorialChanges: gameContext.gainedSCs.length > 0 || gameContext.lostSCs.length > 0
+        ? [...gameContext.gainedSCs.map(sc => `Gained: ${sc}`), ...gameContext.lostSCs.map(sc => `Lost: ${sc}`)]
+        : [],
+      diplomaticChanges: [],
+      consolidatedAt: new Date(),
+    };
+  }
+
+  // Build enhanced prompt with game state
+  const prompt = buildEnhancedConsolidationPrompt(year, power, diaryEntries, gameContext);
+
+  try {
+    const response = await llmProvider.complete({
+      messages: [
+        { role: 'user', content: prompt, timestamp: new Date() },
+      ],
+      maxTokens: 500,
+      temperature: 0.3,
+    });
+
+    return parseEnhancedConsolidationResponse(response.content, year, gameContext);
+  } catch (error) {
+    // Fallback to basic summary with game state info
+    console.warn(`Enhanced yearly summary generation failed for year ${year}:`, error);
+    return createGameStateAwareFallback(year, diaryEntries, gameContext);
+  }
+}
+
+/**
+ * Create a fallback summary using game state context (for error cases).
+ */
+function createGameStateAwareFallback(
+  year: number,
+  entries: DiaryEntry[],
+  gameContext: YearlyGameContext
+): YearSummary {
+  const negotiationCount = entries.filter(e => e.type === 'negotiation').length;
+  const scDelta = gameContext.gainedSCs.length - gameContext.lostSCs.length;
+  const scDeltaStr = scDelta >= 0 ? `+${scDelta}` : `${scDelta}`;
+
+  return {
+    year,
+    summary: `Year ${year} Summary:
+- Gained: ${gameContext.gainedSCs.length > 0 ? gameContext.gainedSCs.join(', ') : 'None'} (${scDeltaStr} SCs, now at ${gameContext.totalSCs})
+- Lost: ${gameContext.lostSCs.length > 0 ? gameContext.lostSCs.join(', ') : 'None'}
+- Alliances: See diplomatic notes
+- Betrayals: ${gameContext.betrayals.length > 0 ? gameContext.betrayals.join('; ') : 'None'}
+- Key events: ${negotiationCount} diplomatic exchanges
+- Strategic position: Review required`,
+    territorialChanges: [
+      ...(gameContext.gainedSCs.length > 0 ? [`Gained: ${gameContext.gainedSCs.join(', ')}`] : []),
+      ...(gameContext.lostSCs.length > 0 ? [`Lost: ${gameContext.lostSCs.join(', ')}`] : []),
+    ],
+    diplomaticChanges: gameContext.betrayals,
+    consolidatedAt: new Date(),
+  };
 }
 
 /**
@@ -393,11 +683,24 @@ export function shouldConsolidateDiary(
  */
 export async function consolidateDiary(
   memory: AgentMemory,
-  _power: Power,
+  power: Power,
   year: number,
-  llmProvider: LLMProvider
+  llmProvider: LLMProvider,
+  gameState?: GameState,
+  previousYearSCs?: string[]
 ): Promise<YearSummary> {
-  const summary = await consolidateYear(memory, year, llmProvider);
+  // Use enhanced summary generation when game state is available
+  const summary = gameState
+    ? await generateYearlySummary(
+        power,
+        year,
+        memory.currentYearDiary || [],
+        gameState,
+        memory,
+        llmProvider,
+        previousYearSCs
+      )
+    : await consolidateYear(memory, year, llmProvider);
 
   // Add consolidation entry to full diary
   const consolidationEntry = createDiaryEntry(
