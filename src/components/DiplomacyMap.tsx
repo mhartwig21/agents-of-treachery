@@ -1,6 +1,29 @@
 import { useState, useRef, useCallback } from 'react'
 import type { GameState, Power, Unit, Order } from '../types/game'
 import { territories, getTerritory, getTerritoryCenter } from '../data/territories'
+import { AnimatedUnit } from './map/AnimatedUnit'
+import { OrderArrow } from './map/OrderArrow'
+import { ConflictMarker, type Contender } from './map/ConflictMarker'
+import { FailedOrderMarker } from './map/ResolutionOverlay'
+
+/**
+ * Animation state provided by useResolutionAnimation hook.
+ * Contains all the state needed for animating turn resolution.
+ */
+export interface ResolutionAnimationState {
+  /** Set of unit territories that are dislodged */
+  dislodgedUnits: Set<string>
+  /** Map of unit territory to current animated position */
+  unitPositions: Map<string, { x: number; y: number }>
+  /** Map of order index to failure reason (if failed) */
+  failedOrders: Map<number, string>
+  /** Array of conflict data for contested territories */
+  conflictTerritories: Array<{
+    territory: string
+    contenders: Contender[]
+    resolved: boolean
+  }>
+}
 
 interface DiplomacyMapProps {
   gameState: GameState
@@ -10,6 +33,10 @@ interface DiplomacyMapProps {
   readOnly?: boolean
   /** Territories to highlight (e.g., for a selected power) */
   highlightedTerritories?: string[]
+  /** Animation state from useResolutionAnimation hook */
+  animationState?: ResolutionAnimationState
+  /** When true, shows animated components instead of static */
+  animationMode?: boolean
 }
 
 const POWER_COLORS: Record<Power, string> = {
@@ -35,6 +62,8 @@ export function DiplomacyMap({
   onTerritorySelect,
   readOnly = false,
   highlightedTerritories,
+  animationState,
+  animationMode = false,
 }: DiplomacyMapProps) {
   const svgRef = useRef<SVGSVGElement>(null)
   const [viewBox, setViewBox] = useState({ x: INITIAL_OFFSET.x, y: INITIAL_OFFSET.y, width: VIEWBOX.width, height: VIEWBOX.height })
@@ -441,13 +470,113 @@ export function DiplomacyMap({
         {/* Units */}
         {gameState.units.map((unit) => {
           const baseId = unit.territory.split('_')[0]
-          const center = getTerritoryCenter(baseId) || getTerritoryCenter(unit.territory)
-          if (!center) return null
-          return renderUnit(unit, center.x, center.y)
+          const defaultCenter = getTerritoryCenter(baseId) || getTerritoryCenter(unit.territory)
+          if (!defaultCenter) return null
+
+          // In animation mode, use animated position if available
+          if (animationMode && animationState) {
+            const animatedPos = animationState.unitPositions.get(unit.territory)
+            const x = animatedPos?.x ?? defaultCenter.x
+            const y = animatedPos?.y ?? defaultCenter.y
+            const isDislodged = animationState.dislodgedUnits.has(unit.territory)
+            const isMoving = animatedPos !== undefined
+
+            return (
+              <AnimatedUnit
+                key={`unit-${unit.territory}`}
+                unit={unit}
+                x={x}
+                y={y}
+                color={POWER_COLORS[unit.power]}
+                isDislodged={isDislodged}
+                isMoving={isMoving}
+              />
+            )
+          }
+
+          // Static mode: use original renderUnit
+          return renderUnit(unit, defaultCenter.x, defaultCenter.y)
         })}
 
         {/* Orders visualization */}
-        {gameState.orders.map((order, index) => renderOrder(order, index))}
+        {gameState.orders.map((order, index) => {
+          // In animation mode, use OrderArrow component
+          if (animationMode && animationState) {
+            const unit = getOrderUnit(order)
+            if (!unit) return null
+
+            const unitBaseId = order.unit.split('_')[0]
+            const unitCenter = getTerritoryCenter(unitBaseId) || getTerritoryCenter(order.unit)
+            if (!unitCenter) return null
+
+            // Hold orders don't need arrows in animation mode
+            if (order.type === 'hold') {
+              return renderOrder(order, index) // Use existing hold circle
+            }
+
+            // Move/support/convoy orders need target
+            if (!order.target) return null
+            const targetBaseId = order.target.split('_')[0]
+            const targetCenter = getTerritoryCenter(targetBaseId) || getTerritoryCenter(order.target)
+            if (!targetCenter) return null
+
+            const failureReason = animationState.failedOrders.get(index)
+            const status = failureReason ? 'failed' : 'pending'
+
+            return (
+              <OrderArrow
+                key={`order-${index}`}
+                fromX={unitCenter.x}
+                fromY={unitCenter.y}
+                toX={targetCenter.x}
+                toY={targetCenter.y}
+                type={order.type as 'move' | 'support' | 'convoy'}
+                status={status}
+                color={POWER_COLORS[unit.power]}
+              />
+            )
+          }
+
+          // Static mode: use original renderOrder
+          return renderOrder(order, index)
+        })}
+
+        {/* Conflict markers - only in animation mode */}
+        {animationMode && animationState?.conflictTerritories.map((conflict) => {
+          const baseId = conflict.territory.split('_')[0]
+          const center = getTerritoryCenter(baseId) || getTerritoryCenter(conflict.territory)
+          if (!center) return null
+
+          return (
+            <ConflictMarker
+              key={`conflict-${conflict.territory}`}
+              x={center.x}
+              y={center.y}
+              contenders={conflict.contenders}
+              resolved={conflict.resolved}
+            />
+          )
+        })}
+
+        {/* Failed order markers - only in animation mode */}
+        {animationMode && animationState && Array.from(animationState.failedOrders.entries()).map(([orderIndex, reason]) => {
+          const order = gameState.orders[orderIndex]
+          if (!order || !order.target) return null
+
+          const targetBaseId = order.target.split('_')[0]
+          const targetCenter = getTerritoryCenter(targetBaseId) || getTerritoryCenter(order.target)
+          if (!targetCenter) return null
+
+          return (
+            <FailedOrderMarker
+              key={`failed-${orderIndex}`}
+              x={targetCenter.x}
+              y={targetCenter.y}
+              reason={reason}
+              visible={true}
+            />
+          )
+        })}
       </svg>
     </div>
   )
