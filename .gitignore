@@ -6,6 +6,7 @@ logs/
 node_modules/
 dist/
 .env
+.secrets/
 coverage/
 
 # Playwright
