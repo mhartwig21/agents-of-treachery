@@ -8,6 +8,11 @@ dist/
 .env
 coverage/
 
+# Secrets
+.vault/
+.docker-secrets/
+run-secrets/
+
 # Playwright
 /test-results/
 /playwright-report/

@@ -38,7 +38,13 @@
     "server:phi": "LLM_PROVIDER=ollama OLLAMA_MODEL=phi3:mini tsx src/server/index.ts",
     "ollama:pull": "ollama pull llama3.2 && ollama pull llama3.2:1b && ollama pull mistral && ollama pull deepseek-r1:8b && ollama pull qwen2.5:7b && ollama pull gemma2:9b && ollama pull phi3:mini",
     "logs": "tsx src/server/view-logs.ts",
-    "logs:list": "tsx src/server/view-logs.ts"
+    "logs:list": "tsx src/server/view-logs.ts",
+    "vault": "tsx src/secrets/cli.ts",
+    "vault:create": "tsx src/secrets/cli.ts create",
+    "vault:set": "tsx src/secrets/cli.ts set",
+    "vault:get": "tsx src/secrets/cli.ts get",
+    "vault:list": "tsx src/secrets/cli.ts list",
+    "vault:export": "tsx src/secrets/cli.ts export"
   },
   "dependencies": {
     "react": "^19.0.0",
