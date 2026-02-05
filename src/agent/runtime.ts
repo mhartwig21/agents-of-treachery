@@ -40,6 +40,12 @@ import {
   createDiaryEntry,
   analyzeDiaryForDeception,
 } from '../analysis/deception';
+import {
+  createPromiseTracker,
+  generatePromiseSummary,
+  PromiseTracker,
+  PromiseMemoryUpdate,
+} from '../analysis/promise-tracker';
 
 /**
  * Event types emitted by the runtime.
@@ -89,6 +95,8 @@ export class AgentRuntime {
   private isRunning: boolean = false;
   private turnNumber: number = 0;
   private logger: GameLogger;
+  private promiseTracker: PromiseTracker;
+  private pendingPromiseUpdates: PromiseMemoryUpdate[] = [];
 
   constructor(
     config: AgentRuntimeConfig,
@@ -130,6 +138,9 @@ export class AgentRuntime {
 
     // Initialize logger (use provided or create default)
     this.logger = logger ?? getGameLogger(this.config.gameId);
+
+    // Initialize promise tracker for memory/relationship evolution
+    this.promiseTracker = createPromiseTracker();
   }
 
   /**
@@ -327,8 +338,31 @@ export class AgentRuntime {
     const totalMessages = this.countTotalPressMessages();
     console.log(`\n📬 Press period ended after ${totalRounds} rounds, ${totalMessages} total messages\n`);
 
+    // Extract promises from this turn's press messages for later reconciliation
+    const allMessages = this.getAllPressMessages();
+    const promises = this.promiseTracker.recordTurnPromises(
+      allMessages,
+      this.gameState.year,
+      this.gameState.season
+    );
+    if (promises.length > 0) {
+      console.log(`📝 Extracted ${promises.length} promises from diplomatic communications`);
+    }
+
     // Transition to movement phase
     this.gameState.phase = 'MOVEMENT';
+  }
+
+  /**
+   * Collects all press messages from the system.
+   */
+  private getAllPressMessages(): import('../press/types').Message[] {
+    const allMessages: import('../press/types').Message[] = [];
+    for (const channel of this.pressSystem.getAllChannels()) {
+      const result = this.pressSystem.queryMessages({ channelId: channel.id });
+      allMessages.push(...result.messages);
+    }
+    return allMessages;
   }
 
   /**
@@ -370,9 +404,13 @@ export class AgentRuntime {
     // Get orders from all agents
     const agentTurns = await this.runAgentTurns('movement');
 
+    // Collect orders for promise reconciliation
+    const ordersByPower = new Map<Power, Order[]>();
+
     // Submit orders for each power
     for (const [power, result] of agentTurns) {
       const orders = fillDefaultOrders(result.orders, this.gameState, power);
+      ordersByPower.set(power, orders);
       submitOrders(this.gameState, power, orders);
 
       this.emitEvent({
@@ -385,8 +423,30 @@ export class AgentRuntime {
       });
     }
 
+    // Build unit owners map before resolution (for promise reconciliation)
+    const unitOwners = new Map<string, Power>();
+    for (const unit of this.gameState.units) {
+      unitOwners.set(unit.province, unit.power);
+    }
+
     // Resolve movement
     resolveMovement(this.gameState);
+
+    // Reconcile promises against orders and generate memory updates
+    const promiseUpdates = this.promiseTracker.reconcileTurn(
+      this.gameState.year,
+      this.gameState.season,
+      ordersByPower,
+      unitOwners
+    );
+
+    if (promiseUpdates.length > 0) {
+      console.log(`🔍 Promise reconciliation: ${promiseUpdates.length} updates`);
+      this.pendingPromiseUpdates = promiseUpdates;
+
+      // Apply trust updates to agent memories
+      this.applyPromiseUpdatesToMemory(promiseUpdates);
+    }
 
     // Update agent memories with results
     for (const power of POWERS) {
@@ -402,6 +462,52 @@ export class AgentRuntime {
     }
 
     this.turnNumber++;
+  }
+
+  /**
+   * Applies promise reconciliation updates to agent memories.
+   */
+  private applyPromiseUpdatesToMemory(updates: PromiseMemoryUpdate[]): void {
+    for (const update of updates) {
+      const session = this.sessionManager.getSession(update.power);
+      if (!session) continue;
+
+      // Update trust level
+      const currentTrust = session.memory.trustLevels.get(update.aboutPower) ?? 0;
+      const newTrust = Math.max(-1, Math.min(1, currentTrust + update.trustDelta));
+      session.memory.trustLevels.set(update.aboutPower, newTrust);
+
+      // Update relationship
+      const relationship = session.memory.relationships.get(update.aboutPower);
+      if (relationship) {
+        relationship.trustLevel = newTrust;
+        relationship.lastInteraction = {
+          year: update.year,
+          season: update.season,
+        };
+        relationship.isAlly = newTrust >= 0.5;
+        relationship.isEnemy = newTrust <= -0.5;
+      }
+
+      // Record the event
+      session.memory.events.push({
+        year: update.year,
+        season: update.season,
+        type: update.eventType,
+        powers: [update.aboutPower],
+        description: update.memoryPrompt,
+        impactOnTrust: update.trustDelta,
+      });
+
+      // Log the update
+      if (update.eventType === 'BETRAYAL') {
+        console.log(`  ⚠️ ${update.power} detected betrayal by ${update.aboutPower}`);
+      } else if (update.eventType === 'PROMISE_BROKEN') {
+        console.log(`  ❌ ${update.power}: ${update.aboutPower} broke promise`);
+      } else {
+        console.log(`  ✓ ${update.power}: ${update.aboutPower} kept promise`);
+      }
+    }
   }
 
   /**
@@ -567,12 +673,19 @@ export class AgentRuntime {
 
     // Add strategic summary
     const strategicSummary = createStrategicSummary(this.gameState, power);
-    const fullPrompt = `${strategicSummary}\n\n${turnPrompt}`;
+
+    // Add promise reconciliation summary (shows who kept/broke promises last turn)
+    const promiseSummary = generatePromiseSummary(this.pendingPromiseUpdates, power);
+    const promiseSection = promiseSummary
+      ? `\n${promiseSummary}\n`
+      : '';
+
+    const fullPrompt = `${strategicSummary}${promiseSection}\n\n${turnPrompt}`;
 
     // Verbose: log the full prompt being sent
     if (this.config.verbose) {
       console.log(`\n${'='.repeat(80)}`);
-      console.log(`[${power}] FULL PROMPT (${turnType} phase):`);
+      console.log(`[${power}] FULL PROMPT (${this.gameState.phase} phase):`);
       console.log(`${'='.repeat(80)}`);
       console.log(fullPrompt);
       console.log(`${'='.repeat(80)}\n`);
@@ -788,6 +901,8 @@ export class AgentRuntime {
     this.pressSystem.clear();
     this.pressAPIs.clear();
     this.eventCallbacks = [];
+    this.promiseTracker.clear();
+    this.pendingPromiseUpdates = [];
   }
 
   /**
