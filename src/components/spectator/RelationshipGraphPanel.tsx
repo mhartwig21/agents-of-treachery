@@ -6,10 +6,11 @@
  * Betrayals are highlighted with animated red dashed lines and badges.
  * Hovering edges shows sparkline history, clicking opens detailed history modal.
  * Trust badges show "say vs do" reliability for each power.
+ * Supports three analysis modes: messages-only, actions-only, and combined.
  */
 
 import { useMemo, useState, useCallback, useRef } from 'react';
-import { type LowercasePower, POWER_COLORS, UI_POWERS } from '../../spectator/types';
+import { type LowercasePower, POWER_COLORS, UI_POWERS, toEnginePower, toUIPower } from '../../spectator/types';
 import type { Message } from '../../press/types';
 import type { BetrayalInfo, PowerPairRelationship as EnginePairRelationship } from '../../analysis/relationships';
 import {
@@ -26,6 +27,18 @@ import {
 } from '../../hooks/useRelationshipHistory';
 import type { TrustMetrics, PairwiseTrust } from '../../analysis/trust';
 import { TrustIndicatorBadgeSVG, TrustBadgeInline } from './TrustIndicatorBadge';
+import type { GameEvent, MovementResolvedEvent, SupplyCentersCapturedEvent } from '../../store/events';
+import type { GameState } from '../../types/game';
+import {
+  ActionRelationshipEngine,
+  type PowerPairRelationship as ActionPairRelationship,
+} from '../../analysis/relationships';
+import type { Power as EnginePower, Unit as EngineUnit } from '../../engine/types';
+
+/**
+ * Analysis mode for relationship inference.
+ */
+export type AnalysisMode = 'messages' | 'actions' | 'combined';
 
 /**
  * Relationship data for a pair of powers.
@@ -43,11 +56,25 @@ export interface PowerPairRelationship {
   betrayalDetected?: boolean;
   /** Most recent betrayal info (if any) */
   betrayal?: BetrayalInfo;
+  /** Numeric score for combined mode (-100 to 100) */
+  score?: number;
+  /** Message-based score (0-1 normalized) */
+  messageScore?: number;
+  /** Action-based score (-100 to 100) */
+  actionScore?: number;
 }
 
 interface RelationshipGraphPanelProps {
   /** All messages to analyze for relationships */
   messages: Message[];
+  /** Game events for action analysis */
+  gameEvents?: GameEvent[];
+  /** Current game state for context */
+  gameState?: GameState;
+  /** Toggle between message-only, action-only, and combined analysis */
+  analysisMode?: AnalysisMode;
+  /** Callback when analysis mode changes */
+  onAnalysisModeChange?: (mode: AnalysisMode) => void;
   /** Currently selected power to highlight */
   selectedPower?: LowercasePower;
   /** Callback when a power is clicked */
@@ -159,16 +186,164 @@ function computeRelationships(messages: Message[]): PowerPairRelationship[] {
     const maxMessages = Math.max(...Array.from(pairData.values()).map(d => d.count), 1);
     const strength = data.count / maxMessages;
 
+    // Compute message score (0-1 based on sentiment)
+    let messageScore = 0.5; // neutral
+    if (data.count > 0) {
+      const positiveRatio = data.positive / data.count;
+      const negativeRatio = data.negative / data.count;
+      messageScore = 0.5 + (positiveRatio - negativeRatio) * 0.5;
+    }
+
     relationships.push({
       power1: p1,
       power2: p2,
       messageCount: data.count,
       status,
       strength,
+      messageScore,
     });
   }
 
   return relationships;
+}
+
+/**
+ * Process game events to extract action-based relationships.
+ */
+function computeActionRelationships(
+  gameEvents: GameEvent[],
+  gameState?: GameState
+): Map<string, ActionPairRelationship> {
+  const engine = new ActionRelationshipEngine();
+
+  // Update unit owners from game state if available
+  if (gameState?.units) {
+    const engineUnits: EngineUnit[] = gameState.units.map(u => ({
+      type: u.type.toUpperCase() as 'ARMY' | 'FLEET',
+      power: toEnginePower(u.power),
+      province: u.territory.toUpperCase(),
+    }));
+    engine.updateUnitOwners(engineUnits);
+  }
+
+  // Build unit ownership map from game state
+  const unitsByProvince = new Map<string, EnginePower>();
+  if (gameState?.units) {
+    for (const unit of gameState.units) {
+      unitsByProvince.set(unit.territory.toUpperCase(), toEnginePower(unit.power));
+    }
+  }
+
+  // Process relevant events
+  for (const event of gameEvents) {
+    if (event.type === 'MOVEMENT_RESOLVED') {
+      const movementEvent = event as MovementResolvedEvent;
+
+      // Find corresponding capture event (if any)
+      const captureEvent = gameEvents.find(
+        e =>
+          e.type === 'SUPPLY_CENTERS_CAPTURED' &&
+          (e as SupplyCentersCapturedEvent).payload.year === movementEvent.payload.year &&
+          (e as SupplyCentersCapturedEvent).payload.season === movementEvent.payload.season
+      ) as SupplyCentersCapturedEvent | undefined;
+
+      // Build unit ownership from the movement results
+      const turnUnitsByProvince = new Map<string, EnginePower>();
+      for (const { order } of movementEvent.payload.results) {
+        // Get the power that owns this unit from the event context
+        // This is an approximation - in production would need proper unit tracking
+        const existingOwner = unitsByProvince.get(order.unit);
+        if (existingOwner) {
+          turnUnitsByProvince.set(order.unit, existingOwner);
+        }
+      }
+
+      engine.processTurn(
+        movementEvent.payload.results.map(r => r.order),
+        movementEvent,
+        captureEvent || null,
+        turnUnitsByProvince.size > 0 ? turnUnitsByProvince : unitsByProvince
+      );
+    }
+  }
+
+  // Convert to map keyed by power pair
+  const actionRelationships = new Map<string, ActionPairRelationship>();
+  for (const rel of engine.getAllRelationships()) {
+    const key = `${toUIPower(rel.power1)}-${toUIPower(rel.power2)}`;
+    actionRelationships.set(key, rel);
+  }
+
+  return actionRelationships;
+}
+
+/**
+ * Combine message-based and action-based relationships.
+ * Actions speak louder than words: 70% action, 30% message weight.
+ */
+function combineRelationships(
+  messageRelationships: PowerPairRelationship[],
+  actionRelationships: Map<string, ActionPairRelationship>,
+  mode: AnalysisMode
+): PowerPairRelationship[] {
+  if (mode === 'messages') {
+    return messageRelationships;
+  }
+
+  return messageRelationships.map(msgRel => {
+    const key = `${msgRel.power1}-${msgRel.power2}`;
+    const actionRel = actionRelationships.get(key);
+
+    if (mode === 'actions') {
+      if (!actionRel) {
+        return {
+          ...msgRel,
+          status: 'neutral' as const,
+          strength: 0,
+          score: 0,
+          actionScore: 0,
+          betrayalDetected: false,
+        };
+      }
+
+      return {
+        ...msgRel,
+        status: actionRel.status,
+        strength: Math.abs(actionRel.score) / 100,
+        score: actionRel.score,
+        actionScore: actionRel.score,
+        betrayalDetected: actionRel.betrayalDetected,
+      };
+    }
+
+    // Combined mode
+    const messageScore = msgRel.messageScore ?? 0.5;
+    // Convert message score (0-1) to -100 to 100 scale
+    const normalizedMessageScore = (messageScore - 0.5) * 200;
+    const actionScore = actionRel?.score ?? 0;
+
+    // Combined: 30% message, 70% action (actions speak louder than words)
+    const combinedScore = normalizedMessageScore * 0.3 + actionScore * 0.7;
+    const clampedScore = Math.max(-100, Math.min(100, combinedScore));
+
+    // Determine status from combined score
+    let status: 'ally' | 'enemy' | 'neutral' = 'neutral';
+    if (clampedScore >= 10) status = 'ally';
+    else if (clampedScore <= -10) status = 'enemy';
+
+    // Strength is the absolute magnitude
+    const strength = Math.abs(clampedScore) / 100;
+
+    return {
+      ...msgRel,
+      status,
+      strength,
+      score: Math.round(clampedScore),
+      messageScore,
+      actionScore,
+      betrayalDetected: actionRel?.betrayalDetected ?? false,
+    };
+  });
 }
 
 /**
@@ -212,6 +387,10 @@ function getTrustLevel(score: number, promiseCount: number): 'high' | 'medium' |
 
 export function RelationshipGraphPanel({
   messages,
+  gameEvents,
+  gameState,
+  analysisMode = 'messages',
+  onAnalysisModeChange,
   selectedPower,
   onPowerClick,
   className = '',
@@ -245,8 +424,40 @@ export function RelationshipGraphPanel({
     currentSeason,
   });
 
-  // Compute relationships from messages
-  const relationships = useMemo(() => computeRelationships(messages), [messages]);
+  const [internalMode, setInternalMode] = useState<AnalysisMode>(analysisMode);
+
+  // Use controlled or uncontrolled mode
+  const currentMode = onAnalysisModeChange ? analysisMode : internalMode;
+  const handleModeChange = useCallback(
+    (mode: AnalysisMode) => {
+      if (onAnalysisModeChange) {
+        onAnalysisModeChange(mode);
+      } else {
+        setInternalMode(mode);
+      }
+    },
+    [onAnalysisModeChange]
+  );
+
+  // Compute message-based relationships
+  const messageRelationships = useMemo(() => computeRelationships(messages), [messages]);
+
+  // Compute action-based relationships (only when needed)
+  const actionRelationships = useMemo(() => {
+    if (currentMode === 'messages' || !gameEvents?.length) {
+      return new Map<string, ActionPairRelationship>();
+    }
+    return computeActionRelationships(gameEvents, gameState);
+  }, [currentMode, gameEvents, gameState]);
+
+  // Combine relationships based on mode
+  const relationships = useMemo(
+    () => combineRelationships(messageRelationships, actionRelationships, currentMode),
+    [messageRelationships, actionRelationships, currentMode]
+  );
+
+  // Check if we have game events to enable action modes
+  const hasGameEvents = (gameEvents?.length ?? 0) > 0;
 
   // Compute betrayal counts per power
   const betrayalCounts = useMemo(() => {
@@ -411,7 +622,11 @@ export function RelationshipGraphPanel({
 
     const allies: LowercasePower[] = [];
     const enemies: LowercasePower[] = [];
+    const betrayals: LowercasePower[] = [];
     let totalMessages = 0;
+    let averageScore: number | undefined;
+    let scoreSum = 0;
+    let scoreCount = 0;
 
     for (const rel of relationships) {
       if (rel.power1 === activePower || rel.power2 === activePower) {
@@ -419,14 +634,65 @@ export function RelationshipGraphPanel({
         totalMessages += rel.messageCount;
         if (rel.status === 'ally') allies.push(other);
         if (rel.status === 'enemy') enemies.push(other);
+        if (rel.betrayalDetected) betrayals.push(other);
+        if (rel.score !== undefined) {
+          scoreSum += rel.score;
+          scoreCount++;
+        }
       }
     }
 
-    return { allies, enemies, totalMessages };
+    if (scoreCount > 0) {
+      averageScore = Math.round(scoreSum / scoreCount);
+    }
+
+    return { allies, enemies, betrayals, totalMessages, averageScore };
   }, [activePower, relationships]);
 
   return (
     <div className={`flex flex-col ${className}`}>
+      {/* Mode Toggle */}
+      <div className="flex justify-center gap-1 mb-3">
+        <button
+          onClick={() => handleModeChange('messages')}
+          className={`px-3 py-1 text-xs rounded-l-md transition-colors ${
+            currentMode === 'messages'
+              ? 'bg-blue-600 text-white'
+              : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+          }`}
+        >
+          Messages
+        </button>
+        <button
+          onClick={() => handleModeChange('actions')}
+          disabled={!hasGameEvents}
+          className={`px-3 py-1 text-xs transition-colors ${
+            currentMode === 'actions'
+              ? 'bg-blue-600 text-white'
+              : hasGameEvents
+                ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                : 'bg-gray-800 text-gray-500 cursor-not-allowed'
+          }`}
+          title={!hasGameEvents ? 'No game events available' : undefined}
+        >
+          Actions
+        </button>
+        <button
+          onClick={() => handleModeChange('combined')}
+          disabled={!hasGameEvents}
+          className={`px-3 py-1 text-xs rounded-r-md transition-colors ${
+            currentMode === 'combined'
+              ? 'bg-blue-600 text-white'
+              : hasGameEvents
+                ? 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                : 'bg-gray-800 text-gray-500 cursor-not-allowed'
+          }`}
+          title={!hasGameEvents ? 'No game events available' : undefined}
+        >
+          Combined
+        </button>
+      </div>
+
       {/* Graph */}
       <div ref={containerRef} className="relative">
         <svg
@@ -478,6 +744,7 @@ export function RelationshipGraphPanel({
                     stroke={getEdgeColor(rel.status)}
                     strokeWidth={isHovered ? getEdgeWidth(rel.strength) + 2 : getEdgeWidth(rel.strength)}
                     strokeOpacity={highlighted ? (isHovered ? 0.9 : 0.7) : 0.35}
+                    strokeDasharray={rel.betrayalDetected ? '4,4' : undefined}
                     className="transition-opacity duration-300 pointer-events-none"
                   />
                   {/* Broken promise indicator on edge */}
@@ -651,6 +918,12 @@ export function RelationshipGraphPanel({
               <span className="text-red-400">Betrayal</span>
             </div>
           )}
+          {currentMode !== 'messages' && (
+            <div className="flex items-center gap-1">
+              <div className="w-4 h-0.5 bg-red-800 rounded" style={{ borderStyle: 'dashed', borderWidth: '1px', borderColor: '#fca5a5' }} />
+              <span>Betrayal</span>
+            </div>
+          )}
         </div>
 
         {/* Trust legend */}
@@ -693,12 +966,12 @@ export function RelationshipGraphPanel({
             {/* Betrayal badges */}
             {showBetrayals && betrayalCounts.asBetrayer[activePower] > 0 && (
               <span className="text-xs px-2 py-0.5 bg-red-900 text-red-300 rounded-full">
-                🗡️ {betrayalCounts.asBetrayer[activePower]} betrayed
+                {betrayalCounts.asBetrayer[activePower]} betrayed
               </span>
             )}
             {showBetrayals && betrayalCounts.asVictim[activePower] > 0 && (
               <span className="text-xs px-2 py-0.5 bg-purple-900 text-purple-300 rounded-full">
-                💀 {betrayalCounts.asVictim[activePower]} stabbed
+                {betrayalCounts.asVictim[activePower]} stabbed
               </span>
             )}
             {/* Trust badge inline */}
@@ -708,6 +981,21 @@ export function RelationshipGraphPanel({
               const level = getTrustLevel(trust.trustScore, trust.promisesMade);
               return <TrustBadgeInline level={level} score={trust.trustScore} showScore />;
             })()}
+            {/* Average score badge (from action engine) */}
+            {activeStats.averageScore !== undefined && (
+              <span
+                className={`text-xs px-2 py-0.5 rounded ${
+                  activeStats.averageScore > 0
+                    ? 'bg-green-900 text-green-300'
+                    : activeStats.averageScore < 0
+                      ? 'bg-red-900 text-red-300'
+                      : 'bg-gray-700 text-gray-300'
+                }`}
+              >
+                {activeStats.averageScore > 0 ? '+' : ''}
+                {activeStats.averageScore}
+              </span>
+            )}
           </div>
           <div className="text-sm text-gray-400 space-y-1">
             <div>
@@ -726,6 +1014,14 @@ export function RelationshipGraphPanel({
                 Enemies:{' '}
                 <span className="text-red-400">
                   {activeStats.enemies.map((p) => POWER_ABBREV[p]).join(', ')}
+                </span>
+              </div>
+            )}
+            {activeStats.betrayals.length > 0 && (
+              <div>
+                Betrayals:{' '}
+                <span className="text-orange-400">
+                  {activeStats.betrayals.map((p) => POWER_ABBREV[p]).join(', ')}
                 </span>
               </div>
             )}
@@ -764,7 +1060,7 @@ export function RelationshipGraphPanel({
       )}
 
       {/* No data message */}
-      {messages.length === 0 && (
+      {messages.length === 0 && !hasGameEvents && (
         <div className="text-center text-gray-500 py-8">
           No diplomatic messages yet.
           <br />
@@ -837,6 +1133,12 @@ export function RelationshipGraphPanel({
           />
         );
       })()}
+
+      {currentMode !== 'messages' && !hasGameEvents && (
+        <div className="text-center text-gray-500 py-4">
+          <span className="text-sm">No game events available for action analysis.</span>
+        </div>
+      )}
     </div>
   );
 }
