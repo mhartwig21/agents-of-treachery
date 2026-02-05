@@ -2,8 +2,10 @@
  * TurnResolutionPlayer - Controls for playing turn resolution animations.
  *
  * Provides play/pause/reset/skip controls and displays current animation phase and progress.
+ * Features a segmented progress bar showing all 6 phases and keyboard shortcuts.
  */
 
+import { useEffect, useCallback } from 'react';
 import { type AnimationPhase, type ResolutionAnimationState, type ResolutionAnimationControls } from '../../hooks/useResolutionAnimation';
 
 interface TurnResolutionPlayerProps {
@@ -39,9 +41,21 @@ const PHASE_LABELS: Record<AnimationPhase, string> = {
  * Speed options with labels.
  */
 const SPEED_OPTIONS: Array<{ value: 'slow' | 'normal' | 'fast'; label: string }> = [
-  { value: 'slow', label: '0.5x' },
-  { value: 'normal', label: '1x' },
-  { value: 'fast', label: '2x' },
+  { value: 'slow', label: 'Slow' },
+  { value: 'normal', label: 'Normal' },
+  { value: 'fast', label: 'Fast' },
+];
+
+/**
+ * The 6 animation phases (excluding idle and complete) for the segmented progress bar.
+ */
+const ANIMATION_PHASES: AnimationPhase[] = [
+  'show_orders',
+  'highlight_conflicts',
+  'resolve_battles',
+  'animate_moves',
+  'show_failures',
+  'show_dislodged',
 ];
 
 export function TurnResolutionPlayer({
@@ -54,6 +68,41 @@ export function TurnResolutionPlayer({
 }: TurnResolutionPlayerProps) {
   const isIdle = state.phase === 'idle';
   const isComplete = state.phase === 'complete';
+
+  // Keyboard shortcuts: Space=play/pause, Right=skip
+  const handleKeyDown = useCallback(
+    (event: KeyboardEvent) => {
+      // Don't handle if user is typing in an input
+      if (
+        event.target instanceof HTMLInputElement ||
+        event.target instanceof HTMLTextAreaElement
+      ) {
+        return;
+      }
+
+      if (event.code === 'Space') {
+        event.preventDefault();
+        if (isIdle || isComplete) {
+          controls.play();
+        } else if (isPlaying) {
+          controls.pause();
+        } else {
+          controls.play();
+        }
+      } else if (event.code === 'ArrowRight') {
+        event.preventDefault();
+        if (!isComplete) {
+          controls.skip();
+        }
+      }
+    },
+    [isIdle, isComplete, isPlaying, controls]
+  );
+
+  useEffect(() => {
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleKeyDown]);
 
   if (compact) {
     return (
@@ -102,13 +151,8 @@ export function TurnResolutionPlayer({
         </span>
       </div>
 
-      {/* Progress bar */}
-      <div className="h-2 bg-gray-700 rounded-full overflow-hidden mb-4">
-        <div
-          className="h-full bg-blue-500 transition-all duration-100"
-          style={{ width: `${state.progress}%` }}
-        />
-      </div>
+      {/* Segmented progress bar showing 6 phases */}
+      <SegmentedProgressBar phase={state.phase} phaseProgress={state.phaseProgress} />
 
       {/* Controls */}
       <div className="flex items-center justify-between">
@@ -181,6 +225,58 @@ export function TurnResolutionPlayer({
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Segmented progress bar showing 6 animation phases.
+ * Each segment represents one phase, fills as phases complete, and the current phase pulses.
+ */
+function SegmentedProgressBar({
+  phase,
+  phaseProgress,
+}: {
+  phase: AnimationPhase;
+  phaseProgress: number;
+}) {
+  const currentPhaseIndex = ANIMATION_PHASES.indexOf(phase);
+  const isComplete = phase === 'complete';
+  const isIdle = phase === 'idle';
+
+  return (
+    <div className="mb-4">
+      <div className="flex gap-1 h-2">
+        {ANIMATION_PHASES.map((p, index) => {
+          const isCurrentPhase = p === phase;
+          const isCompletedPhase = isComplete || index < currentPhaseIndex;
+          const fillPercent = isCurrentPhase ? phaseProgress : isCompletedPhase ? 100 : 0;
+
+          return (
+            <div
+              key={p}
+              className="flex-1 bg-gray-700 rounded-sm overflow-hidden relative"
+              title={PHASE_LABELS[p]}
+            >
+              <div
+                className={`h-full transition-all duration-100 ${
+                  isCurrentPhase ? 'bg-blue-400 animate-pulse' : 'bg-blue-500'
+                }`}
+                style={{ width: `${fillPercent}%` }}
+              />
+            </div>
+          );
+        })}
+      </div>
+      {/* Progress percentage */}
+      <div className="flex justify-between mt-1">
+        <span className="text-xs text-gray-500">
+          {isIdle ? 'Ready' : isComplete ? 'Complete' : `Phase ${currentPhaseIndex + 1}/6`}
+        </span>
+        <span className="text-xs text-gray-500">
+          {Math.round(isComplete ? 100 : isIdle ? 0 : ((currentPhaseIndex + phaseProgress / 100) / 6) * 100)}%
+        </span>
+      </div>
     </div>
   );
 }
