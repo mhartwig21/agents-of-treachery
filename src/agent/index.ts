@@ -37,6 +37,11 @@ export type {
   StructuredOrder,
   StructuredRetreatOrder,
   StructuredBuildOrder,
+  // Message analysis types
+  SenderIntent,
+  StrategicValue,
+  RecommendedResponse,
+  MessageAnalysis,
 } from './types';
 
 export { DEFAULT_PERSONALITY, DEFAULT_RUNTIME_CONFIG } from './types';
@@ -188,6 +193,17 @@ export {
 } from './order-parser';
 
 export type { ParseResult } from './order-parser';
+
+// Negotiation analysis
+export {
+  analyzeIncomingMessage,
+  analyzeIncomingMessages,
+  buildAnalysisPrompt,
+  parseAnalysisResponse,
+  formatAnalysisForDiary,
+  recordAnalysisInDiary,
+  generateAnalysisSummary,
+} from './negotiation';
 
 // Runtime
 export {

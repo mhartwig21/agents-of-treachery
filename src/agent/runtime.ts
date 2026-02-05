@@ -52,6 +52,12 @@ import {
   PromiseTracker,
   PromiseMemoryUpdate,
 } from '../analysis/promise-tracker';
+import {
+  analyzeIncomingMessages,
+  generateAnalysisSummary,
+  recordAnalysisInDiary,
+} from './negotiation';
+import type { MessageAnalysis } from './types';
 
 /**
  * Event types emitted by the runtime.
@@ -103,6 +109,7 @@ export class AgentRuntime {
   private logger: GameLogger;
   private promiseTracker: PromiseTracker;
   private pendingPromiseUpdates: PromiseMemoryUpdate[] = [];
+  private pendingMessageAnalyses: Map<Power, MessageAnalysis[]> = new Map();
 
   constructor(
     config: AgentRuntimeConfig,
@@ -305,6 +312,9 @@ export class AgentRuntime {
       agentsWhoActed.add(power);
     }
 
+    // Analyze incoming messages for all powers (after initial round)
+    await this.analyzeMessagesForAllPowers();
+
     // Continue polling until time expires
     while (Date.now() < endTime) {
       // Wait before next poll
@@ -369,6 +379,69 @@ export class AgentRuntime {
       allMessages.push(...result.messages);
     }
     return allMessages;
+  }
+
+  /**
+   * Analyze incoming messages for all powers.
+   * Generates analysis summaries that will be included in agent prompts.
+   */
+  private async analyzeMessagesForAllPowers(): Promise<void> {
+    const llm = this.sessionManager.getLLMProvider();
+    console.log(`\n🔍 Analyzing incoming diplomatic messages...`);
+
+    // Clear previous analyses
+    this.pendingMessageAnalyses.clear();
+
+    // Analyze messages for each power in parallel
+    const analysisPromises = POWERS.map(async (power) => {
+      const session = this.sessionManager.getSession(power);
+      if (!session) return;
+
+      // Get messages from all channels this power participates in
+      const pressAPI = this.pressAPIs.get(power)!;
+      const inbox = pressAPI.getInbox();
+      const incomingMessages = inbox.recentMessages.filter(m => m.sender !== power);
+
+      if (incomingMessages.length === 0) {
+        return;
+      }
+
+      try {
+        const analyses = await analyzeIncomingMessages(
+          power,
+          incomingMessages,
+          session.memory,
+          llm
+        );
+
+        if (analyses.length > 0) {
+          this.pendingMessageAnalyses.set(power, analyses);
+
+          // Record analyses in diary
+          for (const analysis of analyses) {
+            recordAnalysisInDiary(
+              session.memory,
+              analysis,
+              this.gameState.year,
+              this.gameState.season
+            );
+          }
+
+          // Log summary
+          const deceptionCount = analyses.filter(a => a.senderIntent === 'deception').length;
+          const lowCredCount = analyses.filter(a => a.credibilityScore < 0.3).length;
+          if (deceptionCount > 0 || lowCredCount > 0) {
+            console.log(`  [${power}] ⚠️ Analyzed ${analyses.length} messages (${deceptionCount} potential deceptions, ${lowCredCount} low credibility)`);
+          } else {
+            console.log(`  [${power}] Analyzed ${analyses.length} messages`);
+          }
+        }
+      } catch (error) {
+        console.warn(`  [${power}] Message analysis failed:`, error);
+      }
+    });
+
+    await Promise.all(analysisPromises);
   }
 
   /**
@@ -726,7 +799,16 @@ export class AgentRuntime {
       ? `\n${promiseSummary}\n`
       : '';
 
-    const fullPrompt = `${strategicSummary}${promiseSection}\n\n${turnPrompt}`;
+    // Add message analysis summary (for diplomacy phase)
+    let analysisSection = '';
+    if (this.gameState.phase === 'DIPLOMACY') {
+      const analyses = this.pendingMessageAnalyses.get(power);
+      if (analyses && analyses.length > 0) {
+        analysisSection = `\n${generateAnalysisSummary(analyses)}\n`;
+      }
+    }
+
+    const fullPrompt = `${strategicSummary}${promiseSection}${analysisSection}\n\n${turnPrompt}`;
 
     // Verbose: log the full prompt being sent
     if (this.config.verbose) {
@@ -977,6 +1059,7 @@ export class AgentRuntime {
     this.eventCallbacks = [];
     this.promiseTracker.clear();
     this.pendingPromiseUpdates = [];
+    this.pendingMessageAnalyses.clear();
   }
 
   /**
