@@ -496,6 +496,283 @@ describe('ActionRelationshipEngine', () => {
       const betrayals = engine.getBetrayals();
       expect(betrayals).toEqual([]);
     });
+
+    it('should return betrayal events after a stab', () => {
+      const unitsByProvince = new Map<string, Power>([
+        ['LON', 'ENGLAND'],
+        ['BRE', 'FRANCE'],
+        ['ENG', 'ENGLAND'],
+      ]);
+
+      // First turn: England supports France
+      const orders1: Order[] = [
+        { type: 'SUPPORT', unit: 'LON', supportedUnit: 'BRE', destination: 'PIC' } as SupportOrder,
+      ];
+
+      engine.processOrdersSubmitted({
+        id: 'evt_orders_1',
+        timestamp: new Date(),
+        gameId: 'test',
+        type: 'ORDERS_SUBMITTED',
+        payload: {
+          power: 'ENGLAND',
+          orders: orders1,
+          year: 1901,
+          season: 'SPRING',
+        },
+      });
+
+      const results1: MovementResolvedEvent = {
+        id: 'evt_1',
+        timestamp: new Date(),
+        gameId: 'test',
+        type: 'MOVEMENT_RESOLVED',
+        payload: {
+          year: 1901,
+          season: 'SPRING',
+          results: [{ order: orders1[0], success: true }],
+          unitMoves: [],
+          dislodged: [],
+        },
+      };
+      engine.processTurn(orders1, results1, null, unitsByProvince);
+
+      // Second turn: England attacks France
+      const orders2: Order[] = [
+        { type: 'MOVE', unit: 'ENG', destination: 'BRE' } as MoveOrder,
+      ];
+
+      const results2: MovementResolvedEvent = {
+        id: 'evt_2',
+        timestamp: new Date(),
+        gameId: 'test',
+        type: 'MOVEMENT_RESOLVED',
+        payload: {
+          year: 1901,
+          season: 'FALL',
+          results: [{ order: orders2[0], success: true }],
+          unitMoves: [],
+          dislodged: [],
+        },
+      };
+      engine.processTurn(orders2, results2, null, unitsByProvince);
+
+      const betrayals = engine.getBetrayals();
+      expect(betrayals.length).toBeGreaterThan(0);
+      expect(betrayals[0].betrayer).toBe('ENGLAND');
+      expect(betrayals[0].victim).toBe('FRANCE');
+    });
+  });
+
+  describe('getAllBetrayalDetails', () => {
+    it('should return detailed betrayal info with type and evidence', () => {
+      const unitsByProvince = new Map<string, Power>([
+        ['LON', 'ENGLAND'],
+        ['BRE', 'FRANCE'],
+        ['ENG', 'ENGLAND'],
+      ]);
+
+      // Set up and execute a stab
+      const orders1: Order[] = [
+        { type: 'SUPPORT', unit: 'LON', supportedUnit: 'BRE', destination: 'PIC' } as SupportOrder,
+      ];
+
+      engine.processOrdersSubmitted({
+        id: 'evt_orders_1',
+        timestamp: new Date(),
+        gameId: 'test',
+        type: 'ORDERS_SUBMITTED',
+        payload: {
+          power: 'ENGLAND',
+          orders: orders1,
+          year: 1901,
+          season: 'SPRING',
+        },
+      });
+
+      const results1: MovementResolvedEvent = {
+        id: 'evt_1',
+        timestamp: new Date(),
+        gameId: 'test',
+        type: 'MOVEMENT_RESOLVED',
+        payload: {
+          year: 1901,
+          season: 'SPRING',
+          results: [{ order: orders1[0], success: true }],
+          unitMoves: [],
+          dislodged: [],
+        },
+      };
+      engine.processTurn(orders1, results1, null, unitsByProvince);
+
+      const orders2: Order[] = [
+        { type: 'MOVE', unit: 'ENG', destination: 'BRE' } as MoveOrder,
+      ];
+
+      const results2: MovementResolvedEvent = {
+        id: 'evt_2',
+        timestamp: new Date(),
+        gameId: 'test',
+        type: 'MOVEMENT_RESOLVED',
+        payload: {
+          year: 1901,
+          season: 'FALL',
+          results: [{ order: orders2[0], success: true }],
+          unitMoves: [],
+          dislodged: [],
+        },
+      };
+      engine.processTurn(orders2, results2, null, unitsByProvince);
+
+      const details = engine.getAllBetrayalDetails();
+      expect(details.length).toBeGreaterThan(0);
+      expect(details[0].type).toBe('CLASSIC_STAB');
+      expect(details[0].evidence.length).toBeGreaterThan(0);
+      expect(details[0].id).toBeDefined();
+      expect(details[0].severity).toBeGreaterThan(0);
+    });
+  });
+
+  describe('getBetrayalsForPower', () => {
+    it('should return betrayals categorized by role', () => {
+      const unitsByProvince = new Map<string, Power>([
+        ['LON', 'ENGLAND'],
+        ['BRE', 'FRANCE'],
+        ['ENG', 'ENGLAND'],
+      ]);
+
+      // Set up and execute a stab
+      const orders1: Order[] = [
+        { type: 'SUPPORT', unit: 'LON', supportedUnit: 'BRE', destination: 'PIC' } as SupportOrder,
+      ];
+
+      engine.processOrdersSubmitted({
+        id: 'evt_orders_1',
+        timestamp: new Date(),
+        gameId: 'test',
+        type: 'ORDERS_SUBMITTED',
+        payload: {
+          power: 'ENGLAND',
+          orders: orders1,
+          year: 1901,
+          season: 'SPRING',
+        },
+      });
+
+      const results1: MovementResolvedEvent = {
+        id: 'evt_1',
+        timestamp: new Date(),
+        gameId: 'test',
+        type: 'MOVEMENT_RESOLVED',
+        payload: {
+          year: 1901,
+          season: 'SPRING',
+          results: [{ order: orders1[0], success: true }],
+          unitMoves: [],
+          dislodged: [],
+        },
+      };
+      engine.processTurn(orders1, results1, null, unitsByProvince);
+
+      const orders2: Order[] = [
+        { type: 'MOVE', unit: 'ENG', destination: 'BRE' } as MoveOrder,
+      ];
+
+      const results2: MovementResolvedEvent = {
+        id: 'evt_2',
+        timestamp: new Date(),
+        gameId: 'test',
+        type: 'MOVEMENT_RESOLVED',
+        payload: {
+          year: 1901,
+          season: 'FALL',
+          results: [{ order: orders2[0], success: true }],
+          unitMoves: [],
+          dislodged: [],
+        },
+      };
+      engine.processTurn(orders2, results2, null, unitsByProvince);
+
+      const englandBetrayals = engine.getBetrayalsForPower('ENGLAND');
+      expect(englandBetrayals.asBetrayer.length).toBeGreaterThan(0);
+      expect(englandBetrayals.asVictim.length).toBe(0);
+
+      const franceBetrayals = engine.getBetrayalsForPower('FRANCE');
+      expect(franceBetrayals.asBetrayer.length).toBe(0);
+      expect(franceBetrayals.asVictim.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('getMostRecentBetrayal', () => {
+    it('should return null when no betrayals between powers', () => {
+      const betrayal = engine.getMostRecentBetrayal('ENGLAND', 'GERMANY');
+      expect(betrayal).toBeNull();
+    });
+
+    it('should return most recent betrayal between powers', () => {
+      const unitsByProvince = new Map<string, Power>([
+        ['LON', 'ENGLAND'],
+        ['BRE', 'FRANCE'],
+        ['ENG', 'ENGLAND'],
+      ]);
+
+      // Execute a stab
+      const orders1: Order[] = [
+        { type: 'SUPPORT', unit: 'LON', supportedUnit: 'BRE', destination: 'PIC' } as SupportOrder,
+      ];
+
+      engine.processOrdersSubmitted({
+        id: 'evt_orders_1',
+        timestamp: new Date(),
+        gameId: 'test',
+        type: 'ORDERS_SUBMITTED',
+        payload: {
+          power: 'ENGLAND',
+          orders: orders1,
+          year: 1901,
+          season: 'SPRING',
+        },
+      });
+
+      const results1: MovementResolvedEvent = {
+        id: 'evt_1',
+        timestamp: new Date(),
+        gameId: 'test',
+        type: 'MOVEMENT_RESOLVED',
+        payload: {
+          year: 1901,
+          season: 'SPRING',
+          results: [{ order: orders1[0], success: true }],
+          unitMoves: [],
+          dislodged: [],
+        },
+      };
+      engine.processTurn(orders1, results1, null, unitsByProvince);
+
+      const orders2: Order[] = [
+        { type: 'MOVE', unit: 'ENG', destination: 'BRE' } as MoveOrder,
+      ];
+
+      const results2: MovementResolvedEvent = {
+        id: 'evt_2',
+        timestamp: new Date(),
+        gameId: 'test',
+        type: 'MOVEMENT_RESOLVED',
+        payload: {
+          year: 1901,
+          season: 'FALL',
+          results: [{ order: orders2[0], success: true }],
+          unitMoves: [],
+          dislodged: [],
+        },
+      };
+      engine.processTurn(orders2, results2, null, unitsByProvince);
+
+      const betrayal = engine.getMostRecentBetrayal('ENGLAND', 'FRANCE');
+      expect(betrayal).not.toBeNull();
+      expect(betrayal?.betrayer).toBe('ENGLAND');
+      expect(betrayal?.victim).toBe('FRANCE');
+    });
   });
 
   describe('reset', () => {

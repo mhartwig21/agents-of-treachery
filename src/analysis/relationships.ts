@@ -28,7 +28,52 @@ const RELATIONSHIP_POINTS = {
   // Betrayal signals (strongest)
   SUPPORT_THEN_STAB: -10,
   BROKEN_PROMISE_ATTACK: -8,
+  COORDINATED_STAB: -12,
+  CONVOY_BETRAYAL: -9,
 } as const;
+
+/**
+ * Types of betrayal that can be detected.
+ */
+export type BetrayalType =
+  | 'CLASSIC_STAB'      // Supported last turn, attacked this turn
+  | 'BROKEN_PROMISE'    // Agreed to support in press, then didn't
+  | 'COORDINATED_STAB'  // Multiple powers attack former ally simultaneously
+  | 'CONVOY_BETRAYAL';  // Promised convoy, intentionally failed
+
+/**
+ * Detailed information about a detected betrayal.
+ */
+export interface BetrayalInfo {
+  /** Unique ID for this betrayal */
+  id: string;
+  /** Type of betrayal pattern */
+  type: BetrayalType;
+  /** Power who committed the betrayal */
+  betrayer: Power;
+  /** Power who was betrayed */
+  victim: Power;
+  /** Turn when betrayal occurred */
+  turn: { year: number; season: 'SPRING' | 'FALL' };
+  /** All participating betrayers (for coordinated stabs) */
+  participants?: Power[];
+  /** Evidence supporting the betrayal detection */
+  evidence: BetrayalEvidence[];
+  /** Severity score (higher = more egregious) */
+  severity: number;
+}
+
+/**
+ * Evidence for a betrayal.
+ */
+export interface BetrayalEvidence {
+  /** Turn when the evidence occurred */
+  turn: { year: number; season: 'SPRING' | 'FALL' };
+  /** Description of what happened */
+  description: string;
+  /** Type of action */
+  actionType: 'support' | 'attack' | 'convoy' | 'message';
+}
 
 /**
  * Decay factor per turn for relationship scores.
@@ -101,6 +146,8 @@ interface RelationshipState {
   betrayalDetected: boolean;
   /** Turn when betrayal was detected */
   betrayalTurn?: { year: number; season: 'SPRING' | 'FALL' };
+  /** Detailed betrayal records */
+  betrayals: BetrayalInfo[];
 }
 
 /**
@@ -150,6 +197,9 @@ export class ActionRelationshipEngine {
   private lastTurnOrders: Map<string, EnrichedOrder[]> = new Map();
   private unitOwners: Map<string, Power> = new Map();
 
+  /** Counter for generating unique betrayal IDs */
+  private betrayalIdCounter = 0;
+
   /**
    * Creates a new relationship engine.
    */
@@ -162,9 +212,17 @@ export class ActionRelationshipEngine {
           rawPoints: 0,
           events: [],
           betrayalDetected: false,
+          betrayals: [],
         });
       }
     }
+  }
+
+  /**
+   * Generates a unique betrayal ID.
+   */
+  private generateBetrayalId(): string {
+    return `betrayal-${++this.betrayalIdCounter}`;
   }
 
   /**
@@ -213,10 +271,47 @@ export class ActionRelationshipEngine {
     state.rawPoints += points;
     state.events.push(event);
 
-    // Track betrayal
-    if (type === 'SUPPORT_THEN_STAB' || type === 'BROKEN_PROMISE_ATTACK') {
+    // Track betrayal with detailed info
+    if (type === 'SUPPORT_THEN_STAB' || type === 'BROKEN_PROMISE_ATTACK' ||
+        type === 'COORDINATED_STAB' || type === 'CONVOY_BETRAYAL') {
       state.betrayalDetected = true;
       state.betrayalTurn = { ...this.currentTurn };
+
+      // Record detailed betrayal info
+      const betrayalType = this.mapActionToBetrayal(type);
+      const betrayalInfo: BetrayalInfo = {
+        id: this.generateBetrayalId(),
+        type: betrayalType,
+        betrayer: actor,
+        victim: target,
+        turn: { ...this.currentTurn },
+        evidence: [{
+          turn: { ...this.currentTurn },
+          description,
+          actionType: type === 'CONVOY_BETRAYAL' ? 'convoy' : 'attack',
+        }],
+        severity: Math.abs(points),
+      };
+
+      state.betrayals.push(betrayalInfo);
+    }
+  }
+
+  /**
+   * Maps action type to betrayal type.
+   */
+  private mapActionToBetrayal(type: keyof typeof RELATIONSHIP_POINTS): BetrayalType {
+    switch (type) {
+      case 'SUPPORT_THEN_STAB':
+        return 'CLASSIC_STAB';
+      case 'BROKEN_PROMISE_ATTACK':
+        return 'BROKEN_PROMISE';
+      case 'COORDINATED_STAB':
+        return 'COORDINATED_STAB';
+      case 'CONVOY_BETRAYAL':
+        return 'CONVOY_BETRAYAL';
+      default:
+        return 'CLASSIC_STAB';
     }
   }
 
@@ -504,6 +599,126 @@ export class ActionRelationshipEngine {
         );
       }
     }
+
+    // Also check for coordinated stabs
+    this.analyzeCoordinatedStabs(results, unitsByProvince);
+  }
+
+  /**
+   * Analyzes for coordinated stabs (multiple powers attacking same former ally).
+   */
+  private analyzeCoordinatedStabs(
+    results: MovementResolvedEvent['payload']['results'],
+    unitsByProvince: Map<string, Power>
+  ): void {
+    // Track attacks per victim this turn
+    const attacksPerVictim = new Map<Power, Set<Power>>();
+
+    for (const { order } of results) {
+      if (order.type !== 'MOVE') continue;
+
+      const moveOrder = order as MoveOrder;
+      const attacker = unitsByProvince.get(moveOrder.unit);
+      const defender = unitsByProvince.get(moveOrder.destination);
+
+      if (!attacker || !defender || attacker === defender) continue;
+
+      if (!attacksPerVictim.has(defender)) {
+        attacksPerVictim.set(defender, new Set());
+      }
+      attacksPerVictim.get(defender)!.add(attacker);
+    }
+
+    // Check for coordinated attacks on former allies
+    for (const [victim, attackers] of attacksPerVictim) {
+      if (attackers.size < 2) continue; // Need multiple attackers
+
+      // Check if any attackers had positive relationships with victim
+      const formerAllies: Power[] = [];
+      for (const attacker of attackers) {
+        const rel = this.getRelationship(attacker, victim);
+        // Consider them a former ally if they had positive interactions recently
+        const hadSupport = rel.recentActions.some(
+          e => e.type === 'DIRECT_SUPPORT' && e.actor === attacker
+        );
+        if (hadSupport || rel.score > 5) {
+          formerAllies.push(attacker);
+        }
+      }
+
+      // If multiple former allies are now attacking together, it's a coordinated stab
+      if (formerAllies.length >= 2) {
+        for (const betrayer of formerAllies) {
+          // Record the coordinated stab
+          const key = getPairKey(betrayer, victim);
+          const state = this.relationships.get(key);
+          if (state) {
+            const coordStab: BetrayalInfo = {
+              id: this.generateBetrayalId(),
+              type: 'COORDINATED_STAB',
+              betrayer,
+              victim,
+              turn: { ...this.currentTurn },
+              participants: formerAllies,
+              evidence: [{
+                turn: { ...this.currentTurn },
+                description: `${formerAllies.join(', ')} coordinated attack on ${victim}`,
+                actionType: 'attack',
+              }],
+              severity: 12,
+            };
+            state.betrayals.push(coordStab);
+            state.betrayalDetected = true;
+            state.betrayalTurn = { ...this.currentTurn };
+            state.rawPoints += RELATIONSHIP_POINTS.COORDINATED_STAB;
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Analyzes for convoy betrayals (promised convoy that failed intentionally).
+   */
+  analyzeConvoyBetrayals(
+    results: MovementResolvedEvent['payload']['results'],
+    unitsByProvince: Map<string, Power>
+  ): void {
+    // Find failed convoys
+    for (const { order, success } of results) {
+      if (order.type !== 'CONVOY') continue;
+
+      const convoyOrder = order as ConvoyOrder;
+      const convoyer = unitsByProvince.get(convoyOrder.unit);
+      const convoyed = unitsByProvince.get(convoyOrder.convoyedUnit);
+
+      if (!convoyer || !convoyed || convoyer === convoyed) continue;
+
+      // If convoy failed and the convoyer's fleet is still there (not dislodged),
+      // it might be intentional
+      if (!success) {
+        // Check if convoyer was dislodged - if not, it's suspicious
+        const isDislodged = results.some(
+          r => r.order.unit === convoyOrder.unit && !r.success &&
+               r.order.type === 'CONVOY'
+        );
+
+        // Check if there was previous cooperation (they had a positive relationship)
+        const rel = this.getRelationship(convoyer, convoyed);
+        const hadCooperation = rel.recentActions.some(
+          e => e.type === 'DIRECT_SUPPORT' || e.type === 'SUCCESSFUL_CONVOY'
+        );
+
+        if (!isDislodged && hadCooperation) {
+          this.recordAction(
+            'CONVOY_BETRAYAL',
+            convoyer,
+            convoyed,
+            `${convoyer} failed to convoy ${convoyed}'s army (potential betrayal)`
+          );
+        }
+      }
+    }
   }
 
   /**
@@ -609,7 +824,7 @@ export class ActionRelationshipEngine {
   }
 
   /**
-   * Gets all detected betrayals.
+   * Gets all detected betrayals (basic format for backwards compatibility).
    */
   getBetrayals(): Array<{
     betrayer: Power;
@@ -627,11 +842,10 @@ export class ActionRelationshipEngine {
     for (const [key, state] of this.relationships) {
       if (!state.betrayalDetected || !state.betrayalTurn) continue;
 
-      const [p1, p2] = key.split('-') as [Power, Power];
-
       // Find the betrayal event to determine who betrayed whom
       const betrayalEvent = state.events.find(
-        e => e.type === 'SUPPORT_THEN_STAB' || e.type === 'BROKEN_PROMISE_ATTACK'
+        e => e.type === 'SUPPORT_THEN_STAB' || e.type === 'BROKEN_PROMISE_ATTACK' ||
+             e.type === 'COORDINATED_STAB' || e.type === 'CONVOY_BETRAYAL'
       );
 
       if (betrayalEvent) {
@@ -640,13 +854,57 @@ export class ActionRelationshipEngine {
           victim: betrayalEvent.target,
           turn: state.betrayalTurn,
           events: state.events.filter(
-            e => e.type === 'SUPPORT_THEN_STAB' || e.type === 'BROKEN_PROMISE_ATTACK'
+            e => e.type === 'SUPPORT_THEN_STAB' || e.type === 'BROKEN_PROMISE_ATTACK' ||
+                 e.type === 'COORDINATED_STAB' || e.type === 'CONVOY_BETRAYAL'
           ),
         });
       }
     }
 
     return betrayals;
+  }
+
+  /**
+   * Gets all detected betrayals with full detail.
+   */
+  getAllBetrayalDetails(): BetrayalInfo[] {
+    const allBetrayals: BetrayalInfo[] = [];
+
+    for (const state of this.relationships.values()) {
+      allBetrayals.push(...state.betrayals);
+    }
+
+    // Sort by turn (most recent first) then severity
+    return allBetrayals.sort((a, b) => {
+      const turnDiff = (b.turn.year * 2 + (b.turn.season === 'FALL' ? 1 : 0)) -
+                       (a.turn.year * 2 + (a.turn.season === 'FALL' ? 1 : 0));
+      if (turnDiff !== 0) return turnDiff;
+      return b.severity - a.severity;
+    });
+  }
+
+  /**
+   * Gets betrayals involving a specific power.
+   */
+  getBetrayalsForPower(power: Power): {
+    asBetrayer: BetrayalInfo[];
+    asVictim: BetrayalInfo[];
+  } {
+    const allBetrayals = this.getAllBetrayalDetails();
+    return {
+      asBetrayer: allBetrayals.filter(b => b.betrayer === power),
+      asVictim: allBetrayals.filter(b => b.victim === power),
+    };
+  }
+
+  /**
+   * Gets the most recent betrayal between two powers.
+   */
+  getMostRecentBetrayal(p1: Power, p2: Power): BetrayalInfo | null {
+    const key = getPairKey(p1, p2);
+    const state = this.relationships.get(key);
+    if (!state || state.betrayals.length === 0) return null;
+    return state.betrayals[state.betrayals.length - 1];
   }
 
   /**
@@ -666,9 +924,12 @@ export class ActionRelationshipEngine {
           rawPoints: 0,
           events: [],
           betrayalDetected: false,
+          betrayals: [],
         });
       }
     }
+
+    this.betrayalIdCounter = 0;
   }
 }
 
