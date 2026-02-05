@@ -3,9 +3,9 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import type { Power } from '../../engine/types';
+import type { Power, GameState } from '../../engine/types';
 import type { AgentMemory, DiaryEntry, LLMProvider, ConversationMessage } from '../types';
-import { createInitialMemory } from '../memory';
+import { createInitialMemory, recordEvent } from '../memory';
 import {
   formatPhaseId,
   createDiaryEntry,
@@ -19,6 +19,10 @@ import {
   recordNegotiation,
   recordOrders,
   recordReflection,
+  extractYearlyGameContext,
+  buildEnhancedConsolidationPrompt,
+  parseEnhancedConsolidationResponse,
+  generateYearlySummary,
 } from '../diary';
 
 describe('Diary System', () => {
@@ -394,6 +398,235 @@ DIPLOMATIC: None`,
       const context = getContextDiary(memory);
       expect(context).toContain('Year 1901');
       expect(context).toContain('Year 1902');
+    });
+  });
+
+  describe('Yearly Summary Generation with Game State', () => {
+    function createMockGameState(power: Power, scs: string[]): GameState {
+      const supplyCenters = new Map<string, Power>();
+      for (const sc of scs) {
+        supplyCenters.set(sc, power);
+      }
+      // Add some SCs for other powers
+      supplyCenters.set('PARIS', 'FRANCE');
+      supplyCenters.set('BERLIN', 'GERMANY');
+
+      return {
+        year: 1901,
+        season: 'FALL',
+        phase: 'BUILD',
+        units: [],
+        supplyCenters,
+        orders: new Map(),
+        retreats: new Map(),
+        pendingRetreats: [],
+        pendingBuilds: new Map(),
+      };
+    }
+
+    describe('extractYearlyGameContext', () => {
+      it('should extract current SCs for power', () => {
+        const gameState = createMockGameState('ENGLAND', ['LONDON', 'EDINBURGH', 'LIVERPOOL', 'BELGIUM']);
+        const context = extractYearlyGameContext('ENGLAND', gameState, memory);
+
+        expect(context.currentSCs).toContain('LONDON');
+        expect(context.currentSCs).toContain('BELGIUM');
+        expect(context.totalSCs).toBe(4);
+      });
+
+      it('should calculate gained SCs when previousYearSCs provided', () => {
+        const gameState = createMockGameState('ENGLAND', ['LONDON', 'EDINBURGH', 'LIVERPOOL', 'BELGIUM', 'HOLLAND']);
+        const previousSCs = ['LONDON', 'EDINBURGH', 'LIVERPOOL'];
+
+        const context = extractYearlyGameContext('ENGLAND', gameState, memory, previousSCs);
+
+        expect(context.gainedSCs).toContain('BELGIUM');
+        expect(context.gainedSCs).toContain('HOLLAND');
+        expect(context.gainedSCs).toHaveLength(2);
+        expect(context.lostSCs).toHaveLength(0);
+      });
+
+      it('should calculate lost SCs', () => {
+        const gameState = createMockGameState('ENGLAND', ['LONDON', 'EDINBURGH']);
+        const previousSCs = ['LONDON', 'EDINBURGH', 'LIVERPOOL'];
+
+        const context = extractYearlyGameContext('ENGLAND', gameState, memory, previousSCs);
+
+        expect(context.lostSCs).toContain('LIVERPOOL');
+        expect(context.lostSCs).toHaveLength(1);
+      });
+
+      it('should extract alliance status from trust levels', () => {
+        // Set up trust levels
+        memory.trustLevels.set('FRANCE', 0.7); // solid
+        memory.trustLevels.set('GERMANY', 0.4); // shaky
+        memory.trustLevels.set('RUSSIA', 0.1); // deteriorating
+        memory.trustLevels.set('AUSTRIA', -0.3); // none
+
+        const gameState = createMockGameState('ENGLAND', ['LONDON']);
+        const context = extractYearlyGameContext('ENGLAND', gameState, memory);
+
+        expect(context.alliances.get('FRANCE')).toBe('solid');
+        expect(context.alliances.get('GERMANY')).toBe('shaky');
+        expect(context.alliances.get('RUSSIA')).toBe('deteriorating');
+        expect(context.alliances.get('AUSTRIA')).toBe('none');
+      });
+
+      it('should extract betrayals from memory events', () => {
+        // Record a betrayal event
+        recordEvent(memory, {
+          year: 1901,
+          season: 'FALL',
+          type: 'BETRAYAL',
+          powers: ['GERMANY', 'ENGLAND'],
+          description: 'Germany attacked RUH despite DMZ agreement',
+        }, -0.3);
+
+        const gameState = createMockGameState('ENGLAND', ['LONDON']);
+        gameState.year = 1901;
+        const context = extractYearlyGameContext('ENGLAND', gameState, memory);
+
+        expect(context.betrayals).toContain('Germany attacked RUH despite DMZ agreement');
+      });
+    });
+
+    describe('buildEnhancedConsolidationPrompt', () => {
+      it('should include game state context in prompt', () => {
+        const entries: DiaryEntry[] = [
+          createDiaryEntry(1901, 'SPRING', 'MOVEMENT', 'orders', 'Moved to Belgium'),
+        ];
+        const gameContext = {
+          currentSCs: ['LONDON', 'EDINBURGH', 'BELGIUM'],
+          gainedSCs: ['BELGIUM'],
+          lostSCs: [],
+          alliances: new Map<Power, 'solid' | 'shaky' | 'deteriorating' | 'none'>([
+            ['FRANCE', 'solid'],
+          ]),
+          betrayals: [],
+          totalSCs: 3,
+        };
+
+        const prompt = buildEnhancedConsolidationPrompt(1901, 'ENGLAND', entries, gameContext);
+
+        expect(prompt).toContain('ENGLAND');
+        expect(prompt).toContain('Supply Centers: 3 total');
+        expect(prompt).toContain('Gained: BELGIUM');
+        expect(prompt).toContain('FRANCE: solid');
+        expect(prompt).toContain('Moved to Belgium');
+      });
+    });
+
+    describe('parseEnhancedConsolidationResponse', () => {
+      it('should parse structured response', () => {
+        const response = `Year 1901 Summary:
+- Gained: BELGIUM (+1 SCs, now at 4)
+- Lost: None
+- Alliances: France (solid)
+- Betrayals: None
+- Key events: Successfully captured Belgium
+- Strategic position: Strong in the north`;
+
+        const gameContext = {
+          currentSCs: ['LONDON', 'EDINBURGH', 'LIVERPOOL', 'BELGIUM'],
+          gainedSCs: ['BELGIUM'],
+          lostSCs: [],
+          alliances: new Map<Power, 'solid' | 'shaky' | 'deteriorating' | 'none'>(),
+          betrayals: [],
+          totalSCs: 4,
+        };
+
+        const summary = parseEnhancedConsolidationResponse(response, 1901, gameContext);
+
+        expect(summary.year).toBe(1901);
+        expect(summary.summary).toContain('Year 1901 Summary');
+        expect(summary.territorialChanges).toContain('Gained: BELGIUM');
+      });
+    });
+
+    describe('generateYearlySummary', () => {
+      it('should generate summary with game state context', async () => {
+        const mockLLM: LLMProvider = {
+          complete: async () => ({
+            content: `Year 1901 Summary:
+- Gained: BELGIUM (+1 SCs, now at 4)
+- Lost: None
+- Alliances: France (solid)
+- Betrayals: None
+- Key events: Secured Belgium
+- Strategic position: Strong`,
+          }),
+        };
+
+        // Add some diary entries
+        addDiaryEntry(memory, createDiaryEntry(1901, 'SPRING', 'MOVEMENT', 'orders', 'Attacked Belgium'));
+
+        const gameState = createMockGameState('ENGLAND', ['LONDON', 'EDINBURGH', 'LIVERPOOL', 'BELGIUM']);
+        const previousSCs = ['LONDON', 'EDINBURGH', 'LIVERPOOL'];
+
+        const summary = await generateYearlySummary(
+          'ENGLAND',
+          1901,
+          memory.currentYearDiary,
+          gameState,
+          memory,
+          mockLLM,
+          previousSCs
+        );
+
+        expect(summary.year).toBe(1901);
+        expect(summary.summary).toContain('BELGIUM');
+      });
+
+      it('should create minimal summary when no entries', async () => {
+        const mockLLM: LLMProvider = {
+          complete: async () => ({ content: 'Should not be called' }),
+        };
+
+        const gameState = createMockGameState('ENGLAND', ['LONDON', 'EDINBURGH', 'LIVERPOOL']);
+        const previousSCs = ['LONDON', 'EDINBURGH', 'LIVERPOOL'];
+
+        const summary = await generateYearlySummary(
+          'ENGLAND',
+          1901,
+          [], // No entries
+          gameState,
+          memory,
+          mockLLM,
+          previousSCs
+        );
+
+        expect(summary.year).toBe(1901);
+        expect(summary.summary).toContain('Year 1901 Summary');
+        expect(summary.summary).toContain('+0 SCs');
+      });
+    });
+
+    describe('consolidateDiary with game state', () => {
+      it('should use enhanced summary when game state provided', async () => {
+        const mockLLM: LLMProvider = {
+          complete: async () => ({
+            content: `Year 1901 Summary:
+- Gained: BELGIUM (+1 SCs, now at 4)
+- Lost: None
+- Alliances: France (solid)
+- Betrayals: None
+- Key events: Expansion successful
+- Strategic position: Growing power`,
+          }),
+        };
+
+        addDiaryEntry(memory, createDiaryEntry(1901, 'SPRING', 'MOVEMENT', 'orders', 'Spring orders'));
+        addDiaryEntry(memory, createDiaryEntry(1901, 'FALL', 'MOVEMENT', 'orders', 'Fall orders'));
+
+        const gameState = createMockGameState('ENGLAND', ['LONDON', 'EDINBURGH', 'LIVERPOOL', 'BELGIUM']);
+        const previousSCs = ['LONDON', 'EDINBURGH', 'LIVERPOOL'];
+
+        const summary = await consolidateDiary(memory, 'ENGLAND', 1901, mockLLM, gameState, previousSCs);
+
+        expect(summary.summary).toContain('BELGIUM');
+        expect(memory.yearSummaries).toHaveLength(1);
+        expect(memory.currentYearDiary).toHaveLength(0);
+      });
     });
   });
 });

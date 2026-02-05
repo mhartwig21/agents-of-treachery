@@ -86,6 +86,11 @@ export {
   initializeDiary,
   buildConsolidationPrompt,
   parseConsolidationResponse,
+  // Enhanced yearly summary generation
+  extractYearlyGameContext,
+  buildEnhancedConsolidationPrompt,
+  parseEnhancedConsolidationResponse,
+  generateYearlySummary,
   // Alias exports for backward compatibility
   shouldConsolidateDiary,
   consolidateDiary,
@@ -94,6 +99,8 @@ export {
   recordNegotiation,
   estimateDiaryTokens,
 } from './diary';
+
+export type { YearlyGameContext } from './diary';
 
 // Session management
 export {

@@ -119,6 +119,8 @@ export class AgentRuntime {
   private pendingMessageAnalyses: Map<Power, MessageAnalysis[]> = new Map();
   private lastPhaseMessages: Message[] = [];
   private pendingReflections: Map<Power, PhaseReflection> = new Map();
+  /** Track SC ownership at start of year for yearly summary calculation */
+  private yearStartSCs: Map<Power, string[]> = new Map();
 
   constructor(
     config: AgentRuntimeConfig,
@@ -268,6 +270,11 @@ export class AgentRuntime {
       season: phaseSeason,
       phase: phasePhase,
     });
+
+    // At the start of Spring Diplomacy, capture SC ownership for yearly summary
+    if (phaseSeason === 'SPRING' && phasePhase === 'DIPLOMACY') {
+      this.captureYearStartSCs();
+    }
 
     switch (phasePhase) {
       case 'DIPLOMACY':
@@ -769,8 +776,24 @@ export class AgentRuntime {
   }
 
   /**
+   * Capture SC ownership at the start of a year for yearly summary calculation.
+   */
+  private captureYearStartSCs(): void {
+    for (const power of POWERS) {
+      const scs: string[] = [];
+      for (const [province, owner] of this.gameState.supplyCenters) {
+        if (owner === power) {
+          scs.push(province);
+        }
+      }
+      this.yearStartSCs.set(power, scs);
+    }
+  }
+
+  /**
    * Consolidate agent diaries for the completed year.
    * This compresses the year's diary entries into a summary for efficient context usage.
+   * Now includes game state context for richer yearly summaries.
    */
   private async consolidateDiaries(): Promise<void> {
     const llm = this.sessionManager.getLLMProvider();
@@ -788,11 +811,16 @@ export class AgentRuntime {
         }
 
         try {
+          // Get the SCs from the start of the year for comparison
+          const previousYearSCs = this.yearStartSCs.get(power);
+
           const summary = await consolidateDiary(
             session.memory,
             power,
             year,
-            llm
+            llm,
+            this.gameState,
+            previousYearSCs
           );
 
           if (this.config.verbose) {
