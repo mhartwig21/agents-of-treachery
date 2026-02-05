@@ -502,6 +502,7 @@ export class ExperimentRunner extends EventEmitter {
       turnTimeout: 120000,
       persistMemory: false,
       verbose: this.config.verbose,
+      pressPeriodMinutes: this.config.pressPeriodMinutes ?? 1,
     };
 
     const runtime = new AgentRuntime(runtimeConfig, defaultProvider, undefined, logger);
@@ -870,6 +871,7 @@ export function createExperimentConfig(
     saveSnapshots: partial.saveSnapshots ?? false,
     outputDir: partial.outputDir ?? path.join(process.cwd(), 'experiments', partial.experimentId),
     phaseDelayMs: partial.phaseDelayMs ?? 100,
+    pressPeriodMinutes: partial.pressPeriodMinutes,
     verbose: partial.verbose ?? false,
   };
 }

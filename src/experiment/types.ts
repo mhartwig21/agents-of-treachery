@@ -86,6 +86,8 @@ export interface ExperimentConfig {
   outputDir: string;
   /** Phase delay in ms (throttle game loop) */
   phaseDelayMs?: number;
+  /** Press period duration in minutes (0 for instant, 1 for testing, 10+ for real games) */
+  pressPeriodMinutes?: number;
   /** Whether to enable verbose logging */
   verbose: boolean;
 }

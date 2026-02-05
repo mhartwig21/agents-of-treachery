@@ -147,6 +147,7 @@ describe('ExperimentRunner', () => {
         maxTurnsPerGame: 1,
         outputDir: testDir,
         phaseDelayMs: 1,
+        pressPeriodMinutes: 0,
       });
 
       const runner = new ExperimentRunner(config);
@@ -184,6 +185,7 @@ describe('ExperimentRunner', () => {
         maxTurnsPerGame: 2,
         outputDir: testDir,
         phaseDelayMs: 1,
+        pressPeriodMinutes: 0,
       });
 
       const runner = new ExperimentRunner(config);
@@ -211,6 +213,7 @@ describe('ExperimentRunner', () => {
         maxTurnsPerGame: 3,
         outputDir: testDir,
         phaseDelayMs: 1,
+        pressPeriodMinutes: 0,
         runAnalysis: false,
       });
 
@@ -240,6 +243,7 @@ describe('ExperimentRunner', () => {
         maxTurnsPerGame: 2,
         outputDir: testDir,
         phaseDelayMs: 1,
+        pressPeriodMinutes: 0,
         runAnalysis: false,
       });
 
@@ -268,6 +272,7 @@ describe('ExperimentRunner', () => {
         maxTurnsPerGame: 1,
         outputDir: testDir,
         phaseDelayMs: 1,
+        pressPeriodMinutes: 0,
         runAnalysis: false,
       });
 
@@ -304,6 +309,7 @@ describe('ExperimentRunner', () => {
         maxTurnsPerGame: 1,
         outputDir: testDir,
         phaseDelayMs: 1,
+        pressPeriodMinutes: 0,
         runAnalysis: false,
       });
 
@@ -333,6 +339,7 @@ describe('ExperimentRunner', () => {
         maxTurnsPerGame: 1,
         outputDir: testDir,
         phaseDelayMs: 1,
+        pressPeriodMinutes: 0,
         runAnalysis: false,
       });
 
@@ -363,6 +370,7 @@ describe('ExperimentRunner', () => {
         maxTurnsPerGame: 1,
         outputDir: testDir,
         phaseDelayMs: 1,
+        pressPeriodMinutes: 0,
         runAnalysis: false,
       });
 
@@ -390,6 +398,7 @@ describe('ExperimentRunner', () => {
         maxTurnsPerGame: 1,
         outputDir: testDir,
         phaseDelayMs: 1,
+        pressPeriodMinutes: 0,
         runAnalysis: true,
       });
 
@@ -424,6 +433,7 @@ describe('ExperimentRunner', () => {
         maxTurnsPerGame: 100, // Long games
         outputDir: testDir,
         phaseDelayMs: 100,
+        pressPeriodMinutes: 0,
         runAnalysis: false,
       });
 
@@ -459,6 +469,7 @@ describe('ExperimentRunner', () => {
         maxTurnsPerGame: 1,
         outputDir: testDir,
         phaseDelayMs: 1,
+        pressPeriodMinutes: 0,
         runAnalysis: false,
       });
 
