@@ -17,3 +17,7 @@ secrets/.keys/
 /blob-report/
 /playwright/.cache/
 /playwright/.auth/
+
+# Experiment runtime data
+experiments/*/
+experiments/*.log

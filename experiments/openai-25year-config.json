@@ -1,0 +1,19 @@
+{
+  "experimentId": "openai-25year-simulation",
+  "name": "25-Year OpenAI Game Simulation",
+  "description": "Comprehensive 25-year Diplomacy game simulation using OpenAI GPT-4o agents. Tests agent progress, UI functionality, orders display, and win condition reachability.",
+  "models": [
+    {
+      "id": "openai-gpt4o",
+      "provider": "openai",
+      "model": "gpt-4o"
+    }
+  ],
+  "defaultModelConfigId": "openai-gpt4o",
+  "gameCount": 1,
+  "maxConcurrent": 1,
+  "maxTurnsPerGame": 50,
+  "runAnalysis": true,
+  "phaseDelayMs": 1000,
+  "verbose": true
+}
