@@ -264,28 +264,103 @@ export class AgentRuntime {
   }
 
   /**
-   * Run the diplomacy phase (communication only).
+   * Run the diplomacy phase with time-boxed press period.
+   * Agents can have back-and-forth conversations during the press window.
    */
   private async runDiplomacyPhase(): Promise<void> {
-    // Get agent responses for diplomacy
-    const agentTurns = await this.runAgentTurns('diplomacy');
+    const pressPeriodMs = (this.config.pressPeriodMinutes ?? 1) * 60 * 1000;
+    const pollIntervalMs = (this.config.pressPollIntervalSeconds ?? 5) * 1000;
+    const startTime = Date.now();
+    const endTime = startTime + pressPeriodMs;
 
-    // Process diplomatic messages
-    for (const [power, result] of agentTurns) {
-      if (result.diplomaticMessages) {
+    console.log(`\n📬 Press period started (${this.config.pressPeriodMinutes ?? 1} minute window)`);
+
+    // Track which agents have sent at least one message this phase
+    const agentsWhoActed = new Set<Power>();
+    let roundNumber = 0;
+
+    // First round: everyone sends initial messages
+    roundNumber++;
+    console.log(`\n📨 Press round ${roundNumber}: Initial outreach`);
+    const initialTurns = await this.runAgentTurns('diplomacy');
+    for (const [power, result] of initialTurns) {
+      this.processAgentDiplomacy(power, result);
+      agentsWhoActed.add(power);
+    }
+
+    // Continue polling until time expires
+    while (Date.now() < endTime) {
+      // Wait before next poll
+      await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
+
+      // Check if time expired during sleep
+      if (Date.now() >= endTime) break;
+
+      // Find agents with unread messages
+      const agentsWithUnread: Power[] = [];
+      for (const power of POWERS) {
         const api = this.pressAPIs.get(power)!;
-        for (const action of result.diplomaticMessages) {
-          if (action.type === 'SEND_MESSAGE') {
-            for (const target of action.targetPowers) {
-              api.sendTo(target, action.content);
-            }
+        const inbox = api.getInbox();
+        if (inbox.unreadCount > 0) {
+          agentsWithUnread.push(power);
+        }
+      }
+
+      if (agentsWithUnread.length === 0) {
+        // No one has unread messages - conversation has settled
+        const timeRemaining = Math.round((endTime - Date.now()) / 1000);
+        console.log(`  💤 No unread messages. ${timeRemaining}s remaining in press period.`);
+        continue;
+      }
+
+      // Let agents with unread messages respond
+      roundNumber++;
+      console.log(`\n📨 Press round ${roundNumber}: ${agentsWithUnread.length} agents responding`);
+
+      for (const power of agentsWithUnread) {
+        const result = await this.runSingleAgentTurn(power, 'diplomacy');
+        this.processAgentDiplomacy(power, result);
+      }
+    }
+
+    const totalRounds = roundNumber;
+    const totalMessages = this.countTotalPressMessages();
+    console.log(`\n📬 Press period ended after ${totalRounds} rounds, ${totalMessages} total messages\n`);
+
+    // Transition to movement phase
+    this.gameState.phase = 'MOVEMENT';
+  }
+
+  /**
+   * Process diplomatic messages from an agent's turn result.
+   */
+  private processAgentDiplomacy(power: Power, result: AgentTurnResult): void {
+    if (result.diplomaticMessages) {
+      const api = this.pressAPIs.get(power)!;
+      for (const action of result.diplomaticMessages) {
+        if (action.type === 'SEND_MESSAGE') {
+          for (const target of action.targetPowers) {
+            api.sendTo(target, action.content);
+            console.log(`  [${power} → ${target}] ${action.content.slice(0, 60)}${action.content.length > 60 ? '...' : ''}`);
           }
         }
       }
     }
+  }
 
-    // Transition to movement phase
-    this.gameState.phase = 'MOVEMENT';
+  /**
+   * Count total press messages in the system.
+   */
+  private countTotalPressMessages(): number {
+    let total = 0;
+    for (const power of POWERS) {
+      const api = this.pressAPIs.get(power)!;
+      const inbox = api.getInbox();
+      // Count messages from all channels (recentMessages includes last 20)
+      total += inbox.channels.reduce((sum, ch) => sum + ch.messageCount, 0);
+    }
+    // Divide by ~2 since bilateral messages show up for both parties
+    return Math.round(total / 2);
   }
 
   /**
@@ -469,12 +544,17 @@ export class AgentRuntime {
     // Build the game view for this agent
     const gameView = createAgentGameView(this.gameState, power);
 
-    // Get recent messages from press
+    // Get recent messages from press - filter for INCOMING only (messages from other powers)
     const pressAPI = this.pressAPIs.get(power)!;
     const inbox = pressAPI.getInbox();
-    const recentMessages = inbox.recentMessages.map((m: { sender: string; content: string }) =>
-      `[${m.sender}]: ${m.content}`
-    );
+    const incomingMessages = inbox.recentMessages
+      .filter((m: { sender: string }) => m.sender !== power)
+      .map((m: { sender: string; content: string }) =>
+        `FROM ${m.sender}: "${m.content}"`
+      );
+    const recentMessages = incomingMessages.length > 0
+      ? [`--- INCOMING MESSAGES (you should respond to these!) ---`, ...incomingMessages]
+      : [];
 
     // Build the turn prompt with strategic context
     const turnPrompt = buildTurnPrompt(
@@ -488,6 +568,15 @@ export class AgentRuntime {
     // Add strategic summary
     const strategicSummary = createStrategicSummary(this.gameState, power);
     const fullPrompt = `${strategicSummary}\n\n${turnPrompt}`;
+
+    // Verbose: log the full prompt being sent
+    if (this.config.verbose) {
+      console.log(`\n${'='.repeat(80)}`);
+      console.log(`[${power}] FULL PROMPT (${turnType} phase):`);
+      console.log(`${'='.repeat(80)}`);
+      console.log(fullPrompt);
+      console.log(`${'='.repeat(80)}\n`);
+    }
 
     // Add user message to conversation
     this.sessionManager.addMessage(power, {
@@ -508,6 +597,15 @@ export class AgentRuntime {
         maxTokens: session.config.maxTokens,
       });
       console.log(`[${power}] LLM responded in ${((Date.now() - startTime) / 1000).toFixed(1)}s (${response.content.length} chars)`);
+
+      // Verbose: log the full response
+      if (this.config.verbose) {
+        console.log(`\n${'─'.repeat(80)}`);
+        console.log(`[${power}] LLM RESPONSE:`);
+        console.log(`${'─'.repeat(80)}`);
+        console.log(response.content);
+        console.log(`${'─'.repeat(80)}\n`);
+      }
     } catch (error) {
       console.error(`[${power}] LLM error:`, error);
       throw error;

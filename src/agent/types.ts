@@ -270,6 +270,12 @@ export interface AgentRuntimeConfig {
 
   /** Maximum press messages to retain per channel (sliding window). Default: 100 */
   maxPressMessagesPerChannel?: number;
+
+  /** Duration of press period in minutes. Agents can have back-and-forth conversations during this window. Default: 1 */
+  pressPeriodMinutes?: number;
+
+  /** Polling interval during press period in seconds. How often to check for agents with unread messages. Default: 5 */
+  pressPollIntervalSeconds?: number;
 }
 
 /**
@@ -282,6 +288,8 @@ export const DEFAULT_RUNTIME_CONFIG: Partial<AgentRuntimeConfig> = {
   verbose: false,
   maxConversationHistory: 20, // Reduced from 50 to avoid context overflow on long games
   maxPressMessagesPerChannel: 100,
+  pressPeriodMinutes: 1, // 1 minute default for faster testing, increase for real games
+  pressPollIntervalSeconds: 5,
 };
 
 /**

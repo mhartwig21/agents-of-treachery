@@ -224,13 +224,21 @@ export class GameServer {
     const gameName = name || `AI Game ${this.gameCounter}`;
     console.log(`Creating game: ${gameId} (${gameName})`);
 
+    // Press period duration from env var (default 1 minute for testing, use 10 for real games)
+    const pressPeriodMinutes = parseInt(process.env.PRESS_PERIOD_MINUTES || '1', 10);
+    console.log(`Press period: ${pressPeriodMinutes} minute(s)`);
+
+    // Verbose logging from env var
+    const verbose = process.env.VERBOSE === '1' || process.env.VERBOSE === 'true';
+
     const config: AgentRuntimeConfig = {
       gameId,
       agents: POWERS.map((power) => ({ power })),
       parallelExecution: true,
       turnTimeout: 60000,
       persistMemory: false,
-      verbose: false,
+      verbose,
+      pressPeriodMinutes,
     };
 
     const logger = getGameLogger(gameId);

@@ -536,21 +536,37 @@ function getPhaseInstructions(phase: Phase, view: AgentGameView): string {
   switch (phase) {
     case 'DIPLOMACY':
       return `## Your Task: Diplomacy Phase
-Communicate with other powers to form alliances, share information, and coordinate strategies.
+
+**BE SPECIFIC AND MAKE DEALS - NO VAGUE PLEASANTRIES!**
+
+Good diplomacy is about CONCRETE PROPOSALS, not polite chit-chat:
+- BAD: "I look forward to cooperating with you."
+- GOOD: "I will move A Munich -> Burgundy. You move A Paris -> Picardy. We attack Belgium together."
+
+**RESPOND TO INCOMING MESSAGES** (check "Recent Diplomatic Messages" above):
+- If someone proposed a deal: ACCEPT, REJECT, or COUNTER-PROPOSE with specifics
+- If someone asked a question: ANSWER IT DIRECTLY
+- If someone made a commitment: ACKNOWLEDGE and state YOUR commitment in return
+
+**MAKE CONCRETE PROPOSALS:**
+- Name SPECIFIC PROVINCES you will target
+- Name SPECIFIC UNITS you will move
+- Ask for SPECIFIC actions from the other power
+- Set DEADLINES: "This turn" or "By Fall 1901"
 
 Respond with:
-1. **ANALYSIS**: Your assessment of the current situation
-2. **INTENTIONS**: Your planned strategy (kept private from others)
-3. **DIPLOMACY**: Messages to send to other powers
+1. **ANALYSIS**: Brief assessment (2-3 sentences max)
+2. **INTENTIONS**: Your secret plans (kept private)
+3. **DIPLOMACY**: Messages with SPECIFIC proposals or responses
 
-Format messages in a DIPLOMACY section like this:
+Format:
 \`\`\`
 DIPLOMACY:
-SEND FRANCE: "I propose we form an alliance against Germany."
-SEND RUSSIA: "Let's coordinate our movements in the Black Sea."
+SEND FRANCE: "Deal: I move F English Channel -> North Sea. You move A Paris -> Burgundy. We split Belgium - you take it Fall 1901, I take Holland. Agreed?"
+SEND GERMANY: "I reject your proposal. Counter-offer: I stay out of Belgium if you support me into Norway."
 \`\`\`
 
-Use double quotes around your message content.`;
+**NO GENERIC MESSAGES like "I hope we can work together" - make concrete deals!**`;
 
     case 'MOVEMENT':
       // Generate unit-specific examples showing MOVES, not just HOLDs
