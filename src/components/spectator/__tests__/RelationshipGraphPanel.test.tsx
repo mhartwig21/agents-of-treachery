@@ -6,6 +6,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { RelationshipGraphPanel } from '../RelationshipGraphPanel';
 import type { Message } from '../../../press/types';
+import type { GameEvent, MovementResolvedEvent } from '../../../store/events';
 
 describe('RelationshipGraphPanel', () => {
   // Helper to create test messages
@@ -127,5 +128,162 @@ describe('RelationshipGraphPanel', () => {
     );
 
     expect(container.firstChild).toHaveClass('custom-class');
+  });
+
+  describe('Analysis Mode', () => {
+    it('renders mode toggle buttons', () => {
+      render(<RelationshipGraphPanel messages={[]} />);
+
+      expect(screen.getByText('Messages')).toBeInTheDocument();
+      expect(screen.getByText('Actions')).toBeInTheDocument();
+      expect(screen.getByText('Combined')).toBeInTheDocument();
+    });
+
+    it('highlights active mode button', () => {
+      render(<RelationshipGraphPanel messages={[]} analysisMode="messages" />);
+
+      const messagesButton = screen.getByText('Messages');
+      expect(messagesButton).toHaveClass('bg-blue-600');
+    });
+
+    it('disables action modes when no game events', () => {
+      render(<RelationshipGraphPanel messages={[]} />);
+
+      const actionsButton = screen.getByText('Actions');
+      const combinedButton = screen.getByText('Combined');
+
+      expect(actionsButton).toBeDisabled();
+      expect(combinedButton).toBeDisabled();
+    });
+
+    it('enables action modes when game events are provided', () => {
+      const gameEvents: GameEvent[] = [
+        {
+          id: 'evt-1',
+          timestamp: new Date(),
+          gameId: 'game-1',
+          type: 'MOVEMENT_RESOLVED',
+          payload: {
+            year: 1901,
+            season: 'SPRING',
+            results: [],
+            unitMoves: [],
+            dislodged: [],
+          },
+        } as MovementResolvedEvent,
+      ];
+
+      render(<RelationshipGraphPanel messages={[]} gameEvents={gameEvents} />);
+
+      const actionsButton = screen.getByText('Actions');
+      const combinedButton = screen.getByText('Combined');
+
+      expect(actionsButton).not.toBeDisabled();
+      expect(combinedButton).not.toBeDisabled();
+    });
+
+    it('calls onAnalysisModeChange when mode is changed', () => {
+      const onModeChange = vi.fn();
+      const gameEvents: GameEvent[] = [
+        {
+          id: 'evt-1',
+          timestamp: new Date(),
+          gameId: 'game-1',
+          type: 'MOVEMENT_RESOLVED',
+          payload: {
+            year: 1901,
+            season: 'SPRING',
+            results: [],
+            unitMoves: [],
+            dislodged: [],
+          },
+        } as MovementResolvedEvent,
+      ];
+
+      render(
+        <RelationshipGraphPanel
+          messages={[]}
+          gameEvents={gameEvents}
+          analysisMode="messages"
+          onAnalysisModeChange={onModeChange}
+        />
+      );
+
+      fireEvent.click(screen.getByText('Actions'));
+
+      expect(onModeChange).toHaveBeenCalledWith('actions');
+    });
+
+    it('shows betrayal legend in actions mode', () => {
+      const gameEvents: GameEvent[] = [
+        {
+          id: 'evt-1',
+          timestamp: new Date(),
+          gameId: 'game-1',
+          type: 'MOVEMENT_RESOLVED',
+          payload: {
+            year: 1901,
+            season: 'SPRING',
+            results: [],
+            unitMoves: [],
+            dislodged: [],
+          },
+        } as MovementResolvedEvent,
+      ];
+
+      render(
+        <RelationshipGraphPanel
+          messages={[]}
+          gameEvents={gameEvents}
+          analysisMode="actions"
+        />
+      );
+
+      expect(screen.getByText('Betrayal')).toBeInTheDocument();
+    });
+
+    it('does not show betrayal legend in messages mode', () => {
+      render(<RelationshipGraphPanel messages={[]} analysisMode="messages" />);
+
+      expect(screen.queryByText('Betrayal')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('Combined Mode Scoring', () => {
+    it('shows score badge for selected power in combined mode', () => {
+      const messages: Message[] = [
+        createMessage('ENGLAND', 'ENGLAND-FRANCE', 'PROPOSAL'),
+        createMessage('FRANCE', 'ENGLAND-FRANCE', 'ACCEPTANCE'),
+        createMessage('ENGLAND', 'ENGLAND-FRANCE', 'INFORMATION'),
+      ];
+
+      const gameEvents: GameEvent[] = [
+        {
+          id: 'evt-1',
+          timestamp: new Date(),
+          gameId: 'game-1',
+          type: 'MOVEMENT_RESOLVED',
+          payload: {
+            year: 1901,
+            season: 'SPRING',
+            results: [],
+            unitMoves: [],
+            dislodged: [],
+          },
+        } as MovementResolvedEvent,
+      ];
+
+      render(
+        <RelationshipGraphPanel
+          messages={messages}
+          gameEvents={gameEvents}
+          analysisMode="combined"
+          selectedPower="england"
+        />
+      );
+
+      // Should show England's info panel
+      expect(screen.getByText('England')).toBeInTheDocument();
+    });
   });
 });
