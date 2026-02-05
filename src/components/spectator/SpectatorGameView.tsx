@@ -4,9 +4,9 @@
  * Layout with DiplomacyMap, side panels, and bottom scrubber.
  */
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import { useSpectator } from '../../spectator/SpectatorContext';
-import { type LowercasePower } from '../../spectator/types';
+import { type LowercasePower, type GameSnapshot } from '../../spectator/types';
 import type { Message } from '../../press/types';
 import type { Order as UIOrder } from '../../types/game';
 import { DiplomacyMap } from '../DiplomacyMap';
@@ -16,6 +16,7 @@ import { ChannelPanel } from './ChannelPanel';
 import { PressTimeline } from './PressTimeline';
 import { PressMessageModal } from './PressMessageModal';
 import { TurnScrubber } from './TurnScrubber';
+import { TurnResolutionPlayer } from './TurnResolutionPlayer';
 import { LiveActivityPanel } from './LiveActivityPanel';
 import { SupplyCenterBalanceChart } from './SupplyCenterBalanceChart';
 import { RelationshipGraphPanel } from './RelationshipGraphPanel';
@@ -23,6 +24,8 @@ import { PhaseIndicator, PhaseBadge } from '../shared/PhaseIndicator';
 import { CollapsiblePanel } from '../shared/CollapsiblePanel';
 import { GameEventOverlay } from './GameEventOverlay';
 import { useGameSounds } from '../../audio';
+import { useResolutionAnimation } from '../../hooks/useResolutionAnimation';
+import { synthesizeResolutionEvent } from '../../spectator/synthesizeResolutionEvent';
 
 /** State for which sidebar panels are collapsed */
 interface CollapsedPanels {
@@ -61,9 +64,60 @@ export function SpectatorGameView({ onBack }: SpectatorGameViewProps) {
     press: false,
     relationships: false,
   });
+  const [animationSpeed, setAnimationSpeed] = useState<'slow' | 'normal' | 'fast'>('normal');
+  const [isAnimationPlaying, setIsAnimationPlaying] = useState(false);
+
+  // Track previous snapshot for resolution detection
+  const prevSnapshotRef = useRef<GameSnapshot | null>(null);
+  const prevSnapshotIdRef = useRef<string | null>(null);
+
+  // Get the previous snapshot for resolution synthesis
+  const previousSnapshot = useMemo(() => {
+    if (!activeGame || state.replayPosition === null || state.replayPosition === 0) {
+      return null;
+    }
+    return activeGame.snapshots[state.replayPosition - 1] ?? null;
+  }, [activeGame, state.replayPosition]);
+
+  // Synthesize resolution event when viewing a resolved turn
+  const resolutionEvent = useMemo(() => {
+    if (!currentSnapshot) return null;
+    return synthesizeResolutionEvent(currentSnapshot, previousSnapshot);
+  }, [currentSnapshot, previousSnapshot]);
+
+  // Resolution animation hook
+  const [animationState, animationControls] = useResolutionAnimation(resolutionEvent, {
+    speed: animationSpeed,
+  });
+
+  // Track animation playing state
+  useEffect(() => {
+    const playing = animationState.phase !== 'idle' && animationState.phase !== 'complete';
+    setIsAnimationPlaying(playing);
+  }, [animationState.phase]);
+
+  // Wrap controls to track speed changes
+  const wrappedControls = useMemo(() => ({
+    ...animationControls,
+    setSpeed: (speed: 'slow' | 'normal' | 'fast') => {
+      setAnimationSpeed(speed);
+      animationControls.setSpeed(speed);
+    },
+  }), [animationControls]);
+
+  // Update previous snapshot ref when snapshot changes
+  useEffect(() => {
+    if (currentSnapshot?.id !== prevSnapshotIdRef.current) {
+      prevSnapshotRef.current = currentSnapshot;
+      prevSnapshotIdRef.current = currentSnapshot?.id ?? null;
+    }
+  }, [currentSnapshot]);
 
   // Game sounds for audio feedback on events
   const { lastEvents } = useGameSounds(currentSnapshot);
+
+  // Determine if animation mode should be active
+  const isAnimationActive = animationState.phase !== 'idle' && animationState.phase !== 'complete';
 
   // Live Data Accumulator: Merge snapshot data with streaming data when live
   // This shows messages/orders as they arrive, before phase resolution
@@ -178,6 +232,11 @@ export function SpectatorGameView({ onBack }: SpectatorGameViewProps) {
         accumulatedMessages={accumulatedMessages}
         accumulatedOrders={accumulatedOrders}
         lastEvents={lastEvents}
+        animationState={animationState}
+        animationControls={wrappedControls}
+        animationSpeed={animationSpeed}
+        isAnimationPlaying={isAnimationPlaying}
+        hasResolutionEvent={!!resolutionEvent}
       />
     );
   }
@@ -227,6 +286,8 @@ export function SpectatorGameView({ onBack }: SpectatorGameViewProps) {
             onTerritorySelect={setSelectedTerritory}
             readOnly
             highlightedTerritories={selectedPower ? getTerritoriesForPower(currentSnapshot.gameState, selectedPower) : undefined}
+            animationMode={isAnimationActive}
+            animationState={animationState}
           />
         </div>
 
@@ -327,6 +388,17 @@ export function SpectatorGameView({ onBack }: SpectatorGameViewProps) {
       {/* Bottom turn scrubber */}
       <TurnScrubber className="border-t border-gray-700" />
 
+      {/* Turn resolution player - shows when viewing a resolved turn */}
+      {resolutionEvent && (
+        <TurnResolutionPlayer
+          state={animationState}
+          controls={wrappedControls}
+          speed={animationSpeed}
+          isPlaying={isAnimationPlaying}
+          className="border-t border-gray-700"
+        />
+      )}
+
       {/* Press message modal */}
       {selectedMessage && (
         <PressMessageModal
@@ -365,6 +437,16 @@ interface MobileGameViewProps {
   accumulatedOrders: UIOrder[];
   /** Last detected game events for sound/visual effects */
   lastEvents: import('../../audio').DetectedGameEvent[];
+  /** Resolution animation state */
+  animationState: import('../../hooks/useResolutionAnimation').ResolutionAnimationState;
+  /** Resolution animation controls */
+  animationControls: import('../../hooks/useResolutionAnimation').ResolutionAnimationControls;
+  /** Current animation speed */
+  animationSpeed: 'slow' | 'normal' | 'fast';
+  /** Whether animation is currently playing */
+  isAnimationPlaying: boolean;
+  /** Whether there's a resolution event to animate */
+  hasResolutionEvent: boolean;
 }
 
 function MobileGameView({
@@ -383,7 +465,14 @@ function MobileGameView({
   accumulatedMessages,
   accumulatedOrders,
   lastEvents,
+  animationState,
+  animationControls,
+  animationSpeed,
+  isAnimationPlaying,
+  hasResolutionEvent,
 }: MobileGameViewProps) {
+  // Determine if animation mode is active
+  const isAnimationActive = animationState.phase !== 'idle' && animationState.phase !== 'complete';
   // Find selected message from accumulated messages (includes live data)
   const selectedMessage = useMemo(() => {
     if (!selectedMessageId) return null;
@@ -428,6 +517,8 @@ function MobileGameView({
             selectedTerritory={selectedTerritory}
             onTerritorySelect={setSelectedTerritory}
             readOnly
+            animationMode={isAnimationActive}
+            animationState={animationState}
           />
         )}
         {gameViewTab === 'orders' && (
@@ -465,6 +556,18 @@ function MobileGameView({
           allMessages={accumulatedMessages}
           onClose={() => setSelectedMessageId(null)}
           onNavigate={setSelectedMessageId}
+        />
+      )}
+
+      {/* Compact resolution player - shows when viewing a resolved turn on map tab */}
+      {hasResolutionEvent && gameViewTab === 'map' && (
+        <TurnResolutionPlayer
+          state={animationState}
+          controls={animationControls}
+          speed={animationSpeed}
+          isPlaying={isAnimationPlaying}
+          compact
+          className="border-t border-gray-700"
         />
       )}
 
