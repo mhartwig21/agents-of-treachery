@@ -4,3 +4,4 @@
 
 export * from './deception';
 export * from './narrative';
+export * from './relationships';
