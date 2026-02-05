@@ -15,6 +15,8 @@ import type {
   StrategicNote,
   PowerRelationship,
   TurnSummary,
+  DiaryEntry,
+  YearSummary,
 } from './types';
 
 /**
@@ -53,6 +55,9 @@ export function createInitialMemory(power: Power, gameId: string): AgentMemory {
     currentAllies: [],
     currentEnemies: [],
     turnSummaries: [],
+    fullPrivateDiary: [],
+    yearSummaries: [],
+    currentYearDiary: [],
   };
 }
 
@@ -296,6 +301,19 @@ export function serializeMemory(memory: AgentMemory): string {
     relationships: Object.fromEntries(
       Array.from(memory.relationships.entries()).map(([k, v]) => [k, v])
     ),
+    // Diary entries have Date objects that need to be serialized
+    fullPrivateDiary: memory.fullPrivateDiary.map(e => ({
+      ...e,
+      timestamp: e.timestamp.toISOString(),
+    })),
+    yearSummaries: memory.yearSummaries.map(s => ({
+      ...s,
+      consolidatedAt: s.consolidatedAt.toISOString(),
+    })),
+    currentYearDiary: memory.currentYearDiary.map(e => ({
+      ...e,
+      timestamp: e.timestamp.toISOString(),
+    })),
   };
   return JSON.stringify(serializable, null, 2);
 }
@@ -305,10 +323,27 @@ export function serializeMemory(memory: AgentMemory): string {
  */
 export function deserializeMemory(json: string): AgentMemory {
   const parsed = JSON.parse(json);
+
+  // Helper to deserialize diary entries with Date objects
+  const deserializeDiaryEntry = (e: any): DiaryEntry => ({
+    ...e,
+    timestamp: new Date(e.timestamp),
+  });
+
+  // Helper to deserialize year summaries with Date objects
+  const deserializeYearSummary = (s: any): YearSummary => ({
+    ...s,
+    consolidatedAt: new Date(s.consolidatedAt),
+  });
+
   return {
     ...parsed,
     trustLevels: new Map(Object.entries(parsed.trustLevels)),
     relationships: new Map(Object.entries(parsed.relationships)),
+    // Deserialize diary fields (handle missing fields for backwards compatibility)
+    fullPrivateDiary: (parsed.fullPrivateDiary || []).map(deserializeDiaryEntry),
+    yearSummaries: (parsed.yearSummaries || []).map(deserializeYearSummary),
+    currentYearDiary: (parsed.currentYearDiary || []).map(deserializeDiaryEntry),
   };
 }
 

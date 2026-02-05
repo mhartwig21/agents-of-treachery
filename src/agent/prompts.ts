@@ -16,6 +16,7 @@
 import type { Power, Phase, GameState } from '../engine/types';
 import type { AgentPersonality, AgentMemory, AgentGameView } from './types';
 import { getRelationshipSummary, getRecentEvents, getHighPriorityNotes } from './memory';
+import { getContextDiary } from './diary';
 import { getPowerPersonalityPrompt } from './personalities';
 import {
   generatePowerStrategicContext,
@@ -418,6 +419,12 @@ export function buildTurnPrompt(
 
   // Relationships and trust
   sections.push(`## Your Relationships\n${getRelationshipSummary(memory)}`);
+
+  // Diary context (consolidated memories from past years + current year notes)
+  const diaryContext = getContextDiary(memory);
+  if (diaryContext) {
+    sections.push(diaryContext);
+  }
 
   // Recent events
   const events = getRecentEvents(memory, 5);

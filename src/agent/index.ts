@@ -16,6 +16,9 @@ export type {
   PowerRelationship,
   AgentMemory,
   TurnSummary,
+  DiaryEntry,
+  DiaryEntryType,
+  YearSummary,
   AgentConfig,
   AgentPersonality,
   AgentSession,
@@ -61,6 +64,31 @@ export {
 } from './memory';
 
 export type { MemoryStore } from './memory';
+
+// Diary system
+export {
+  formatPhaseId,
+  createDiaryEntry,
+  addDiaryEntry,
+  addNegotiationEntry,
+  addOrdersEntry,
+  addReflectionEntry,
+  shouldConsolidate,
+  consolidateYear,
+  performYearEndConsolidation,
+  getContextDiary,
+  getDiaryStats,
+  initializeDiary,
+  buildConsolidationPrompt,
+  parseConsolidationResponse,
+  // Alias exports for backward compatibility
+  shouldConsolidateDiary,
+  consolidateDiary,
+  recordOrders,
+  recordReflection,
+  recordNegotiation,
+  estimateDiaryTokens,
+} from './diary';
 
 // Session management
 export {

@@ -32,6 +32,12 @@ import { DEFAULT_RUNTIME_CONFIG } from './types';
 
 import { AgentSessionManager } from './session';
 import { InMemoryStore, MemoryStore, updateMemoryTimestamp } from './memory';
+import {
+  shouldConsolidateDiary,
+  consolidateDiary,
+  recordOrders as recordDiaryOrders,
+  recordReflection as recordDiaryReflection,
+} from './diary';
 import { buildSystemPrompt, buildTurnPrompt } from './prompts';
 import { createAgentGameView, createStrategicSummary } from './game-view';
 import { parseAgentResponse, validateOrders, fillDefaultOrders } from './order-parser';
@@ -595,6 +601,46 @@ export class AgentRuntime {
 
     // Resolve builds
     resolveBuilds(this.gameState);
+
+    // Consolidate diaries at end of year (after Winter builds)
+    await this.consolidateDiaries();
+  }
+
+  /**
+   * Consolidate agent diaries for the completed year.
+   * This compresses the year's diary entries into a summary for efficient context usage.
+   */
+  private async consolidateDiaries(): Promise<void> {
+    const llm = this.sessionManager.getLLMProvider();
+    const year = this.gameState.year;
+    const season = this.gameState.season;
+    const phase = this.gameState.phase;
+
+    for (const power of POWERS) {
+      const session = this.sessionManager.getSession(power);
+      if (!session) continue;
+
+      if (shouldConsolidateDiary(year, season, phase, session.memory)) {
+        if (this.config.verbose) {
+          console.log(`[${power}] Consolidating diary for year ${year}...`);
+        }
+
+        try {
+          const summary = await consolidateDiary(
+            session.memory,
+            power,
+            year,
+            llm
+          );
+
+          if (this.config.verbose) {
+            console.log(`[${power}] Year ${year} summary: ${summary.summary}`);
+          }
+        } catch (error) {
+          console.error(`[${power}] Diary consolidation failed:`, error);
+        }
+      }
+    }
   }
 
   /**
@@ -634,7 +680,7 @@ export class AgentRuntime {
    */
   private async runSingleAgentTurn(
     power: Power,
-    _turnType: 'diplomacy' | 'movement' | 'retreat' | 'build'
+    turnType: 'diplomacy' | 'movement' | 'retreat' | 'build'
   ): Promise<AgentTurnResult> {
     const session = this.sessionManager.getSession(power);
     if (!session) {
@@ -832,6 +878,34 @@ export class AgentRuntime {
         deception.season,
         deception.diaryEvidence,
         deception.confidence
+      );
+    }
+
+    // Record to agent's persistent diary for context management
+    if (this.gameState.phase === 'MOVEMENT' && valid.length > 0) {
+      const orderStrings = valid.map(o => {
+        if ('destination' in o && o.destination) {
+          return `${o.unit} -> ${o.destination}`;
+        }
+        return `${o.unit} ${o.type}`;
+      });
+      const ordersContent = orderStrings.join(', ') +
+        (diaryEntry.reasoning ? `. ${diaryEntry.reasoning.slice(0, 200)}` : '');
+      recordDiaryOrders(
+        session.memory,
+        this.gameState.year,
+        this.gameState.season,
+        this.gameState.phase,
+        ordersContent
+      );
+    } else if (diaryEntry.reasoning) {
+      // Record reasoning as reflection for non-movement phases
+      recordDiaryReflection(
+        session.memory,
+        this.gameState.year,
+        this.gameState.season,
+        this.gameState.phase,
+        diaryEntry.reasoning.slice(0, 300)
       );
     }
 

@@ -112,6 +112,24 @@ export interface AgentMemory {
 
   /** Summary of previous turns for context */
   turnSummaries: TurnSummary[];
+
+  /**
+   * Full private diary - permanent, unabridged record of all entries.
+   * Never truncated, used for historical analysis.
+   */
+  fullPrivateDiary: DiaryEntry[];
+
+  /**
+   * Consolidated yearly summaries - used for LLM context.
+   * Contains condensed versions of past years.
+   */
+  yearSummaries: YearSummary[];
+
+  /**
+   * Current year diary entries - not yet consolidated.
+   * At year end, these are summarized and moved to yearSummaries.
+   */
+  currentYearDiary: DiaryEntry[];
 }
 
 /**
@@ -128,6 +146,41 @@ export interface TurnSummary {
   unitsBuilt: number;
   unitsLost: number;
   diplomaticHighlights: string[];
+}
+
+/**
+ * Type of diary entry.
+ */
+export type DiaryEntryType = 'negotiation' | 'orders' | 'reflection' | 'consolidation';
+
+/**
+ * A single diary entry recording agent thoughts and actions.
+ */
+export interface DiaryEntry {
+  /** Game phase identifier, e.g., "[S1901M]" */
+  phase: string;
+  /** Type of diary entry */
+  type: DiaryEntryType;
+  /** The diary content */
+  content: string;
+  /** When the entry was created */
+  timestamp: Date;
+}
+
+/**
+ * Yearly summary created by consolidation.
+ */
+export interface YearSummary {
+  /** The year this summary covers */
+  year: number;
+  /** Consolidated summary of the year's events (2-3 key points) */
+  summary: string;
+  /** Key territorial changes */
+  territorialChanges: string[];
+  /** Key diplomatic developments */
+  diplomaticChanges: string[];
+  /** When the consolidation was performed */
+  consolidatedAt: Date;
 }
 
 /**
