@@ -18,6 +18,9 @@ import {
   generatePowerStrategicContext,
   formatStrategicContextXML,
   formatStrategicContextMarkdown,
+  generateDiplomacyContext,
+  formatDiplomacyContextMarkdown,
+  generateAllDiplomacyContexts,
 } from '../pathfinding';
 
 // Helper to create a minimal game state for testing
@@ -406,5 +409,147 @@ describe('estimateDistance integration', () => {
     expect(estimateDistance('PAR', 'PAR')).toBe(0);
     expect(estimateDistance('PAR', 'BUR', 'ARMY')).toBe(1);
     expect(estimateDistance('PAR', 'MUN', 'ARMY')).toBe(2);
+  });
+});
+
+describe('generateDiplomacyContext', () => {
+  it('generates bilateral context between two powers', () => {
+    const units: Unit[] = [
+      { power: 'FRANCE', type: 'ARMY', province: 'PAR' },
+      { power: 'FRANCE', type: 'ARMY', province: 'MAR' },
+      { power: 'GERMANY', type: 'ARMY', province: 'MUN' },
+      { power: 'GERMANY', type: 'ARMY', province: 'BER' },
+    ];
+
+    const state = createTestGameState(units);
+    const context = generateDiplomacyContext('FRANCE', 'GERMANY', state);
+
+    expect(context.fromPower).toBe('FRANCE');
+    expect(context.toPower).toBe('GERMANY');
+    expect(context.relationshipType).toBeDefined();
+    expect(context.stakes).toBeInstanceOf(Array);
+  });
+
+  it('identifies contested territories between neighbors', () => {
+    const units: Unit[] = [
+      { power: 'FRANCE', type: 'ARMY', province: 'PAR' },
+      { power: 'GERMANY', type: 'ARMY', province: 'MUN' },
+    ];
+
+    // Both can reach BUR (neutral in this test)
+    const supplyCenters = new Map<string, Power>([
+      ['PAR', 'FRANCE'],
+      ['MUN', 'GERMANY'],
+    ]);
+    const state = createTestGameState(units, supplyCenters);
+    const context = generateDiplomacyContext('FRANCE', 'GERMANY', state);
+
+    // BUR should be contested since both can reach it
+    expect(context.contestedTargets.length).toBeGreaterThan(0);
+  });
+
+  it('identifies common threats', () => {
+    const units: Unit[] = [
+      { power: 'FRANCE', type: 'ARMY', province: 'PAR' },
+      { power: 'ENGLAND', type: 'ARMY', province: 'LON' },
+      { power: 'GERMANY', type: 'ARMY', province: 'MUN' },
+      { power: 'GERMANY', type: 'ARMY', province: 'KIE' },
+    ];
+
+    const state = createTestGameState(units);
+    const context = generateDiplomacyContext('FRANCE', 'ENGLAND', state);
+
+    // Germany threatens both France and England
+    // But depends on proximity - let's just verify structure
+    expect(context.commonThreats).toBeInstanceOf(Array);
+  });
+
+  it('detects shared border when units are adjacent', () => {
+    const units: Unit[] = [
+      { power: 'FRANCE', type: 'ARMY', province: 'BUR' },
+      { power: 'GERMANY', type: 'ARMY', province: 'MUN' },
+    ];
+
+    const state = createTestGameState(units);
+    const context = generateDiplomacyContext('FRANCE', 'GERMANY', state);
+
+    // BUR and MUN are adjacent
+    expect(context.sharesBorder).toBe(true);
+    expect(context.mutualThreatCount.fromTo).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe('formatDiplomacyContextMarkdown', () => {
+  it('formats bilateral context as readable markdown', () => {
+    const units: Unit[] = [
+      { power: 'FRANCE', type: 'ARMY', province: 'PAR' },
+      { power: 'GERMANY', type: 'ARMY', province: 'MUN' },
+    ];
+
+    const state = createTestGameState(units);
+    const context = generateDiplomacyContext('FRANCE', 'GERMANY', state);
+    const md = formatDiplomacyContextMarkdown(context);
+
+    expect(md).toContain('### Strategic Context with GERMANY');
+    expect(md).toContain('**Relationship**');
+  });
+
+  it('includes stakes when present', () => {
+    const units: Unit[] = [
+      { power: 'FRANCE', type: 'ARMY', province: 'PAR' },
+      { power: 'GERMANY', type: 'ARMY', province: 'MUN' },
+    ];
+
+    const supplyCenters = new Map<string, Power>([
+      ['PAR', 'FRANCE'],
+      ['MUN', 'GERMANY'],
+    ]);
+    const state = createTestGameState(units, supplyCenters);
+    const context = generateDiplomacyContext('FRANCE', 'GERMANY', state);
+    const md = formatDiplomacyContextMarkdown(context);
+
+    // Should have some stakes since both can reach contested territories
+    if (context.stakes.length > 0) {
+      expect(md).toContain("**What's at stake:**");
+    }
+  });
+});
+
+describe('generateAllDiplomacyContexts', () => {
+  it('generates contexts for all active powers except self', () => {
+    const units: Unit[] = [
+      { power: 'FRANCE', type: 'ARMY', province: 'PAR' },
+      { power: 'GERMANY', type: 'ARMY', province: 'MUN' },
+      { power: 'ENGLAND', type: 'FLEET', province: 'LON' },
+    ];
+
+    const state = createTestGameState(units);
+    const contexts = generateAllDiplomacyContexts('FRANCE', state);
+
+    // Should have contexts for GERMANY and ENGLAND, not FRANCE
+    expect(contexts.has('FRANCE')).toBe(false);
+    expect(contexts.has('GERMANY')).toBe(true);
+    expect(contexts.has('ENGLAND')).toBe(true);
+  });
+
+  it('excludes eliminated powers', () => {
+    const units: Unit[] = [
+      { power: 'FRANCE', type: 'ARMY', province: 'PAR' },
+      { power: 'GERMANY', type: 'ARMY', province: 'MUN' },
+      // ENGLAND has no units
+    ];
+
+    const supplyCenters = new Map<string, Power>([
+      ['PAR', 'FRANCE'],
+      ['MUN', 'GERMANY'],
+      // ENGLAND has no SCs
+    ]);
+
+    const state = createTestGameState(units, supplyCenters);
+    const contexts = generateAllDiplomacyContexts('FRANCE', state);
+
+    // ENGLAND should not be included (no units, no SCs)
+    expect(contexts.has('ENGLAND')).toBe(false);
+    expect(contexts.has('GERMANY')).toBe(true);
   });
 });

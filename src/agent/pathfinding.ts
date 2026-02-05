@@ -774,3 +774,211 @@ export function formatStrategicContextMarkdown(
 
   return lines.join('\n');
 }
+
+/**
+ * Bilateral strategic context between two powers for diplomatic messaging.
+ */
+export interface DiplomacyStrategicContext {
+  /** The power sending the message */
+  fromPower: Power;
+  /** The power receiving the message */
+  toPower: Power;
+  /** Supply centers both powers can reach (potential competition or cooperation) */
+  contestedTargets: Array<{
+    province: string;
+    fromDistance: number;
+    toDistance: number;
+    currentOwner?: Power;
+  }>;
+  /** Common threat powers that threaten both */
+  commonThreats: Power[];
+  /** Whether powers share a border (adjacent units) */
+  sharesBorder: boolean;
+  /** Number of units threatening each other */
+  mutualThreatCount: { fromTo: number; toFrom: number };
+  /** Summary of strategic relationship */
+  relationshipType: 'NEIGHBOR' | 'DISTANT' | 'RIVAL' | 'POTENTIAL_ALLY';
+  /** Specific strategic stakes */
+  stakes: string[];
+}
+
+/**
+ * Generate bilateral strategic context for diplomatic communication.
+ */
+export function generateDiplomacyContext(
+  fromPower: Power,
+  toPower: Power,
+  state: GameState
+): DiplomacyStrategicContext {
+  const fromUnits = state.units.filter(u => u.power === fromPower);
+  const toUnits = state.units.filter(u => u.power === toPower);
+
+  // Find contested targets - SCs both powers can reach within 2 moves
+  const fromReachable = findReachableTargets(fromPower, state, 2);
+  const toReachable = findReachableTargets(toPower, state, 2);
+
+  const contestedTargets: DiplomacyStrategicContext['contestedTargets'] = [];
+  for (const fromTarget of fromReachable) {
+    const toTarget = toReachable.find(t => t.province === fromTarget.province);
+    if (toTarget) {
+      contestedTargets.push({
+        province: fromTarget.province,
+        fromDistance: fromTarget.distance,
+        toDistance: toTarget.distance,
+        currentOwner: fromTarget.owner
+      });
+    }
+  }
+
+  // Find common threats - powers that threaten both
+  const fromThreats = findImmediateThreatPowers(fromPower, state);
+  const toThreats = findImmediateThreatPowers(toPower, state);
+  const commonThreats = fromThreats.filter(p => toThreats.includes(p) && p !== fromPower && p !== toPower);
+
+  // Check if powers share a border (any units adjacent)
+  let sharesBorder = false;
+  for (const fromUnit of fromUnits) {
+    const adj = getAdjacentProvinces(fromUnit.province, fromUnit.coast);
+    for (const toUnit of toUnits) {
+      if (adj.includes(toUnit.province)) {
+        sharesBorder = true;
+        break;
+      }
+    }
+    if (sharesBorder) break;
+  }
+
+  // Count mutual threats
+  let fromToThreats = 0;
+  let toFromThreats = 0;
+
+  for (const fromUnit of fromUnits) {
+    const adj = getAdjacentProvinces(fromUnit.province, fromUnit.coast);
+    for (const toUnit of toUnits) {
+      if (adj.includes(toUnit.province)) {
+        fromToThreats++;
+      }
+    }
+  }
+
+  for (const toUnit of toUnits) {
+    const adj = getAdjacentProvinces(toUnit.province, toUnit.coast);
+    for (const fromUnit of fromUnits) {
+      if (adj.includes(fromUnit.province)) {
+        toFromThreats++;
+      }
+    }
+  }
+
+  // Determine relationship type
+  let relationshipType: DiplomacyStrategicContext['relationshipType'];
+  if (contestedTargets.length >= 3 && sharesBorder) {
+    relationshipType = 'RIVAL';
+  } else if (commonThreats.length > 0 && !sharesBorder) {
+    relationshipType = 'POTENTIAL_ALLY';
+  } else if (sharesBorder) {
+    relationshipType = 'NEIGHBOR';
+  } else {
+    relationshipType = 'DISTANT';
+  }
+
+  // Generate strategic stakes
+  const stakes: string[] = [];
+
+  // Contested neutrals
+  const contestedNeutrals = contestedTargets.filter(t => !t.currentOwner);
+  if (contestedNeutrals.length > 0) {
+    stakes.push(`Both can reach neutral SCs: ${contestedNeutrals.map(t => t.province).join(', ')}`);
+  }
+
+  // SCs owned by one that other can reach
+  const fromOwnedTargeted = contestedTargets.filter(t => t.currentOwner === fromPower);
+  const toOwnedTargeted = contestedTargets.filter(t => t.currentOwner === toPower);
+
+  if (fromOwnedTargeted.length > 0) {
+    stakes.push(`${toPower} can reach your SCs: ${fromOwnedTargeted.map(t => t.province).join(', ')}`);
+  }
+  if (toOwnedTargeted.length > 0) {
+    stakes.push(`You can reach ${toPower}'s SCs: ${toOwnedTargeted.map(t => t.province).join(', ')}`);
+  }
+
+  // Common threats
+  if (commonThreats.length > 0) {
+    stakes.push(`Common threat: ${commonThreats.join(', ')} threatens both of you`);
+  }
+
+  // Border tension
+  if (fromToThreats > 0 || toFromThreats > 0) {
+    stakes.push(`Border tension: ${fromToThreats + toFromThreats} units in contact`);
+  }
+
+  return {
+    fromPower,
+    toPower,
+    contestedTargets,
+    commonThreats,
+    sharesBorder,
+    mutualThreatCount: { fromTo: fromToThreats, toFrom: toFromThreats },
+    relationshipType,
+    stakes
+  };
+}
+
+/**
+ * Format bilateral diplomatic context for inclusion in prompts.
+ */
+export function formatDiplomacyContextMarkdown(
+  context: DiplomacyStrategicContext
+): string {
+  const lines: string[] = [];
+
+  lines.push(`### Strategic Context with ${context.toPower}`);
+  lines.push('');
+  lines.push(`**Relationship**: ${context.relationshipType}`);
+
+  if (context.stakes.length > 0) {
+    lines.push('');
+    lines.push('**What\'s at stake:**');
+    for (const stake of context.stakes) {
+      lines.push(`- ${stake}`);
+    }
+  }
+
+  if (context.contestedTargets.length > 0) {
+    lines.push('');
+    lines.push('**Contested territories:**');
+    for (const target of context.contestedTargets.slice(0, 3)) {
+      const owner = target.currentOwner ? `(${target.currentOwner})` : '(neutral)';
+      const advantage = target.fromDistance < target.toDistance ? 'you closer' :
+        target.fromDistance > target.toDistance ? `${context.toPower} closer` : 'equidistant';
+      lines.push(`- ${target.province} ${owner}: ${advantage}`);
+    }
+  }
+
+  return lines.join('\n');
+}
+
+/**
+ * Generate all bilateral contexts for diplomacy phase.
+ */
+export function generateAllDiplomacyContexts(
+  power: Power,
+  state: GameState
+): Map<Power, DiplomacyStrategicContext> {
+  const ALL_POWERS: Power[] = ['ENGLAND', 'FRANCE', 'GERMANY', 'ITALY', 'AUSTRIA', 'RUSSIA', 'TURKEY'];
+  const contexts = new Map<Power, DiplomacyStrategicContext>();
+
+  for (const otherPower of ALL_POWERS) {
+    if (otherPower !== power) {
+      // Only include powers still in the game
+      const hasUnits = state.units.some(u => u.power === otherPower);
+      const hasSCs = Array.from(state.supplyCenters.values()).some(owner => owner === otherPower);
+
+      if (hasUnits || hasSCs) {
+        contexts.set(otherPower, generateDiplomacyContext(power, otherPower, state));
+      }
+    }
+  }
+
+  return contexts;
+}
