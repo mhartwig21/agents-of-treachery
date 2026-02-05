@@ -5,7 +5,7 @@
  * managing press, and handling phase transitions.
  */
 
-import type { Power, GameState, Order, Season, Phase } from '../engine/types';
+import type { Power, GameState, Order, Season, Phase, OrderResolution } from '../engine/types';
 import { POWERS } from '../engine/types';
 import {
   createInitialState,
@@ -21,6 +21,7 @@ import { getHomeCenters } from '../engine/map';
 
 import { PressSystem } from '../press/press-system';
 import { AgentPressAPI, createAgentAPIs } from '../press/agent-api';
+import type { Message } from '../press/types';
 
 import type {
   AgentRuntimeConfig,
@@ -57,7 +58,13 @@ import {
   generateAnalysisSummary,
   recordAnalysisInDiary,
 } from './negotiation';
-import type { MessageAnalysis } from './types';
+import {
+  generatePhaseReflection,
+  applyReflectionToMemory,
+  recordReflectionInDiary,
+  formatReflectionForLog,
+} from './reflection';
+import type { MessageAnalysis, PhaseReflection } from './types';
 
 /**
  * Event types emitted by the runtime.
@@ -110,6 +117,8 @@ export class AgentRuntime {
   private promiseTracker: PromiseTracker;
   private pendingPromiseUpdates: PromiseMemoryUpdate[] = [];
   private pendingMessageAnalyses: Map<Power, MessageAnalysis[]> = new Map();
+  private lastPhaseMessages: Message[] = [];
+  private pendingReflections: Map<Power, PhaseReflection> = new Map();
 
   constructor(
     config: AgentRuntimeConfig,
@@ -365,6 +374,9 @@ export class AgentRuntime {
       console.log(`📝 Extracted ${promises.length} promises from diplomatic communications`);
     }
 
+    // Store messages for phase reflection after movement resolution
+    this.lastPhaseMessages = allMessages;
+
     // Transition to movement phase
     this.gameState.phase = 'MOVEMENT';
   }
@@ -372,8 +384,8 @@ export class AgentRuntime {
   /**
    * Collects all press messages from the system.
    */
-  private getAllPressMessages(): import('../press/types').Message[] {
-    const allMessages: import('../press/types').Message[] = [];
+  private getAllPressMessages(): Message[] {
+    const allMessages: Message[] = [];
     for (const channel of this.pressSystem.getAllChannels()) {
       const result = this.pressSystem.queryMessages({ channelId: channel.id });
       allMessages.push(...result.messages);
@@ -508,8 +520,9 @@ export class AgentRuntime {
       unitOwners.set(unit.province, unit.power);
     }
 
-    // Resolve movement
-    resolveMovement(this.gameState);
+    // Resolve movement and capture results
+    const resolutionResult = resolveMovement(this.gameState);
+    const orderResults: OrderResolution[] = Array.from(resolutionResult.results.values());
 
     // Reconcile promises against orders and generate memory updates
     const promiseUpdates = this.promiseTracker.reconcileTurn(
@@ -526,6 +539,12 @@ export class AgentRuntime {
       // Apply trust updates to agent memories
       this.applyPromiseUpdatesToMemory(promiseUpdates);
     }
+
+    // Generate phase reflections for all powers
+    await this.generatePhaseReflections(
+      ordersByPower,
+      orderResults
+    );
 
     // Update agent memories with results
     for (const power of POWERS) {
@@ -586,6 +605,76 @@ export class AgentRuntime {
       } else {
         console.log(`  ✓ ${update.power}: ${update.aboutPower} kept promise`);
       }
+    }
+  }
+
+  /**
+   * Generate phase reflections for all powers after movement resolution.
+   * This analyzes what happened vs what was promised to detect betrayals.
+   */
+  private async generatePhaseReflections(
+    ordersByPower: Map<Power, Order[]>,
+    orderResults: OrderResolution[]
+  ): Promise<void> {
+    const llm = this.sessionManager.getLLMProvider();
+    console.log(`\n🪞 Generating phase reflections...`);
+
+    // Clear previous reflections
+    this.pendingReflections.clear();
+
+    // Generate reflections for each power in parallel
+    const reflectionPromises = POWERS.map(async (power) => {
+      const session = this.sessionManager.getSession(power);
+      if (!session) return;
+
+      try {
+        const reflection = await generatePhaseReflection(
+          power,
+          this.gameState.year,
+          this.gameState.season,
+          ordersByPower,
+          orderResults,
+          this.lastPhaseMessages,
+          session.memory,
+          llm
+        );
+
+        this.pendingReflections.set(power, reflection);
+
+        // Apply trust updates from reflection
+        applyReflectionToMemory(session.memory, reflection);
+
+        // Record reflection in diary
+        recordReflectionInDiary(session.memory, reflection);
+
+        // Log betrayals detected
+        const betrayals = reflection.trustUpdates.filter(u => u.isBetrayal);
+        if (betrayals.length > 0) {
+          console.log(`  [${power}] ⚠️ Detected ${betrayals.length} betrayal(s):`);
+          for (const b of betrayals) {
+            console.log(`    ${b.power}: ${b.reason}`);
+          }
+        } else if (reflection.trustUpdates.length > 0) {
+          console.log(`  [${power}] Updated trust for ${reflection.trustUpdates.length} power(s)`);
+        }
+
+        if (this.config.verbose) {
+          console.log(formatReflectionForLog(reflection));
+        }
+      } catch (error) {
+        console.warn(`  [${power}] Reflection failed:`, error);
+      }
+    });
+
+    await Promise.all(reflectionPromises);
+
+    // Log summary
+    const totalBetrayals = Array.from(this.pendingReflections.values())
+      .reduce((sum, r) => sum + r.trustUpdates.filter(u => u.isBetrayal).length, 0);
+    if (totalBetrayals > 0) {
+      console.log(`\n🪞 Phase reflection complete: ${totalBetrayals} betrayal(s) detected across all powers\n`);
+    } else {
+      console.log(`\n🪞 Phase reflection complete\n`);
     }
   }
 
@@ -1060,6 +1149,8 @@ export class AgentRuntime {
     this.promiseTracker.clear();
     this.pendingPromiseUpdates = [];
     this.pendingMessageAnalyses.clear();
+    this.lastPhaseMessages = [];
+    this.pendingReflections.clear();
   }
 
   /**

@@ -559,3 +559,52 @@ export interface MessageAnalysis {
   /** When this analysis was created */
   timestamp: Date;
 }
+
+/**
+ * Trust update generated from phase reflection.
+ */
+export interface TrustUpdate {
+  /** Power whose trust level changed */
+  power: Power;
+  /** Change in trust level (-1.0 to +1.0) */
+  delta: number;
+  /** Reason for the trust change */
+  reason: string;
+  /** Whether this was a betrayal */
+  isBetrayal: boolean;
+}
+
+/**
+ * Observation about what happened during a phase.
+ */
+export interface PhaseObservation {
+  /** Power this observation is about */
+  power: Power;
+  /** What was promised (if applicable) */
+  promised?: string;
+  /** What actually happened */
+  actual: string;
+  /** Classification of the action */
+  classification: 'cooperation' | 'betrayal' | 'neutral' | 'surprise_attack' | 'lie_of_omission';
+}
+
+/**
+ * Result of phase reflection analysis.
+ * Generated after order resolution to detect betrayals and update relationships.
+ */
+export interface PhaseReflection {
+  /** Power that performed this reflection */
+  power: Power;
+  /** Game year */
+  year: number;
+  /** Game season */
+  season: Season;
+  /** Trust updates to apply */
+  trustUpdates: TrustUpdate[];
+  /** Observations about each power's actions */
+  observations: PhaseObservation[];
+  /** Overall strategic summary */
+  strategicSummary: string;
+  /** When this reflection was generated */
+  timestamp: Date;
+}
