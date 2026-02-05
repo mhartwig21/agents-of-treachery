@@ -8,6 +8,9 @@ dist/
 .env
 coverage/
 
+# Secrets vault private keys (NEVER commit)
+secrets/.keys/
+
 # Playwright
 /test-results/
 /playwright-report/
