@@ -4,18 +4,25 @@
  * Shows all 7 powers as nodes with edges representing their relationships.
  * Edge color indicates alliance status, thickness indicates strength.
  * Betrayals are highlighted with animated red dashed lines and badges.
+ * Hovering edges shows sparkline history, clicking opens detailed history modal.
  */
 
-import { useMemo, useState, useCallback } from 'react';
+import { useMemo, useState, useCallback, useRef } from 'react';
 import { type LowercasePower, POWER_COLORS, UI_POWERS } from '../../spectator/types';
 import type { Message } from '../../press/types';
-import type { BetrayalInfo } from '../../analysis/relationships';
+import type { BetrayalInfo, PowerPairRelationship as EnginePairRelationship } from '../../analysis/relationships';
 import {
   BetrayalEdge,
   BetrayerBadge,
   VictimBadge,
   BetrayalDetailsModal,
 } from './BetrayalHighlight';
+import { SparklineTooltip } from './RelationshipSparkline';
+import { RelationshipHistoryModal } from './RelationshipHistoryModal';
+import {
+  useRelationshipHistory,
+  type RelationshipHistory,
+} from '../../hooks/useRelationshipHistory';
 
 /**
  * Relationship data for a pair of powers.
@@ -48,6 +55,14 @@ interface RelationshipGraphPanelProps {
   betrayals?: BetrayalInfo[];
   /** Whether to show betrayal visualization */
   showBetrayals?: boolean;
+  /** Engine relationship data with action events for history */
+  engineRelationships?: EnginePairRelationship[];
+  /** Current game year for timeline */
+  currentYear?: number;
+  /** Current game season for timeline */
+  currentSeason?: 'SPRING' | 'FALL';
+  /** Whether to show relationship history on hover/click */
+  showHistory?: boolean;
 }
 
 /** Power abbreviations for display */
@@ -170,6 +185,9 @@ function calculateNodePositions(
   return positions;
 }
 
+/** Edge identifier type */
+type EdgeKey = `${LowercasePower}-${LowercasePower}`;
+
 export function RelationshipGraphPanel({
   messages,
   selectedPower,
@@ -177,9 +195,28 @@ export function RelationshipGraphPanel({
   className = '',
   betrayals = [],
   showBetrayals = true,
+  engineRelationships = [],
+  currentYear = 1901,
+  currentSeason = 'SPRING',
+  showHistory = true,
 }: RelationshipGraphPanelProps) {
   const [hoveredPower, setHoveredPower] = useState<LowercasePower | null>(null);
   const [selectedBetrayal, setSelectedBetrayal] = useState<BetrayalInfo | null>(null);
+  const [hoveredEdge, setHoveredEdge] = useState<EdgeKey | null>(null);
+  const [selectedEdge, setSelectedEdge] = useState<EdgeKey | null>(null);
+  const [tooltipPosition, setTooltipPosition] = useState<{ x: number; y: number } | null>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
+
+  // Build relationship history from engine data
+  const relationshipHistory = useRelationshipHistory({
+    relationships: engineRelationships.map(r => ({
+      ...r,
+      power1: r.power1.toLowerCase() as LowercasePower,
+      power2: r.power2.toLowerCase() as LowercasePower,
+    })) as unknown as EnginePairRelationship[],
+    currentYear,
+    currentSeason,
+  });
 
   // Compute relationships from messages
   const relationships = useMemo(() => computeRelationships(messages), [messages]);
@@ -221,6 +258,45 @@ export function RelationshipGraphPanel({
   const handleBetrayalClick = useCallback((betrayal: BetrayalInfo) => {
     setSelectedBetrayal(betrayal);
   }, []);
+
+  // Handle edge hover with tooltip positioning
+  const handleEdgeMouseEnter = useCallback(
+    (edge: EdgeKey, event: React.MouseEvent) => {
+      if (!showHistory) return;
+      setHoveredEdge(edge);
+
+      // Calculate tooltip position based on mouse event
+      if (svgRef.current) {
+        const svgRect = svgRef.current.getBoundingClientRect();
+        const x = event.clientX - svgRect.left;
+        const y = event.clientY - svgRect.top;
+        setTooltipPosition({ x, y });
+      }
+    },
+    [showHistory]
+  );
+
+  const handleEdgeMouseLeave = useCallback(() => {
+    setHoveredEdge(null);
+    setTooltipPosition(null);
+  }, []);
+
+  const handleEdgeClick = useCallback(
+    (edge: EdgeKey) => {
+      if (!showHistory) return;
+      setSelectedEdge(edge);
+    },
+    [showHistory]
+  );
+
+  // Get history for a specific edge
+  const getEdgeHistory = useCallback(
+    (p1: LowercasePower, p2: LowercasePower): RelationshipHistory | undefined => {
+      const key = p1 < p2 ? `${p1.toUpperCase()}-${p2.toUpperCase()}` : `${p2.toUpperCase()}-${p1.toUpperCase()}`;
+      return relationshipHistory.get(key);
+    },
+    [relationshipHistory]
+  );
 
   // Graph dimensions
   const width = 400;
@@ -286,6 +362,7 @@ export function RelationshipGraphPanel({
       {/* Graph */}
       <div className="relative">
         <svg
+          ref={svgRef}
           viewBox={`0 0 ${width} ${height}`}
           className="w-full max-w-[400px] mx-auto"
         >
@@ -295,26 +372,42 @@ export function RelationshipGraphPanel({
               const pos1 = nodePositions.get(rel.power1)!;
               const pos2 = nodePositions.get(rel.power2)!;
               const highlighted = isEdgeHighlighted(rel.power1, rel.power2);
-              const pairKey = rel.power1 < rel.power2
+              const pairKey = (rel.power1 < rel.power2
                 ? `${rel.power1}-${rel.power2}`
-                : `${rel.power2}-${rel.power1}`;
+                : `${rel.power2}-${rel.power1}`) as EdgeKey;
               const hasBetrayal = showBetrayals && betrayalsByPair.has(pairKey);
+              const isHovered = hoveredEdge === pairKey;
 
               // Skip if this pair has a betrayal (rendered separately)
               if (hasBetrayal) return null;
 
               return (
-                <line
-                  key={`${rel.power1}-${rel.power2}`}
-                  x1={pos1.x}
-                  y1={pos1.y}
-                  x2={pos2.x}
-                  y2={pos2.y}
-                  stroke={getEdgeColor(rel.status)}
-                  strokeWidth={getEdgeWidth(rel.strength)}
-                  strokeOpacity={highlighted ? 0.8 : 0.15}
-                  className="transition-opacity duration-200"
-                />
+                <g key={`${rel.power1}-${rel.power2}`}>
+                  {/* Invisible wider line for easier hover/click */}
+                  <line
+                    x1={pos1.x}
+                    y1={pos1.y}
+                    x2={pos2.x}
+                    y2={pos2.y}
+                    stroke="transparent"
+                    strokeWidth={Math.max(getEdgeWidth(rel.strength) + 8, 12)}
+                    className="cursor-pointer"
+                    onMouseEnter={(e) => handleEdgeMouseEnter(pairKey, e)}
+                    onMouseLeave={handleEdgeMouseLeave}
+                    onClick={() => handleEdgeClick(pairKey)}
+                  />
+                  {/* Visible edge line */}
+                  <line
+                    x1={pos1.x}
+                    y1={pos1.y}
+                    x2={pos2.x}
+                    y2={pos2.y}
+                    stroke={getEdgeColor(rel.status)}
+                    strokeWidth={isHovered ? getEdgeWidth(rel.strength) + 2 : getEdgeWidth(rel.strength)}
+                    strokeOpacity={highlighted ? (isHovered ? 1 : 0.8) : 0.15}
+                    className="transition-all duration-200 pointer-events-none"
+                  />
+                </g>
               );
             })}
           </g>
@@ -509,6 +602,53 @@ export function RelationshipGraphPanel({
           <span className="text-sm">Relationships will appear as powers communicate.</span>
         </div>
       )}
+
+      {/* Edge hover tooltip with sparkline */}
+      {showHistory && hoveredEdge && tooltipPosition && (() => {
+        const [p1, p2] = hoveredEdge.split('-') as [LowercasePower, LowercasePower];
+        const history = getEdgeHistory(p1, p2);
+        const rel = relationships.find(
+          r => (r.power1 === p1 && r.power2 === p2) || (r.power1 === p2 && r.power2 === p1)
+        );
+
+        if (!rel) return null;
+
+        return (
+          <div
+            className="absolute z-10 pointer-events-none"
+            style={{
+              left: tooltipPosition.x,
+              top: tooltipPosition.y - 10,
+              transform: 'translate(-50%, -100%)',
+            }}
+          >
+            <SparklineTooltip
+              timeline={history?.timeline || []}
+              power1={POWER_NAMES[p1]}
+              power2={POWER_NAMES[p2]}
+              status={rel.status}
+              score={history?.currentScore || 0}
+            />
+          </div>
+        );
+      })()}
+
+      {/* Relationship History Modal */}
+      {showHistory && selectedEdge && (() => {
+        const [p1, p2] = selectedEdge.split('-') as [LowercasePower, LowercasePower];
+        const history = getEdgeHistory(p1, p2);
+
+        if (!history) return null;
+
+        return (
+          <RelationshipHistoryModal
+            history={history}
+            isOpen={true}
+            onClose={() => setSelectedEdge(null)}
+            powerColors={POWER_COLORS}
+          />
+        );
+      })()}
     </div>
   );
 }
