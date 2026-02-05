@@ -512,7 +512,7 @@ A Paris HOLD
   describe('parseDiplomacyLine', () => {
     it('parses SEND command with double quotes', () => {
       const result = parseDiplomacyLine('SEND FRANCE: "I propose we form an alliance"');
-      expect(result.action).toEqual({
+      expect(result.action).toMatchObject({
         type: 'SEND_MESSAGE',
         targetPowers: ['FRANCE'],
         content: 'I propose we form an alliance',
@@ -522,7 +522,7 @@ A Paris HOLD
 
     it('parses SEND command with single quotes', () => {
       const result = parseDiplomacyLine("SEND GERMANY: 'Your movements concern me'");
-      expect(result.action).toEqual({
+      expect(result.action).toMatchObject({
         type: 'SEND_MESSAGE',
         targetPowers: ['GERMANY'],
         content: 'Your movements concern me',
@@ -556,6 +556,80 @@ A Paris HOLD
     it('handles bullet points', () => {
       const result = parseDiplomacyLine('- SEND ITALY: "Support my move"');
       expect(result.action?.targetPowers[0]).toBe('ITALY');
+    });
+
+    // Negotiation stage tests
+    it('extracts [OPENING] negotiation stage', () => {
+      const result = parseDiplomacyLine('SEND FRANCE: "[OPENING] I propose we split Belgium."');
+      expect(result.action?.negotiationStage).toBe('OPENING');
+      expect(result.action?.content).toContain('[OPENING]');
+    });
+
+    it('extracts [COUNTER] negotiation stage', () => {
+      const result = parseDiplomacyLine('SEND GERMANY: "[COUNTER] Your proposal needs modification."');
+      expect(result.action?.negotiationStage).toBe('COUNTER');
+    });
+
+    it('extracts [FINAL] negotiation stage', () => {
+      const result = parseDiplomacyLine('SEND RUSSIA: "[FINAL] Last offer: DMZ in Galicia."');
+      expect(result.action?.negotiationStage).toBe('FINAL');
+    });
+
+    it('extracts [ACCEPT] negotiation stage', () => {
+      const result = parseDiplomacyLine('SEND AUSTRIA: "[ACCEPT] Deal confirmed."');
+      expect(result.action?.negotiationStage).toBe('ACCEPT');
+    });
+
+    it('extracts [REJECT] negotiation stage', () => {
+      const result = parseDiplomacyLine('SEND TURKEY: "[REJECT] I cannot accept those terms."');
+      expect(result.action?.negotiationStage).toBe('REJECT');
+    });
+
+    it('handles lowercase stage tags', () => {
+      const result = parseDiplomacyLine('SEND FRANCE: "[counter] Modified proposal here."');
+      expect(result.action?.negotiationStage).toBe('COUNTER');
+    });
+
+    // Conditional clause tests
+    it('extracts IF/THEN conditional clause', () => {
+      const result = parseDiplomacyLine('SEND FRANCE: "IF you support me into Belgium THEN I will support Munich."');
+      expect(result.action?.conditional).toEqual({
+        condition: 'you support me into Belgium',
+        commitment: 'I will support Munich',
+      });
+    });
+
+    it('extracts IF/THEN with comma separator', () => {
+      const result = parseDiplomacyLine('SEND GERMANY: "IF you stay out of Burgundy, THEN I back your move east."');
+      expect(result.action?.conditional).toEqual({
+        condition: 'you stay out of Burgundy',
+        commitment: 'I back your move east',
+      });
+    });
+
+    it('handles conditional ending with period', () => {
+      const result = parseDiplomacyLine('SEND RUSSIA: "IF you move to Galicia THEN our alliance is over."');
+      expect(result.action?.conditional?.condition).toBe('you move to Galicia');
+      expect(result.action?.conditional?.commitment).toBe('our alliance is over');
+    });
+
+    it('returns undefined for messages without conditionals', () => {
+      const result = parseDiplomacyLine('SEND FRANCE: "I propose we form an alliance"');
+      expect(result.action?.conditional).toBeUndefined();
+    });
+
+    it('returns undefined for messages without stage tags', () => {
+      const result = parseDiplomacyLine('SEND FRANCE: "Simple message without tags"');
+      expect(result.action?.negotiationStage).toBeUndefined();
+    });
+
+    it('extracts both stage and conditional from same message', () => {
+      const result = parseDiplomacyLine('SEND AUSTRIA: "[COUNTER] IF you support Serbia THEN I help you into Warsaw."');
+      expect(result.action?.negotiationStage).toBe('COUNTER');
+      expect(result.action?.conditional).toEqual({
+        condition: 'you support Serbia',
+        commitment: 'I help you into Warsaw',
+      });
     });
   });
 

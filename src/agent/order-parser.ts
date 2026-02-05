@@ -560,12 +560,46 @@ function normalizePower(input: string): Power | null {
 }
 
 /**
+ * Valid negotiation stages for tracking deal progression.
+ */
+const NEGOTIATION_STAGES = ['OPENING', 'COUNTER', 'FINAL', 'ACCEPT', 'REJECT'] as const;
+type NegotiationStage = typeof NEGOTIATION_STAGES[number];
+
+/**
+ * Extract negotiation stage from message content.
+ * Looks for [OPENING], [COUNTER], [FINAL], [ACCEPT], [REJECT] tags.
+ */
+function extractNegotiationStage(content: string): NegotiationStage | undefined {
+  const stageMatch = content.match(/\[(OPENING|COUNTER|FINAL|ACCEPT|REJECT)\]/i);
+  if (stageMatch) {
+    return stageMatch[1].toUpperCase() as NegotiationStage;
+  }
+  return undefined;
+}
+
+/**
+ * Extract conditional clause from message content.
+ * Looks for "IF <condition> THEN <commitment>" patterns.
+ */
+function extractConditionalClause(content: string): { condition: string; commitment: string } | undefined {
+  // Match "IF <condition>, THEN <commitment>" or "IF <condition> THEN <commitment>"
+  const conditionalMatch = content.match(/\bIF\s+(.+?),?\s+THEN\s+(.+?)(?:\.|$)/i);
+  if (conditionalMatch) {
+    return {
+      condition: conditionalMatch[1].trim(),
+      commitment: conditionalMatch[2].trim(),
+    };
+  }
+  return undefined;
+}
+
+/**
  * Parse a diplomacy line (SEND command).
  *
  * Expected format: SEND POWER: "message"
  * Examples:
  *   SEND FRANCE: "I propose we form an alliance"
- *   SEND GERMANY: "Your movements concern me"
+ *   SEND GERMANY: "[COUNTER] Your proposal doesn't work. IF you stay out of Belgium THEN I support Munich."
  */
 export function parseDiplomacyLine(line: string): {
   action: DiplomaticAction | null;
@@ -589,11 +623,17 @@ export function parseDiplomacyLine(line: string): {
       return { action: null, error: `Unknown power: ${sendMatch[1]}` };
     }
 
+    // Extract negotiation metadata from message content
+    const negotiationStage = extractNegotiationStage(content);
+    const conditional = extractConditionalClause(content);
+
     return {
       action: {
         type: 'SEND_MESSAGE',
         targetPowers: [targetPower],
         content,
+        negotiationStage,
+        conditional,
       },
       error: null,
     };
@@ -609,11 +649,17 @@ export function parseDiplomacyLine(line: string): {
       return { action: null, error: `Unknown power: ${sendMatchSingleQuote[1]}` };
     }
 
+    // Extract negotiation metadata from message content
+    const negotiationStage = extractNegotiationStage(content);
+    const conditional = extractConditionalClause(content);
+
     return {
       action: {
         type: 'SEND_MESSAGE',
         targetPowers: [targetPower],
         content,
+        negotiationStage,
+        conditional,
       },
       error: null,
     };

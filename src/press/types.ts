@@ -65,6 +65,12 @@ export interface MessageMetadata {
   references?: string[];
   /** Sentiment analysis score (-1 to 1) */
   sentiment?: number;
+  /** Negotiation stage for deal tracking */
+  negotiationStage?: NegotiationStage;
+  /** Conditional clause for "If X then Y" diplomacy */
+  conditional?: ConditionalClause;
+  /** ID of the proposal this message responds to (for threading negotiations) */
+  inResponseTo?: MessageId;
   /** Custom key-value pairs for agent use */
   custom?: Record<string, unknown>;
 }
@@ -73,14 +79,41 @@ export interface MessageMetadata {
  * Common diplomatic intents for agent message classification.
  */
 export type MessageIntent =
-  | 'PROPOSAL'      // Proposing an alliance or coordinated action
-  | 'ACCEPTANCE'    // Accepting a proposal
-  | 'REJECTION'     // Rejecting a proposal
-  | 'THREAT'        // Warning or threatening action
-  | 'INFORMATION'   // Sharing information about other powers
-  | 'REQUEST'       // Asking for information or action
-  | 'SMALL_TALK'    // General diplomacy, relationship building
-  | 'DECEPTION';    // (For spectator analysis - agents don't self-report this)
+  | 'PROPOSAL'        // Proposing an alliance or coordinated action
+  | 'COUNTER_PROPOSAL' // Counter-proposing with modified terms
+  | 'ACCEPTANCE'      // Accepting a proposal
+  | 'REJECTION'       // Rejecting a proposal
+  | 'CONDITIONAL'     // Conditional commitment: "If you do X, I'll do Y"
+  | 'THREAT'          // Warning or threatening action
+  | 'INFORMATION'     // Sharing information about other powers
+  | 'REQUEST'         // Asking for information or action
+  | 'SMALL_TALK'      // General diplomacy, relationship building
+  | 'DECEPTION';      // (For spectator analysis - agents don't self-report this)
+
+/**
+ * Negotiation stages for tracking deal progression.
+ * Enables multi-round back-and-forth negotiation.
+ */
+export type NegotiationStage =
+  | 'OPENING'         // Initial proposal
+  | 'COUNTER'         // Counter-proposal in response
+  | 'FINAL_TERMS'     // Final offer, take it or leave it
+  | 'ACCEPTED'        // Deal confirmed by both parties
+  | 'REJECTED';       // Deal explicitly rejected
+
+/**
+ * Conditional clause for "If you do X, I'll do Y" diplomacy.
+ */
+export interface ConditionalClause {
+  /** The condition that must be met */
+  condition: string;
+  /** The commitment if condition is met */
+  commitment: string;
+  /** Whether the condition has been evaluated */
+  evaluated?: boolean;
+  /** Whether the condition was met (after evaluation) */
+  conditionMet?: boolean;
+}
 
 /**
  * Notification sent to agents when they receive press.

@@ -564,22 +564,28 @@ function getPhaseInstructions(phase: Phase, view: AgentGameView, gameState?: Gam
 
       return `${diplomaticContextSection}## Your Task: Diplomacy Phase
 
-**BE SPECIFIC AND MAKE DEALS - NO VAGUE PLEASANTRIES!**
+**FOCUS YOUR DIPLOMACY - TARGET 1-2 POWERS PER ROUND**
 
-Good diplomacy is about CONCRETE PROPOSALS, not polite chit-chat:
-- BAD: "I look forward to cooperating with you."
-- GOOD: "I will move A Munich -> Burgundy. You move A Paris -> Picardy. We attack Belgium together."
+Don't broadcast to everyone! Deep negotiations with 1-2 key partners beat shallow messages to all 6.
+- Pick the 1-2 powers most relevant to YOUR strategic situation RIGHT NOW
+- Have a real back-and-forth: OPENING -> COUNTER -> FINAL TERMS -> ACCEPT/REJECT
+- Respond to incoming messages BEFORE initiating new conversations
 
-**EXPLAIN THE STRATEGIC REASONING** - Don't just list moves, explain WHY:
-- Reference the strategic context above (contested territories, common threats, etc.)
-- Explain what's at stake: "Belgium is contested by 3 powers - if we don't coordinate, Germany takes it"
-- Show mutual benefit: "Russia threatens us both - together we can contain them"
-- Appeal to their interests: "You're closer to Spain than I am - take it while I hold the line against Germany"
+**NEGOTIATION FLOW (multi-round back-and-forth):**
+1. **OPENING**: Make your initial proposal with reasoning
+2. **COUNTER**: Respond to proposals by counter-offering with modifications
+3. **FINAL**: "Final offer: X. Accept or we're done."
+4. **ACCEPT/REJECT**: Explicitly close the negotiation
 
-**RESPOND TO INCOMING MESSAGES** (check "Recent Diplomatic Messages" above):
+**RESPOND TO INCOMING MESSAGES FIRST** (check "Recent Diplomatic Messages" above):
 - If someone proposed a deal: ACCEPT, REJECT, or COUNTER-PROPOSE with specifics
 - If someone asked a question: ANSWER IT DIRECTLY
-- If someone made a commitment: ACKNOWLEDGE and state YOUR commitment in return
+- If someone made a commitment: ACKNOWLEDGE and state YOUR commitment
+
+**USE CONDITIONAL COMMITMENTS:**
+- "IF you support me into Belgium, THEN I will support you into Munich next turn"
+- "IF you move to Tyrolia, THEN our deal is off"
+- Conditions create enforceable agreements and build trust
 
 **MAKE CONCRETE PROPOSALS:**
 - Name SPECIFIC PROVINCES you will target
@@ -590,16 +596,18 @@ Good diplomacy is about CONCRETE PROPOSALS, not polite chit-chat:
 Respond with:
 1. **ANALYSIS**: Brief assessment (2-3 sentences max)
 2. **INTENTIONS**: Your secret plans (kept private)
-3. **DIPLOMACY**: Messages with SPECIFIC proposals AND strategic reasoning
+3. **DIPLOMACY**: Messages to 1-2 key powers with SPECIFIC proposals
 
 Format:
 \`\`\`
 DIPLOMACY:
-SEND FRANCE: "Belgium is contested between us, Germany, and England. I propose we coordinate: I move F English Channel -> North Sea to threaten England. You move A Paris -> Burgundy. We split the spoils - you take Belgium Fall 1901, I take Holland. This keeps Germany boxed in. Agreed?"
-SEND GERMANY: "I reject your proposal. We both face a Russian threat - Austria is building against you and Russia is building against me. Counter-offer: I stay out of Belgium if you support me into Norway. This lets us both focus east."
+SEND FRANCE: "[COUNTER] Your Belgium proposal doesn't work - I need the Channel. Counter-offer: You take Belgium, I take Holland. IF you stay out of the Channel, THEN I support you into Munich in Fall. Deal?"
+SEND GERMANY: "[REJECT] I cannot accept those terms. [FINAL] Last offer: DMZ in Burgundy, you focus east. Accept or I ally with France against you."
 \`\`\`
 
-**NO GENERIC MESSAGES - make strategic arguments with concrete deals!**`;
+**Stage tags ([OPENING], [COUNTER], [FINAL], [ACCEPT], [REJECT]) help track negotiation progress.**
+
+**DEPTH OVER BREADTH - 1-2 focused conversations beat 6 shallow ones!**`;
     }
 
     case 'MOVEMENT':

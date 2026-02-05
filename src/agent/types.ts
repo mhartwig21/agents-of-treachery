@@ -278,6 +278,19 @@ export interface AgentTurnResult {
 }
 
 /**
+ * Negotiation stage for tracking deal progression.
+ */
+export type NegotiationStage = 'OPENING' | 'COUNTER' | 'FINAL' | 'ACCEPT' | 'REJECT';
+
+/**
+ * Conditional clause parsed from "IF X THEN Y" format.
+ */
+export interface ConditionalClause {
+  condition: string;
+  commitment: string;
+}
+
+/**
  * A diplomatic action taken by an agent.
  */
 export interface DiplomaticAction {
@@ -285,6 +298,10 @@ export interface DiplomaticAction {
   targetPowers: Power[];
   content: string;
   channelId?: string;
+  /** Negotiation stage indicator (e.g., [COUNTER], [FINAL]) */
+  negotiationStage?: NegotiationStage;
+  /** Parsed conditional clause from "IF X THEN Y" in message */
+  conditional?: ConditionalClause;
 }
 
 /**
