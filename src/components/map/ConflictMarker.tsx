@@ -21,15 +21,18 @@ export interface ConflictMarkerProps {
   y: number;
   contenders: Contender[];
   resolved: boolean;
+  /** Scale factor based on zoom level (1 = default, <1 = zoomed out) */
+  scale?: number;
 }
 
 /**
  * Animated conflict marker with strength badges for contested territories.
  */
-export function ConflictMarker({ x, y, contenders, resolved }: ConflictMarkerProps) {
+export function ConflictMarker({ x, y, contenders, resolved, scale = 1 }: ConflictMarkerProps) {
   // Calculate badge positions arranged in an arc around the center
+  // Scale dimensions based on zoom level to prevent markers being too large when zoomed out
   const badgePositions = useMemo(() => {
-    const radius = 35;
+    const radius = 35 * scale;
     const count = contenders.length;
 
     // Distribute badges evenly in an arc (top half of circle)
@@ -44,7 +47,7 @@ export function ConflictMarker({ x, y, contenders, resolved }: ConflictMarkerPro
         cy: y + Math.sin(angle) * radius,
       };
     });
-  }, [x, y, contenders]);
+  }, [x, y, contenders, scale]);
 
   return (
     <g className="conflict-marker-group">
@@ -67,7 +70,7 @@ export function ConflictMarker({ x, y, contenders, resolved }: ConflictMarkerPro
         <circle
           cx={x}
           cy={y}
-          r={30}
+          r={30 * scale}
           fill="rgba(220, 38, 38, 0.3)"
           stroke="rgba(220, 38, 38, 0.6)"
           strokeWidth={2}
@@ -90,10 +93,10 @@ export function ConflictMarker({ x, y, contenders, resolved }: ConflictMarkerPro
             <circle
               cx={cx}
               cy={cy}
-              r={14}
+              r={14 * scale}
               fill={color}
               stroke={isWinner ? '#fbbf24' : 'white'}
-              strokeWidth={isWinner ? 2.5 : 1.5}
+              strokeWidth={(isWinner ? 2.5 : 1.5) * scale}
             />
             {/* Strength number */}
             <text
@@ -102,7 +105,7 @@ export function ConflictMarker({ x, y, contenders, resolved }: ConflictMarkerPro
               textAnchor="middle"
               dominantBaseline="central"
               fill="white"
-              fontSize={12}
+              fontSize={12 * scale}
               fontWeight="bold"
               style={{ textShadow: '0 1px 2px rgba(0,0,0,0.5)' }}
             >

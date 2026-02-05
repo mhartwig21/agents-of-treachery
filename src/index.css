@@ -80,6 +80,7 @@ body {
 
 .animate-battle-pulse {
   animation: battle-pulse 1s ease-in-out infinite;
+  will-change: filter;
 }
 
 @keyframes fail-bounce {

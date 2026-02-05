@@ -547,6 +547,9 @@ export function DiplomacyMap({
           const center = getTerritoryCenter(baseId) || getTerritoryCenter(conflict.territory)
           if (!center) return null
 
+          // Scale markers based on zoom level (smaller when zoomed out)
+          const zoomScale = Math.min(1, VIEWBOX.width / viewBox.width)
+
           return (
             <ConflictMarker
               key={`conflict-${conflict.territory}`}
@@ -554,6 +557,7 @@ export function DiplomacyMap({
               y={center.y}
               contenders={conflict.contenders}
               resolved={conflict.resolved}
+              scale={zoomScale}
             />
           )
         })}
