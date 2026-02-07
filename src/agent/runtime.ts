@@ -66,6 +66,13 @@ import {
   formatReflectionForLog,
 } from './reflection';
 import type { MessageAnalysis, PhaseReflection } from './types';
+import {
+  callLLMWithRetry,
+  createRetryMetrics,
+  formatRetryMetrics,
+  type LLMRetryConfig,
+  type LLMRetryMetrics,
+} from './llm-retry';
 
 /**
  * Event types emitted by the runtime.
@@ -122,6 +129,8 @@ export class AgentRuntime {
   private pendingReflections: Map<Power, PhaseReflection> = new Map();
   /** Track SC ownership at start of year for yearly summary calculation */
   private yearStartSCs: Map<Power, string[]> = new Map();
+  private retryConfig: LLMRetryConfig;
+  private retryMetrics: LLMRetryMetrics = createRetryMetrics();
 
   constructor(
     config: AgentRuntimeConfig,
@@ -166,6 +175,13 @@ export class AgentRuntime {
 
     // Initialize promise tracker for memory/relationship evolution
     this.promiseTracker = createPromiseTracker();
+
+    // Initialize LLM retry config
+    this.retryConfig = {
+      maxRetries: this.config.llmMaxRetries ?? 3,
+      baseDelayMs: this.config.llmRetryBaseDelayMs ?? 1000,
+      fallbackModel: this.config.llmFallbackModel,
+    };
   }
 
   /**
@@ -237,6 +253,11 @@ export class AgentRuntime {
     if (this.config.verbose) {
       const stats = getInvalidOrderStats(this.config.gameId);
       console.log(formatModelStatsReport(stats));
+    }
+
+    // Print LLM retry metrics
+    if (this.retryMetrics.totalAttempts > 0) {
+      console.log(formatRetryMetrics(this.retryMetrics));
     }
 
     return {
@@ -959,19 +980,30 @@ export class AgentRuntime {
         `~${contextStats.totalTokens} tokens (ratio: ${contextStats.compressionRatio.toFixed(2)})`);
     }
 
-    // Call the LLM
+    // Call the LLM with retry logic
     const llm = this.sessionManager.getLLMProvider();
     console.log(`[${power}] Calling LLM (${session.conversationHistory.length} msgs, ~${fullPrompt.length} chars, turn ${this.turnNumber}, ${contextStats.compressionLevel})...`);
     const startTime = Date.now();
     let response;
+    let usedFallback = false;
     try {
-      response = await llm.complete({
-        messages: session.conversationHistory,
-        model: session.config.model,
-        temperature: session.config.temperature,
-        maxTokens: session.config.maxTokens,
-      });
-      console.log(`[${power}] LLM responded in ${((Date.now() - startTime) / 1000).toFixed(1)}s (${response.content.length} chars)`);
+      const retryResult = await callLLMWithRetry(
+        llm,
+        {
+          messages: session.conversationHistory,
+          model: session.config.model,
+          temperature: session.config.temperature,
+          maxTokens: session.config.maxTokens,
+        },
+        this.retryConfig,
+        this.retryMetrics,
+      );
+      response = retryResult.result;
+      usedFallback = retryResult.usedFallback;
+
+      const retryNote = retryResult.attempts > 1 ? ` (after ${retryResult.attempts} attempts)` : '';
+      const fallbackNote = usedFallback ? ' [FALLBACK MODEL]' : '';
+      console.log(`[${power}] LLM responded in ${((Date.now() - startTime) / 1000).toFixed(1)}s (${response.content.length} chars)${retryNote}${fallbackNote}`);
 
       // Verbose: log the full response
       if (this.config.verbose) {
@@ -982,8 +1014,37 @@ export class AgentRuntime {
         console.log(`${'─'.repeat(80)}\n`);
       }
     } catch (error) {
-      console.error(`[${power}] LLM error:`, error);
-      throw error;
+      // All retries and fallback exhausted — degrade gracefully to HOLD orders
+      const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+      console.error(`[${power}] LLM failed after all retries (${elapsed}s): ${error instanceof Error ? error.message : error}`);
+      console.warn(`[${power}] Degrading to HOLD orders for all units`);
+
+      // Remove the user message we added (LLM never responded)
+      const lastMsg = session.conversationHistory[session.conversationHistory.length - 1];
+      if (lastMsg && lastMsg.role === 'user') {
+        session.conversationHistory.pop();
+      }
+
+      const durationMs = Date.now() - startTime;
+      this.emitEvent({
+        type: 'agent_turn_completed',
+        timestamp: new Date(),
+        data: {
+          power,
+          orders: [],
+          durationMs,
+        },
+      });
+
+      // Return empty result — fillDefaultOrders in movement phase will generate HOLDs
+      return {
+        power,
+        orders: [],
+        retreatOrders: [],
+        buildOrders: [],
+        diplomaticMessages: [],
+        reasoning: `[LLM FAILURE] All ${this.retryConfig.maxRetries} retries exhausted. Defaulting to HOLD.`,
+      };
     }
 
     // Add assistant response to conversation
@@ -1279,6 +1340,13 @@ export class AgentRuntime {
    */
   getLogger(): GameLogger {
     return this.logger;
+  }
+
+  /**
+   * Get LLM retry metrics.
+   */
+  getRetryMetrics(): LLMRetryMetrics {
+    return this.retryMetrics;
   }
 }
 

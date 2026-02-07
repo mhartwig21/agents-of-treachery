@@ -460,6 +460,106 @@ describe('AgentRuntime', () => {
   });
 });
 
+describe('LLM failure resilience', () => {
+  let runtime: AgentRuntime;
+
+  afterEach(() => {
+    if (runtime) {
+      runtime.cleanup();
+    }
+  });
+
+  it('should degrade to HOLD orders when LLM fails completely', async () => {
+    // LLM that always fails
+    const failingLLM: LLMProvider = {
+      async complete() {
+        throw new Error('service unavailable (503)');
+      },
+    };
+
+    runtime = new AgentRuntime(
+      makeConfig({
+        pressPeriodMinutes: 0.001,
+        pressPollIntervalSeconds: 0.001,
+        llmMaxRetries: 2,
+        llmRetryBaseDelayMs: 1,
+      }),
+      failingLLM,
+      new InMemoryStore()
+    );
+    await runtime.initialize();
+
+    // Run diplomacy phase — should not throw despite LLM failures
+    await runtime.runPhase();
+
+    // Should have transitioned to MOVEMENT (diplomacy still completes)
+    expect(runtime.getGameState().phase).toBe('MOVEMENT');
+
+    // Run movement phase — agents degrade to HOLD
+    await runtime.runPhase();
+
+    // Game should survive: all 22 units preserved with HOLD defaults
+    const state = runtime.getGameState();
+    expect(state.units.length).toBe(22);
+    expect(state.season).toBe('FALL');
+  });
+
+  it('should track retry metrics', async () => {
+    let callCount = 0;
+    const intermittentLLM: LLMProvider = {
+      async complete() {
+        callCount++;
+        // Fail first call, succeed thereafter
+        if (callCount === 1) {
+          throw new Error('rate limit exceeded (429)');
+        }
+        return {
+          content: 'REASONING: Test.\n\nORDERS:\n# Hold\n',
+          usage: { inputTokens: 50, outputTokens: 25 },
+          stopReason: 'end_turn' as const,
+        };
+      },
+    };
+
+    runtime = new AgentRuntime(
+      makeConfig({
+        pressPeriodMinutes: 0.001,
+        pressPollIntervalSeconds: 0.001,
+        llmMaxRetries: 3,
+        llmRetryBaseDelayMs: 1,
+      }),
+      intermittentLLM,
+      new InMemoryStore()
+    );
+    await runtime.initialize();
+
+    await runtime.runPhase();
+
+    const metrics = runtime.getRetryMetrics();
+    expect(metrics.totalAttempts).toBeGreaterThan(0);
+    // At least one retry success (the first agent failed then succeeded)
+    expect(metrics.retrySuccesses).toBeGreaterThanOrEqual(1);
+    expect(metrics.errorCounts.get('rate_limit')).toBeGreaterThanOrEqual(1);
+  });
+
+  it('should accept retry config options', () => {
+    const mockLLM = new MockLLMProvider();
+    runtime = new AgentRuntime(
+      makeConfig({
+        llmMaxRetries: 5,
+        llmRetryBaseDelayMs: 2000,
+        llmFallbackModel: 'gpt-4o-mini',
+      }),
+      mockLLM,
+      new InMemoryStore()
+    );
+
+    // Runtime should construct without error
+    expect(runtime).toBeDefined();
+    expect(runtime.getRetryMetrics().totalAttempts).toBe(0);
+  });
+});
+
 describe('createTestRuntime', () => {
   it('should create a runtime with test defaults', () => {
     const mockLLM = new MockLLMProvider();

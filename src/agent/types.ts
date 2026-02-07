@@ -346,6 +346,15 @@ export interface AgentRuntimeConfig {
 
   /** Polling interval during press period in seconds. How often to check for agents with unread messages. Default: 5 */
   pressPollIntervalSeconds?: number;
+
+  /** Maximum number of LLM retry attempts before fallback. Default: 3 */
+  llmMaxRetries?: number;
+
+  /** Base delay in ms for exponential backoff between retries. Default: 1000 */
+  llmRetryBaseDelayMs?: number;
+
+  /** Fallback model to use when primary model fails all retries. If unset, degrades to HOLD orders. */
+  llmFallbackModel?: string;
 }
 
 /**
@@ -360,6 +369,8 @@ export const DEFAULT_RUNTIME_CONFIG: Partial<AgentRuntimeConfig> = {
   maxPressMessagesPerChannel: 100,
   pressPeriodMinutes: 1, // 1 minute default for faster testing, increase for real games
   pressPollIntervalSeconds: 5,
+  llmMaxRetries: 3,
+  llmRetryBaseDelayMs: 1000,
 };
 
 /**
