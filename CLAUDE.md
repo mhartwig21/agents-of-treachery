@@ -105,20 +105,30 @@ npm run test:watch        # Watch mode
 npm run test:coverage     # With coverage report
 ```
 
+**Current Coverage**: 1317 unit tests passing (48 test files)
+
 **Test Files**: `src/**/*.test.ts`
 - `src/engine/engine.test.ts` - Core game engine logic
+- `src/engine/__tests__/game.test.ts` - Game state lifecycle, orders, retreats, builds, victory (70 tests)
+- `src/engine/__tests__/adjudicator.test.ts` - Order resolution, support cutting, standoffs (47 tests)
+- `src/engine/__tests__/map.test.ts` - Map data, adjacency, movement validation (52 tests)
 - `src/agent/__tests__/agent.test.ts` - Agent system
+- `src/agent/__tests__/order-parser.test.ts` - LLM output parsing (99 tests)
+- `src/agent/__tests__/prompts.test.ts` - Prompt generation (41 tests)
+- `src/agent/__tests__/memory.test.ts` - Trust, memory, relationships (58 tests)
+- `src/agent/__tests__/game-view.test.ts` - Agent perception of game state (60 tests)
+- `src/agent/__tests__/personalities.test.ts` - Power personality config (15 tests)
 - `src/agent/__tests__/pathfinding.test.ts` - BFS pathfinding
 - `src/agent/__tests__/diary.test.ts` - Diary/memory consolidation
-- `src/agent/__tests__/negotiation.test.ts` - Negotiation system
-- `src/agent/__tests__/reflection.test.ts` - Post-turn reflection
+- `src/agent/__tests__/negotiation.test.ts` - Negotiation analysis
+- `src/agent/__tests__/reflection.test.ts` - Post-turn reflection/betrayal detection
 - `src/press/__tests__/press-system.test.ts` - Press/messaging
 - `src/server/__tests__/game-server.test.ts` - Game server
-- `src/store/__tests__/game-store.test.ts` - State management
+- `src/store/__tests__/game-store.test.ts` - State management (extended with retreat/build/snapshot tests)
 - `src/analysis/__tests__/deception.test.ts` - Lie detection
 - `src/analysis/__tests__/promise-tracker.test.ts` - Promise tracking
 - `src/analysis/__tests__/relationships.test.ts` - Relationship analysis
-- `src/orchestration/__tests__/orchestration.test.ts` - Game orchestration
+- `src/orchestration/__tests__/orchestration.test.ts` - Game orchestration (extended with retreat/build/outcome tests)
 - `src/__tests__/smoke.test.ts` - Basic smoke tests
 - `src/secrets/__tests__/vault.test.ts` - Secrets vault
 - `src/vault/__tests__/encryption.test.ts` - Encryption
