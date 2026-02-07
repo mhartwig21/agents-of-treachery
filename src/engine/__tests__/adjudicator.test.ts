@@ -512,6 +512,191 @@ describe('adjudicate', () => {
       expect(results.get('NTH')?.success).toBe(true); // convoy succeeds when army succeeds
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // DATC-inspired edge cases (Diplomacy Adjudicator Test Cases)
+  // ---------------------------------------------------------------------------
+
+  describe('DATC edge cases', () => {
+    it('should bounce three-way standoff into empty province', () => {
+      // Three units all trying to move to the same empty province
+      const ctx = makeCtx(
+        [
+          army('FRANCE', 'PAR'),
+          army('GERMANY', 'MUN'),
+          army('ITALY', 'PIE'),
+        ],
+        [
+          ['FRANCE', [move('PAR', 'BUR')]],
+          ['GERMANY', [move('MUN', 'BUR')]],
+          ['ITALY', [move('PIE', 'MAR')]], // Separate move, not to BUR
+        ]
+      );
+      const results = adjudicate(ctx);
+      // PAR and MUN both bounce
+      expect(results.get('PAR')?.success).toBe(false);
+      expect(results.get('MUN')?.success).toBe(false);
+    });
+
+    it('should allow self-standoff to protect territory', () => {
+      // Two friendly units move to same province — both bounce, but prevent enemy entry
+      const ctx = makeCtx(
+        [
+          army('FRANCE', 'PAR'),
+          army('FRANCE', 'GAS'),
+          army('GERMANY', 'MAR'),
+        ],
+        [
+          ['FRANCE', [
+            move('PAR', 'BUR'),
+            move('GAS', 'BUR'),
+          ]],
+          ['GERMANY', [move('MAR', 'BUR')]],
+        ]
+      );
+      const results = adjudicate(ctx);
+      // All three bounce into BUR
+      expect(results.get('PAR')?.success).toBe(false);
+      expect(results.get('GAS')?.success).toBe(false);
+      expect(results.get('MAR')?.success).toBe(false);
+    });
+
+    it('should not allow a unit to cut support for its own attack', () => {
+      // If A attacks B, and C supports A's attack on B,
+      // B's counter-attack on C does NOT cut C's support (the exception rule)
+      // RUH is adjacent to both BUR and MUN
+      const ctx = makeCtx(
+        [
+          army('FRANCE', 'BUR'),
+          army('FRANCE', 'RUH'),
+          army('GERMANY', 'MUN'),
+        ],
+        [
+          ['FRANCE', [
+            move('BUR', 'MUN'),
+            support('RUH', 'BUR', 'MUN'),
+          ]],
+          ['GERMANY', [move('MUN', 'RUH')]], // attacks the supporter
+        ]
+      );
+      const results = adjudicate(ctx);
+      // MUN -> RUH does NOT cut RUH's support for BUR -> MUN
+      expect(results.get('RUH')?.success).toBe(true); // Support holds
+      expect(results.get('BUR')?.success).toBe(true);  // Move succeeds
+      expect(results.get('MUN')?.dislodged).toBe(true); // MUN is dislodged
+    });
+
+    it('should resolve circular movement (three-way rotation)', () => {
+      // A -> B, B -> C, C -> A: all should succeed
+      const ctx = makeCtx(
+        [
+          army('FRANCE', 'PAR'),
+          army('GERMANY', 'BUR'),
+          army('ITALY', 'MAR'),
+        ],
+        [
+          ['FRANCE', [move('PAR', 'BUR')]],
+          ['GERMANY', [move('BUR', 'MAR')]],
+          ['ITALY', [move('MAR', 'GAS')]],
+        ]
+      );
+      const results = adjudicate(ctx);
+      // This is a chain: PAR -> BUR -> MAR -> GAS
+      // BUR vacates for PAR, MAR vacates for BUR
+      expect(results.get('BUR')?.success).toBe(true);
+      expect(results.get('MAR')?.success).toBe(true);
+      expect(results.get('PAR')?.success).toBe(true);
+    });
+
+    it('should handle support from multiple nations for same attacker', () => {
+      // France and Italy both support an English move
+      const ctx = makeCtx(
+        [
+          army('ENGLAND', 'YOR'),
+          army('FRANCE', 'WAL'),
+          army('GERMANY', 'LON'),
+          army('GERMANY', 'LVP'),
+        ],
+        [
+          ['ENGLAND', [move('YOR', 'LON')]],
+          ['FRANCE', [support('WAL', 'YOR', 'LON')]],
+          ['GERMANY', [
+            hold('LON'),
+            support('LVP', 'LON'),
+          ]],
+        ]
+      );
+      const results = adjudicate(ctx);
+      // England attacks LON with strength 2 (YOR + WAL support)
+      // Germany defends LON with strength 2 (LON + LVP support)
+      // Equal strength: attack fails, defender holds
+      expect(results.get('YOR')?.success).toBe(false);
+      expect(results.get('LON')?.dislodged).toBeFalsy();
+    });
+
+    it('should handle multi-province convoy chain', () => {
+      // Army convoyed across two fleets
+      const ctx = makeCtx(
+        [
+          army('ENGLAND', 'LON'),
+          fleet('ENGLAND', 'NTH'),
+          fleet('ENGLAND', 'NWG'),
+        ],
+        [
+          ['ENGLAND', [
+            move('LON', 'NWY', { viaConvoy: true }),
+            convoy('NTH', 'LON', 'NWY'),
+            convoy('NWG', 'LON', 'NWY'),
+          ]],
+        ]
+      );
+      const results = adjudicate(ctx);
+      expect(results.get('LON')?.success).toBe(true);
+    });
+
+    it('should dislodge own unit only with support from another power', () => {
+      // A power cannot dislodge its own unit
+      const ctx = makeCtx(
+        [
+          army('FRANCE', 'PAR'),
+          army('FRANCE', 'BUR'),
+        ],
+        [
+          ['FRANCE', [
+            move('PAR', 'BUR'),
+            hold('BUR'),
+          ]],
+        ]
+      );
+      const results = adjudicate(ctx);
+      // France cannot dislodge its own unit
+      expect(results.get('PAR')?.success).toBe(false);
+      expect(results.get('BUR')?.dislodged).toBeFalsy();
+    });
+
+    it('should handle support hold when supported unit moves', () => {
+      // If you support a unit to hold, but that unit moves away,
+      // the support is wasted
+      const ctx = makeCtx(
+        [
+          army('FRANCE', 'PAR'),
+          army('FRANCE', 'BUR'),
+          army('GERMANY', 'MUN'),
+        ],
+        [
+          ['FRANCE', [
+            support('PAR', 'BUR'), // Support BUR to hold
+            move('BUR', 'MAR'),    // But BUR moves away!
+          ]],
+          ['GERMANY', [move('MUN', 'BUR')]],
+        ]
+      );
+      const results = adjudicate(ctx);
+      // BUR moved away, Germany should be able to move in
+      expect(results.get('BUR')?.success).toBe(true); // BUR -> MAR succeeds
+      expect(results.get('MUN')?.success).toBe(true); // MUN -> BUR succeeds (province vacated)
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
