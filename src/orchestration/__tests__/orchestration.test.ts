@@ -407,6 +407,69 @@ describe('GameOrchestrator', () => {
       expect(context.season).toBe('FALL');
     });
   });
+
+  describe('Retreat Order Submission', () => {
+    it('should reject retreat orders when not in RETREAT phase', () => {
+      session.start();
+      // Game starts in DIPLOMACY phase
+      expect(() =>
+        session.submitRetreatOrders('ENGLAND', [{ unit: 'LON', destination: 'YOR' }])
+      ).toThrow('Cannot submit retreat orders');
+    });
+
+    it('should reject retreat orders when game is not active', () => {
+      // Game is in PENDING state
+      expect(() =>
+        session.submitRetreatOrders('ENGLAND', [{ unit: 'LON', destination: 'YOR' }])
+      ).toThrow('Game is not active');
+    });
+  });
+
+  describe('Build Order Submission', () => {
+    it('should reject build orders when not in BUILD phase', () => {
+      session.start();
+      expect(() =>
+        session.submitBuildOrders('ENGLAND', [
+          { type: 'BUILD', province: 'LON', unitType: 'FLEET' },
+        ])
+      ).toThrow('Cannot submit build orders');
+    });
+
+    it('should reject build orders when game is not active', () => {
+      expect(() =>
+        session.submitBuildOrders('ENGLAND', [
+          { type: 'BUILD', province: 'LON', unitType: 'FLEET' },
+        ])
+      ).toThrow('Game is not active');
+    });
+  });
+
+  describe('Game Outcome', () => {
+    it('should return undefined winner before game ends', () => {
+      session.start();
+      expect(session.getWinner()).toBeUndefined();
+    });
+
+    it('should report no draw before game ends', () => {
+      session.start();
+      expect(session.isDraw()).toBe(false);
+    });
+  });
+
+  describe('Manual Phase Resolution', () => {
+    it('should manually resolve a phase', () => {
+      session.start();
+      submitAllHoldOrders(session);
+
+      const continues = session.resolvePhase();
+      expect(continues).toBe(true);
+      expect(session.getSeason()).toBe('FALL');
+    });
+
+    it('should throw when resolving on non-active game', () => {
+      expect(() => session.resolvePhase()).toThrow('Game is not active');
+    });
+  });
 });
 
 /**
