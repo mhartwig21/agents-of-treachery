@@ -212,6 +212,28 @@ export {
   generateAnalysisSummary,
 } from './negotiation';
 
+// Model registry
+export {
+  ModelRegistry,
+  createOpenAIFreeRegistry,
+  BUILTIN_MODELS,
+} from './model-registry';
+
+export type {
+  ModelDefinition,
+  TokenBudget,
+  PowerModelConfig,
+} from './model-registry';
+
+// Metrics
+export { MetricsCollector } from './metrics';
+
+export type {
+  ModelMetrics,
+  PowerMetrics,
+  CostReport,
+} from './metrics';
+
 // Runtime
 export {
   AgentRuntime,

@@ -43,6 +43,8 @@ import { buildSystemPrompt, buildTurnPrompt } from './prompts';
 import { createAgentGameView, createStrategicSummary } from './game-view';
 import { parseAgentResponse, validateOrders, fillDefaultOrders } from './order-parser';
 import { GameLogger, getGameLogger, getInvalidOrderStats, formatModelStatsReport } from '../server/game-logger';
+import type { ModelRegistry } from './model-registry';
+import { MetricsCollector } from './metrics';
 import {
   createDiaryEntry,
   analyzeDiaryForDeception,
@@ -121,12 +123,17 @@ export class AgentRuntime {
   private pendingReflections: Map<Power, PhaseReflection> = new Map();
   /** Track SC ownership at start of year for yearly summary calculation */
   private yearStartSCs: Map<Power, string[]> = new Map();
+  /** Optional model registry for per-power model assignment and budget tracking */
+  private modelRegistry: ModelRegistry | null = null;
+  /** Metrics collector for comparative model analysis */
+  private metrics: MetricsCollector;
 
   constructor(
     config: AgentRuntimeConfig,
     llmProvider: LLMProvider,
     memoryStore?: MemoryStore,
-    logger?: GameLogger
+    logger?: GameLogger,
+    modelRegistry?: ModelRegistry
   ) {
     this.config = { ...DEFAULT_RUNTIME_CONFIG, ...config } as AgentRuntimeConfig;
 
@@ -165,6 +172,20 @@ export class AgentRuntime {
 
     // Initialize promise tracker for memory/relationship evolution
     this.promiseTracker = createPromiseTracker();
+
+    // Initialize model registry and metrics collector
+    this.modelRegistry = modelRegistry ?? null;
+    this.metrics = new MetricsCollector(this.modelRegistry ?? undefined);
+
+    // Register per-power model assignments in metrics
+    if (this.modelRegistry) {
+      for (const agentConfig of this.config.agents) {
+        const resolved = this.modelRegistry.resolveModelForPower(agentConfig.power);
+        if (resolved) {
+          this.metrics.setPowerModel(agentConfig.power, resolved);
+        }
+      }
+    }
   }
 
   /**
@@ -231,6 +252,20 @@ export class AgentRuntime {
 
     // Save all memories
     await this.sessionManager.saveAllMemories();
+
+    // Update final supply center counts in metrics
+    for (const power of POWERS) {
+      let scCount = 0;
+      for (const [, owner] of this.gameState.supplyCenters) {
+        if (owner === power) scCount++;
+      }
+      this.metrics.updateSupplyCenters(power, scCount);
+    }
+
+    // Print comparative metrics report
+    if (this.modelRegistry) {
+      console.log(this.metrics.formatComparativeReport());
+    }
 
     // Print invalid order statistics by model
     if (this.config.verbose) {
@@ -942,19 +977,34 @@ export class AgentRuntime {
       content: fullPrompt,
     });
 
+    // Resolve model: registry > agent config > default
+    const resolvedModel = this.modelRegistry
+      ? this.modelRegistry.resolveModelForPower(power)
+      : session.config.model;
+
     // Call the LLM
     const llm = this.sessionManager.getLLMProvider();
-    console.log(`[${power}] Calling LLM (${session.conversationHistory.length} messages, ~${fullPrompt.length} chars)...`);
+    const modelLabel = resolvedModel || session.config.model || 'default';
+    console.log(`[${power}] Calling LLM [${modelLabel}] (${session.conversationHistory.length} messages, ~${fullPrompt.length} chars)...`);
     const startTime = Date.now();
     let response;
     try {
       response = await llm.complete({
         messages: session.conversationHistory,
-        model: session.config.model,
+        model: resolvedModel ?? session.config.model,
         temperature: session.config.temperature,
         maxTokens: session.config.maxTokens,
       });
-      console.log(`[${power}] LLM responded in ${((Date.now() - startTime) / 1000).toFixed(1)}s (${response.content.length} chars)`);
+      const durationMs = Date.now() - startTime;
+      console.log(`[${power}] LLM responded in ${(durationMs / 1000).toFixed(1)}s (${response.content.length} chars)`);
+
+      // Record metrics and budget usage
+      const inputTokens = response.usage?.inputTokens ?? 0;
+      const outputTokens = response.usage?.outputTokens ?? 0;
+      this.metrics.recordLLMCall(modelLabel, power, inputTokens, outputTokens, durationMs);
+      if (this.modelRegistry) {
+        this.modelRegistry.recordUsage(modelLabel, inputTokens, outputTokens);
+      }
 
       // Verbose: log the full response
       if (this.config.verbose) {
@@ -1041,6 +1091,11 @@ export class AgentRuntime {
           this.gameState.phase
         );
       }
+    }
+
+    // Record order validity metrics
+    if (parsed.orders.length > 0) {
+      this.metrics.recordOrderResult(modelLabel, power, parsed.orders.length, valid.length);
     }
 
     // Log diary entry and detect deception
@@ -1179,6 +1234,7 @@ export class AgentRuntime {
     this.pendingMessageAnalyses.clear();
     this.lastPhaseMessages = [];
     this.pendingReflections.clear();
+    this.metrics.clear();
   }
 
   /**
@@ -1222,6 +1278,20 @@ export class AgentRuntime {
    */
   getLogger(): GameLogger {
     return this.logger;
+  }
+
+  /**
+   * Get the model registry (if configured).
+   */
+  getModelRegistry(): ModelRegistry | null {
+    return this.modelRegistry;
+  }
+
+  /**
+   * Get the metrics collector.
+   */
+  getMetrics(): MetricsCollector {
+    return this.metrics;
   }
 }
 
