@@ -258,28 +258,33 @@ describe('Support mechanics', () => {
   });
 
   // BUG: aot-hidn8 - Support not being cut when supporting unit is attacked
-  it.skip('cutting support by attacking the supporting unit', () => {
+  // Original test used MUN -> MAR, but MUN and MAR are not adjacent.
+  // Fixed to use PIE -> MAR (PIE is adjacent to MAR).
+  it('cutting support by attacking the supporting unit', () => {
     const units: Unit[] = [
       makeUnit('FRANCE', 'ARMY', 'PAR'),
       makeUnit('FRANCE', 'ARMY', 'MAR'),
-      makeUnit('GERMANY', 'ARMY', 'MUN'),
+      makeUnit('ITALY', 'ARMY', 'PIE'),
       makeUnit('GERMANY', 'ARMY', 'BUR'),
     ];
     const orders = new Map<Power, Order[]>();
     // France: A PAR -> BUR (with support from MAR), A MAR SUPPORT A PAR -> BUR
-    // Germany: A MUN -> MAR (cuts support!), A BUR HOLD
+    // Italy: A PIE -> MAR (cuts support!)
+    // Germany: A BUR HOLD
     orders.set('FRANCE', [
       { type: 'MOVE', unit: 'PAR', destination: 'BUR' } as MoveOrder,
       { type: 'SUPPORT', unit: 'MAR', supportedUnit: 'PAR', destination: 'BUR' } as SupportOrder,
     ]);
+    orders.set('ITALY', [
+      { type: 'MOVE', unit: 'PIE', destination: 'MAR' } as MoveOrder,
+    ]);
     orders.set('GERMANY', [
-      { type: 'MOVE', unit: 'MUN', destination: 'MAR' } as MoveOrder,
       { type: 'HOLD', unit: 'BUR' } as HoldOrder,
     ]);
 
     const results = adjudicate({ units, orders });
 
-    // Germany attacks MAR, cutting France's support for PAR -> BUR
+    // Italy attacks MAR, cutting France's support for PAR -> BUR
     // So PAR -> BUR is now strength 1 vs BUR hold strength 1 = bounce
     expect(results.get('MAR')?.success).toBe(false); // Support was cut
     expect(results.get('MAR')?.reason).toBe('Support was cut');
