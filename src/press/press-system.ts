@@ -164,6 +164,7 @@ export class PressSystem {
       timestamp: new Date(),
       replyTo: request.replyTo,
       metadata: this.config.includeMetadata ? request.metadata : undefined,
+      phase: { ...this.context },
     };
 
     // Store the message

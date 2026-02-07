@@ -233,6 +233,8 @@ export class AgentPressAPI {
     const channelSummaries: ChannelSummary[] = [];
     let unreadCount = 0;
     const recentMessages: Message[] = [];
+    const seenIds = new Set<MessageId>();
+    const currentContext = this.pressSystem.getContext();
 
     for (const channel of channels) {
       const messages = this.pressSystem.queryMessages({
@@ -258,12 +260,24 @@ export class AgentPressAPI {
         lastMessage,
       });
 
-      // Collect recent messages (last 5 from each channel)
-      recentMessages.push(...messages.slice(-5));
+      // Collect recent messages (last 5 from each channel), filtered to current phase
+      const phaseMessages = messages.filter((m) =>
+        !m.phase || (
+          m.phase.year === currentContext.year &&
+          m.phase.season === currentContext.season &&
+          m.phase.phase === currentContext.phase
+        )
+      );
+      for (const msg of phaseMessages.slice(-5)) {
+        if (!seenIds.has(msg.id)) {
+          seenIds.add(msg.id);
+          recentMessages.push(msg);
+        }
+      }
     }
 
-    // Sort recent messages by timestamp
-    recentMessages.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+    // Sort recent messages chronologically (oldest-first, natural reading order)
+    recentMessages.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
 
     return {
       unreadCount,
