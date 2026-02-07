@@ -342,12 +342,9 @@ export function adjudicate(ctx: AdjudicationContext): Map<string, OrderResolutio
             }
             // Equal strength: both bounce
           } else {
-            // Defender moving elsewhere - succeed if stronger than hold strength
-            const holdStr = holdStrengths.get(dest) || 1;
-            if (move.strength > holdStr) {
-              successfulMoves.add(move.order.unit);
-              // Defender might be dislodged if their move fails
-            }
+            // Defender moving elsewhere (non-head-to-head) - province is being vacated.
+            // A unit ordered to move has 0 hold strength; attacker always succeeds.
+            successfulMoves.add(move.order.unit);
           }
         } else {
           // Defender is holding - need to overcome hold strength
@@ -393,6 +390,21 @@ export function adjudicate(ctx: AdjudicationContext): Map<string, OrderResolutio
         }
       }
       // If tie, all bounce - no moves succeed
+    }
+  }
+
+  // Post-processing: dislodge units whose move failed but whose origin was taken
+  for (const move of moves) {
+    if (successfulMoves.has(move.order.unit)) {
+      // This move succeeded — check if the destination had a unit moving away that failed
+      const defender = findUnit(move.order.destination, ctx);
+      if (defender) {
+        const defenderOrder = getOrderForUnit(move.order.destination, ctx);
+        if (defenderOrder?.type === 'MOVE' && !successfulMoves.has(move.order.destination)) {
+          // Defender tried to move but failed, and attacker took the province
+          dislodgedUnits.set(move.order.destination, move.order.unit);
+        }
+      }
     }
   }
 
