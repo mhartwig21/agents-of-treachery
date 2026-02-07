@@ -321,27 +321,28 @@ describe('submitRetreats', () => {
     ).toThrow('Cannot submit retreats outside retreat phase');
   });
 
-  it('should throw for non-existent retreating unit', () => {
+  it('should silently skip non-existent retreating unit', () => {
     const state = createInitialState();
     state.phase = 'RETREAT';
     state.pendingRetreats = [
       { type: 'ARMY', power: 'FRANCE', province: 'PAR' },
     ];
-    expect(() =>
-      submitRetreats(state, 'ENGLAND', [{ unit: 'LON', destination: 'YOR' }])
-    ).toThrow('No retreating unit at LON for ENGLAND');
+    // Should not throw — silently skips the invalid retreat
+    submitRetreats(state, 'ENGLAND', [{ unit: 'LON', destination: 'YOR' }]);
+    expect(state.pendingRetreats).toHaveLength(1);
   });
 
-  it('should throw for invalid retreat destination', () => {
+  it('should convert invalid retreat destination to disband', () => {
     const state = createInitialState();
     state.phase = 'RETREAT';
     state.pendingRetreats = [
       { type: 'ARMY', power: 'FRANCE', province: 'PAR' },
     ];
     state.retreats.set('PAR', ['BRE', 'GAS']);
-    expect(() =>
-      submitRetreats(state, 'FRANCE', [{ unit: 'PAR', destination: 'MOS' }])
-    ).toThrow('Invalid retreat destination MOS');
+    // Should not throw — converts invalid destination to disband
+    submitRetreats(state, 'FRANCE', [{ unit: 'PAR', destination: 'MOS' }]);
+    // No retreat destination stored (unit will be disbanded)
+    expect(state.retreats.has('FRANCE:PAR')).toBe(false);
   });
 
   it('should accept valid retreat orders', () => {

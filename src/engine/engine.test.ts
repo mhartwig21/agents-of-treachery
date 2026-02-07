@@ -1677,28 +1677,31 @@ describe('Retreat submission validation', () => {
       .toThrow('Cannot submit retreats outside retreat phase');
   });
 
-  it('throws error when submitting retreat for non-existent unit', () => {
+  it('silently skips retreat for non-existent unit', () => {
     const unit = makeUnit('FRANCE', 'ARMY', 'BUR');
     const retreatOptions = new Map<string, string[]>();
     retreatOptions.set('BUR', ['PIC', 'GAS']);
 
     const state = makeRetreatState([unit], retreatOptions);
 
-    // Germany has no retreating unit
-    expect(() => submitRetreats(state, 'GERMANY', [{ unit: 'MUN', destination: 'BOH' }]))
-      .toThrow('No retreating unit');
+    // Germany has no retreating unit — should be silently skipped
+    submitRetreats(state, 'GERMANY', [{ unit: 'MUN', destination: 'BOH' }]);
+    // France's retreating unit should still be pending
+    expect(state.pendingRetreats).toHaveLength(1);
   });
 
-  it('throws error for invalid retreat destination', () => {
+  it('converts invalid retreat destination to disband', () => {
     const unit = makeUnit('FRANCE', 'ARMY', 'BUR');
     const retreatOptions = new Map<string, string[]>();
     retreatOptions.set('BUR', ['PIC', 'GAS']);
 
     const state = makeRetreatState([unit], retreatOptions);
 
-    // MAR is not in the valid options
-    expect(() => submitRetreats(state, 'FRANCE', [{ unit: 'BUR', destination: 'MAR' }]))
-      .toThrow('Invalid retreat destination');
+    // MAR is not in the valid options — retreat converted to disband
+    submitRetreats(state, 'FRANCE', [{ unit: 'BUR', destination: 'MAR' }]);
+    // No retreat destination stored (unit will be disbanded during resolution)
+    const retreatKey = 'FRANCE:BUR';
+    expect(state.retreats.has(retreatKey)).toBe(false);
   });
 
   it('throws error when resolving retreats outside retreat phase', () => {

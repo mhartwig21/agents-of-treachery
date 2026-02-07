@@ -223,13 +223,15 @@ export function submitRetreats(
       u => u.province === retreat.unit && u.power === power
     );
     if (!unit) {
-      throw new Error(`No retreating unit at ${retreat.unit} for ${power}`);
+      // No retreating unit at this location — skip this order silently
+      continue;
     }
 
     if (retreat.destination) {
       const validOptions = state.retreats.get(retreat.unit) || [];
       if (!validOptions.includes(retreat.destination)) {
-        throw new Error(`Invalid retreat destination ${retreat.destination}`);
+        // Invalid retreat destination — convert to disband (standard Diplomacy rule)
+        retreat.destination = undefined;
       }
     }
   }
