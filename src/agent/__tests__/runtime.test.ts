@@ -14,10 +14,32 @@ import {
   createTestRuntime,
   type RuntimeEvent,
 } from '../runtime';
-import type { AgentRuntimeConfig } from '../types';
+import type { AgentRuntimeConfig, LLMProvider, LLMCompletionParams, LLMCompletionResult } from '../types';
 import { MockLLMProvider } from '../session';
 import { InMemoryStore } from '../memory';
 import { GameLogger } from '../../server/game-logger';
+
+/**
+ * LLM provider that fails on specific call indices.
+ * Used to simulate individual agent failures.
+ */
+class FailOnNthCallLLMProvider implements LLMProvider {
+  private callCount = 0;
+  public calls: Array<{ messages: any[] }> = [];
+  constructor(
+    private failOnCalls: Set<number>,
+    private fallback: MockLLMProvider = new MockLLMProvider()
+  ) {}
+
+  async complete(params: LLMCompletionParams): Promise<LLMCompletionResult> {
+    const idx = this.callCount++;
+    this.calls.push({ messages: params.messages });
+    if (this.failOnCalls.has(idx)) {
+      throw new Error(`Simulated LLM failure on call ${idx} (e.g., 429 rate limit)`);
+    }
+    return this.fallback.complete(params);
+  }
+}
 
 /**
  * Build a mock LLM response that the order parser can parse.
@@ -444,6 +466,124 @@ describe('AgentRuntime', () => {
       );
       expect(runtime).toBeDefined();
     });
+  });
+
+  describe('per-agent error handling (aot-nkbkn)', () => {
+    it('should not crash when one agent LLM call fails in parallel mode', async () => {
+      // Fail the first agent's LLM call (diplomacy phase call)
+      const failingLLM = new FailOnNthCallLLMProvider(new Set([0]));
+      runtime = new AgentRuntime(
+        makeConfig({
+          parallelExecution: true,
+          pressPeriodMinutes: 0.001,
+          pressPollIntervalSeconds: 0.001,
+        }),
+        failingLLM,
+        new InMemoryStore()
+      );
+      await runtime.initialize();
+
+      // Should not throw - the failing agent gets HOLD orders
+      await runtime.runPhase();
+
+      // Game should have advanced past DIPLOMACY
+      expect(runtime.getGameState().phase).toBe('MOVEMENT');
+    }, 30_000);
+
+    it('should not crash when one agent LLM call fails in sequential mode', async () => {
+      // Fail the third agent's call
+      const failingLLM = new FailOnNthCallLLMProvider(new Set([2]));
+      runtime = new AgentRuntime(
+        makeConfig({
+          parallelExecution: false,
+          pressPeriodMinutes: 0.001,
+          pressPollIntervalSeconds: 0.001,
+        }),
+        failingLLM,
+        new InMemoryStore()
+      );
+      await runtime.initialize();
+
+      await runtime.runPhase();
+      expect(runtime.getGameState().phase).toBe('MOVEMENT');
+    }, 30_000);
+
+    it('should still emit agent_turn events for non-failing agents', async () => {
+      // Fail call index 0 (first agent in diplomacy)
+      const failingLLM = new FailOnNthCallLLMProvider(new Set([0]));
+      runtime = new AgentRuntime(
+        makeConfig({
+          parallelExecution: true,
+          pressPeriodMinutes: 0.001,
+          pressPollIntervalSeconds: 0.001,
+        }),
+        failingLLM,
+        new InMemoryStore()
+      );
+      await runtime.initialize();
+
+      const events: RuntimeEvent[] = [];
+      runtime.onEvent(e => events.push(e));
+
+      await runtime.runPhase();
+
+      // Failing agent still gets agent_turn_started (emitted before LLM call)
+      // but won't get agent_turn_completed (emitted inside runSingleAgentTurn after success)
+      const turnStarted = events.filter(e => e.type === 'agent_turn_started');
+      const turnCompleted = events.filter(e => e.type === 'agent_turn_completed');
+
+      // At least 6 of 7 agents should complete (the failed one won't emit completed)
+      expect(turnCompleted.length).toBeGreaterThanOrEqual(6);
+      // All 7 should have started (started is emitted before LLM call)
+      expect(turnStarted.length).toBeGreaterThanOrEqual(7);
+    }, 30_000);
+
+    it('should survive a full DIPLOMACY + MOVEMENT cycle with a failing agent', async () => {
+      // Fail calls 0 and 7 (one agent in diplomacy, one in movement)
+      const failingLLM = new FailOnNthCallLLMProvider(new Set([0, 7]));
+      runtime = new AgentRuntime(
+        makeConfig({
+          parallelExecution: true,
+          pressPeriodMinutes: 0.001,
+          pressPollIntervalSeconds: 0.001,
+        }),
+        failingLLM,
+        new InMemoryStore()
+      );
+      await runtime.initialize();
+
+      // DIPLOMACY phase (one agent fails)
+      await runtime.runPhase();
+      expect(runtime.getGameState().phase).toBe('MOVEMENT');
+
+      // MOVEMENT phase (one agent fails, gets HOLD orders)
+      await runtime.runPhase();
+      const state = runtime.getGameState();
+
+      // Game should advance to FALL DIPLOMACY
+      expect(state.season).toBe('FALL');
+      expect(state.phase).toBe('DIPLOMACY');
+      // All 22 units should still exist (failed agent HOLDs, all others HOLD via mock)
+      expect(state.units.length).toBe(22);
+    }, 30_000);
+
+    it('should survive when multiple agents fail simultaneously', async () => {
+      // Fail 3 of 7 agents
+      const failingLLM = new FailOnNthCallLLMProvider(new Set([0, 2, 4]));
+      runtime = new AgentRuntime(
+        makeConfig({
+          parallelExecution: true,
+          pressPeriodMinutes: 0.001,
+          pressPollIntervalSeconds: 0.001,
+        }),
+        failingLLM,
+        new InMemoryStore()
+      );
+      await runtime.initialize();
+
+      await runtime.runPhase();
+      expect(runtime.getGameState().phase).toBe('MOVEMENT');
+    }, 30_000);
   });
 });
 
