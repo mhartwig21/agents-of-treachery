@@ -41,6 +41,11 @@ import {
 } from './diary';
 import { buildSystemPrompt, buildTurnPrompt, getPromptContextStats } from './prompts';
 import { getCompressionLevel } from './context-compression';
+import { consolidateMemory } from './consolidation';
+import {
+  createNegotiationMetricsTracker,
+  NegotiationMetricsTracker,
+} from './negotiation-metrics';
 import { createAgentGameView, createStrategicSummary } from './game-view';
 import { parseAgentResponse, validateOrders, fillDefaultOrders } from './order-parser';
 import { GameLogger, getGameLogger, getInvalidOrderStats, formatModelStatsReport } from '../server/game-logger';
@@ -116,6 +121,7 @@ export class AgentRuntime {
   private turnNumber: number = 0;
   private logger: GameLogger;
   private promiseTracker: PromiseTracker;
+  private metricsTracker: NegotiationMetricsTracker;
   private pendingPromiseUpdates: PromiseMemoryUpdate[] = [];
   private pendingMessageAnalyses: Map<Power, MessageAnalysis[]> = new Map();
   private lastPhaseMessages: Message[] = [];
@@ -166,6 +172,9 @@ export class AgentRuntime {
 
     // Initialize promise tracker for memory/relationship evolution
     this.promiseTracker = createPromiseTracker();
+
+    // Initialize negotiation metrics tracker
+    this.metricsTracker = createNegotiationMetricsTracker(this.config.gameId);
   }
 
   /**
@@ -237,6 +246,10 @@ export class AgentRuntime {
     if (this.config.verbose) {
       const stats = getInvalidOrderStats(this.config.gameId);
       console.log(formatModelStatsReport(stats));
+
+      // Print negotiation metrics report
+      const metricsReport = this.metricsTracker.generateMarkdownReport();
+      console.log('\n' + metricsReport);
     }
 
     return {
@@ -380,6 +393,21 @@ export class AgentRuntime {
     );
     if (promises.length > 0) {
       console.log(`📝 Extracted ${promises.length} promises from diplomatic communications`);
+    }
+
+    // Record messages and promises in negotiation metrics tracker
+    const allAnalyses: MessageAnalysis[] = [];
+    for (const analyses of this.pendingMessageAnalyses.values()) {
+      allAnalyses.push(...analyses);
+    }
+    this.metricsTracker.recordTurnMessages(
+      allMessages,
+      allAnalyses,
+      this.gameState.year,
+      this.gameState.season
+    );
+    if (promises.length > 0) {
+      this.metricsTracker.recordPromises(promises, []);
     }
 
     // Store messages for phase reflection after movement resolution
@@ -546,6 +574,20 @@ export class AgentRuntime {
 
       // Apply trust updates to agent memories
       this.applyPromiseUpdatesToMemory(promiseUpdates);
+
+      // Record alliance signals from trust updates in metrics tracker
+      for (const update of promiseUpdates) {
+        const signal: 'cooperative' | 'hostile' | 'neutral' =
+          update.trustDelta > 0.1 ? 'cooperative' :
+          update.trustDelta < -0.1 ? 'hostile' : 'neutral';
+        this.metricsTracker.recordAllianceSignal(
+          update.power,
+          update.aboutPower,
+          signal,
+          update.year,
+          update.season
+        );
+      }
     }
 
     // Generate phase reflections for all powers
@@ -774,6 +816,9 @@ export class AgentRuntime {
 
     // Consolidate diaries at end of year (after Winter builds)
     await this.consolidateDiaries();
+
+    // Consolidate turn summaries and strategic notes for long games
+    await this.consolidateAgentMemories();
   }
 
   /**
@@ -830,6 +875,34 @@ export class AgentRuntime {
         } catch (error) {
           console.error(`[${power}] Diary consolidation failed:`, error);
         }
+      }
+    }
+  }
+
+  /**
+   * Consolidate turn summaries and strategic notes for all agents.
+   * Prevents memory overflow in 30+ turn games.
+   */
+  private async consolidateAgentMemories(): Promise<void> {
+    const llm = this.sessionManager.getLLMProvider();
+
+    for (const power of POWERS) {
+      const session = this.sessionManager.getSession(power);
+      if (!session) continue;
+
+      try {
+        const result = await consolidateMemory(session.memory, llm);
+        if (result.turnBlock && this.config.verbose) {
+          console.log(
+            `[${power}] Consolidated turns ${result.turnBlock.fromYear} ${result.turnBlock.fromSeason}` +
+            ` - ${result.turnBlock.toYear} ${result.turnBlock.toSeason}`
+          );
+        }
+        if (result.notesMerged && this.config.verbose) {
+          console.log(`[${power}] Merged strategic notes (now ${session.memory.strategicNotes.length})`);
+        }
+      } catch (error) {
+        console.error(`[${power}] Memory consolidation failed:`, error);
       }
     }
   }
@@ -1232,6 +1305,7 @@ export class AgentRuntime {
     this.pressAPIs.clear();
     this.eventCallbacks = [];
     this.promiseTracker.clear();
+    this.metricsTracker.reset();
     this.pendingPromiseUpdates = [];
     this.pendingMessageAnalyses.clear();
     this.lastPhaseMessages = [];
@@ -1279,6 +1353,13 @@ export class AgentRuntime {
    */
   getLogger(): GameLogger {
     return this.logger;
+  }
+
+  /**
+   * Get the negotiation metrics tracker.
+   */
+  getMetricsTracker(): NegotiationMetricsTracker {
+    return this.metricsTracker;
   }
 }
 
