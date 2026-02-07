@@ -179,7 +179,7 @@ export class SnapshotManager {
       events: events.map(e => ({
         ...e,
         timestamp: e.timestamp.toISOString(),
-      })),
+      })) as Array<GameEvent & { timestamp: string }>,
       messages: messages.map(m => ({
         ...m,
         timestamp: m.timestamp.toISOString(),

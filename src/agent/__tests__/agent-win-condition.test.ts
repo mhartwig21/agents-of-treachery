@@ -7,7 +7,7 @@
  * 3. The MOVEMENT prompt's "BE AGGRESSIVE" directive produces non-HOLD orders
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import type { GameState, Power, Unit } from '../../engine/types';
 import { POWERS } from '../../engine/types';
 import { PROVINCES } from '../../engine/map';
@@ -15,7 +15,7 @@ import { createAgentGameView } from '../game-view';
 import { buildTurnPrompt, buildSystemPrompt } from '../prompts';
 import { createInitialMemory } from '../memory';
 import { parseAgentResponse, fillDefaultOrders } from '../order-parser';
-import { MockLLMProvider, createTestSessionManager } from '../session';
+import { MockLLMProvider } from '../session';
 import { DEFAULT_PERSONALITY } from '../types';
 import type { AgentPersonality } from '../types';
 
