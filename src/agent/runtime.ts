@@ -129,6 +129,7 @@ export class AgentRuntime {
   private metricsTracker: NegotiationMetricsTracker;
   private pendingPromiseUpdates: PromiseMemoryUpdate[] = [];
   private pendingMessageAnalyses: Map<Power, MessageAnalysis[]> = new Map();
+  private analyzedMessageIds: Set<string> = new Set();
   private lastPhaseMessages: Message[] = [];
   private pendingReflections: Map<Power, PhaseReflection> = new Map();
   /** Track SC ownership at start of year for yearly summary calculation */
@@ -356,7 +357,7 @@ export class AgentRuntime {
       agentsWhoActed.add(power);
     }
 
-    // Analyze incoming messages for all powers (after initial round)
+    // Analyze new messages after round 1
     await this.analyzeMessagesForAllPowers();
 
     // Continue polling until time expires
@@ -393,6 +394,9 @@ export class AgentRuntime {
       for (const [power, result] of roundTurns) {
         this.processAgentDiplomacy(power, result);
       }
+
+      // Analyze new messages after each round (not just round 1)
+      await this.analyzeMessagesForAllPowers();
     }
 
     const totalRounds = roundNumber;
@@ -452,10 +456,7 @@ export class AgentRuntime {
     const llm = this.sessionManager.getLLMProvider();
     console.log(`\n🔍 Analyzing incoming diplomatic messages...`);
 
-    // Clear previous analyses
-    this.pendingMessageAnalyses.clear();
-
-    // Analyze messages for each power in parallel
+    // Analyze messages for each power in parallel - only NEW (unanalyzed) messages
     const analysisPromises = POWERS.map(async (power) => {
       const session = this.sessionManager.getSession(power);
       if (!session) return;
@@ -463,7 +464,8 @@ export class AgentRuntime {
       // Get messages from all channels this power participates in
       const pressAPI = this.pressAPIs.get(power)!;
       const inbox = pressAPI.getInbox();
-      const incomingMessages = inbox.recentMessages.filter(m => m.sender !== power);
+      const incomingMessages = inbox.recentMessages
+        .filter(m => m.sender !== power && !this.analyzedMessageIds.has(m.id));
 
       if (incomingMessages.length === 0) {
         return;
@@ -478,7 +480,14 @@ export class AgentRuntime {
         );
 
         if (analyses.length > 0) {
-          this.pendingMessageAnalyses.set(power, analyses);
+          // Append to existing analyses (don't replace - accumulates across rounds)
+          const existing = this.pendingMessageAnalyses.get(power) ?? [];
+          this.pendingMessageAnalyses.set(power, [...existing, ...analyses]);
+
+          // Track analyzed message IDs to avoid re-analysis
+          for (const msg of incomingMessages) {
+            this.analyzedMessageIds.add(msg.id);
+          }
 
           // Record analyses in diary
           for (const analysis of analyses) {
@@ -1446,6 +1455,7 @@ export class AgentRuntime {
     this.metricsTracker.reset();
     this.pendingPromiseUpdates = [];
     this.pendingMessageAnalyses.clear();
+    this.analyzedMessageIds.clear();
     this.lastPhaseMessages = [];
     this.pendingReflections.clear();
   }
