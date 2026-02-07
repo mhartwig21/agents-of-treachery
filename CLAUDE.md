@@ -160,18 +160,21 @@ src/
 ## Known Risks & Technical Debt
 
 ### Critical
-- **Engine bugs**: Multi-destination support and support-cut mechanics have known issues (see aot-eoid5, aot-hidn8)
+- ~~**Engine bugs**: Multi-destination support and support-cut mechanics~~ RESOLVED (aot-eoid5 was test bug, aot-hidn8 fixed)
 - **Parallel state mutation**: Previous review identified Promise.all + direct mutation patterns
+- **Orphaned modules** (aot-5rh6z): consolidation.ts, context-compression.ts, negotiation-metrics.ts are tested but never called by runtime
 
 ### High Priority
 - FileMemoryStore uses localStorage fallback - not suitable for production
-- Turn summary capped at 10 - may lose important historical context
+- Turn summary capped at 10 - may lose important historical context (consolidation module exists but not wired)
 - Rate limiting resets on phase change - could be exploited
+- **Deception rate formula bug** (aot-ri1qk): negotiation-metrics.ts halves all deception scores
 
 ### Medium Priority
 - Agent session manager lacks proper cleanup
-- No retry logic for LLM API failures
+- Retry logic for LLM API failures now exists (fetchWithRetry) but consolidation.ts silently swallows errors
 - Orchestrator config hardcoded defaults
+- **Channel parsing fragility** (aot-imyfz): bilateral channel format assumed, no validation
 
 ---
 
@@ -268,3 +271,21 @@ Waiting for mayor to create beads. 7 tasks:
 - **Submitted Epic**: Agent Architecture Optimization (7 tasks) - mailed to mayor
 - Identified blocking issues: aot-eoid5, aot-hidn8 (engine bugs) must resolve before agent optimization work can be validated
 - Filed aot-jsfuc: CLAUDE.md conflict issue across crew members
+
+### 2026-02-07 (Session 2)
+- **Designed**: Token-aware agent orchestration for OpenAI free tier (mailed to mayor)
+  - 4 epics: Budget Infrastructure, Task-Based Routing, Free Tier Integration, Adaptive Optimization
+  - Budget analysis: 250K premium/day (~6-8 diplomacy turns/power), 2.5M mini/day (~60-90 turns/power)
+  - Key insight: only diplomacy + strategy need premium; parsing/consolidation/reflection → mini
+- **Reviewed** polecat work on aot-h2uk6.4 (model-registry.ts, metrics.ts on branch, not yet merged)
+  - Solid foundation but gaps: only 2 OpenAI models defined (need 20), per-model not tier-level budgets, no task routing
+  - Sent addendum to mayor with gap analysis and 3 follow-up tasks
+- **Replied** to mayor's infrastructure review questions (hq-50c3s): JSON for snapshots, OpenRouter as default dev provider
+- **Coordinated** with Saliba: leveraging simulation data (80% token cost from history replay), requested regression tests for engine bugs
+- **Engine bugs resolved**: aot-eoid5 (test bug, not engine), aot-hidn8 (support-cut) - both CLOSED
+- **Architectural review** of 3 new agent modules (consolidation.ts, context-compression.ts, negotiation-metrics.ts):
+  - All three are orphaned: exported/tested but never wired into AgentRuntime (filed aot-5rh6z P1)
+  - Deception rate formula bug: divides by 2x, halving scores (filed aot-ri1qk P2)
+  - Fragile bilateral channel parsing in negotiation-metrics (filed aot-imyfz P2)
+  - Consolidation silent LLM error handling (no logging)
+  - Context compression returns empty strings on early levels (confusing API)
