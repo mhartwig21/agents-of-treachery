@@ -784,4 +784,403 @@ describe('Defender moving away', () => {
     expect(results.get('BUR')?.success).toBe(true); // Germany moves out
     expect(results.get('PAR')?.success).toBe(true); // France moves in
   });
+
+  it('attacker bounces when defender is ordered to move but gets bounced', () => {
+    const units: Unit[] = [
+      makeUnit('FRANCE', 'ARMY', 'PAR'),
+      makeUnit('GERMANY', 'ARMY', 'BUR'),
+      makeUnit('ITALY', 'ARMY', 'TYR'),
+    ];
+    const orders = new Map<Power, Order[]>();
+    // France: A PAR -> BUR
+    // Germany: A BUR -> MUN (moving away)
+    // Italy: A TYR -> MUN (blocks Germany)
+    orders.set('FRANCE', [
+      { type: 'MOVE', unit: 'PAR', destination: 'BUR' } as MoveOrder,
+    ]);
+    orders.set('GERMANY', [
+      { type: 'MOVE', unit: 'BUR', destination: 'MUN' } as MoveOrder,
+    ]);
+    orders.set('ITALY', [
+      { type: 'MOVE', unit: 'TYR', destination: 'MUN' } as MoveOrder,
+    ]);
+
+    const results = adjudicate({ units, orders });
+
+    // Germany and Italy standoff at MUN - Germany stays in BUR
+    // France bounces because BUR is still occupied
+    expect(results.get('BUR')?.success).toBe(false); // Germany bounced at MUN
+    expect(results.get('TYR')?.success).toBe(false); // Italy bounced at MUN
+    expect(results.get('PAR')?.success).toBe(false); // France can't enter BUR
+  });
+
+  // BUG: depends on aot-nsu74 - defender moving away not resolved correctly
+  it.skip('supported attacker enters when defender moves away', () => {
+    const units: Unit[] = [
+      makeUnit('FRANCE', 'ARMY', 'PAR'),
+      makeUnit('FRANCE', 'ARMY', 'GAS'),
+      makeUnit('GERMANY', 'ARMY', 'BUR'),
+    ];
+    const orders = new Map<Power, Order[]>();
+    // France: A PAR -> BUR (supported by GAS), A GAS S PAR -> BUR
+    // Germany: A BUR -> MUN (moving away, not head-to-head)
+    orders.set('FRANCE', [
+      { type: 'MOVE', unit: 'PAR', destination: 'BUR' } as MoveOrder,
+      { type: 'SUPPORT', unit: 'GAS', supportedUnit: 'PAR', destination: 'BUR' } as SupportOrder,
+    ]);
+    orders.set('GERMANY', [
+      { type: 'MOVE', unit: 'BUR', destination: 'MUN' } as MoveOrder,
+    ]);
+
+    const results = adjudicate({ units, orders });
+
+    // Germany moves to MUN (unopposed), France enters BUR with support
+    expect(results.get('BUR')?.success).toBe(true); // Germany moves out
+    expect(results.get('PAR')?.success).toBe(true); // France moves in
+  });
+});
+
+// ============================================================================
+// CIRCULAR MOVEMENT
+// ============================================================================
+describe('Circular movement', () => {
+  // BUG: depends on aot-nsu74 - defender moving away not resolved correctly
+  it.skip('three-way circular move A->B->C->A all succeed', () => {
+    const units: Unit[] = [
+      makeUnit('FRANCE', 'ARMY', 'BUR'),
+      makeUnit('GERMANY', 'ARMY', 'MUN'),
+      makeUnit('ITALY', 'ARMY', 'RUH'),
+    ];
+    const orders = new Map<Power, Order[]>();
+    // BUR -> MUN -> RUH -> BUR (all adjacent)
+    orders.set('FRANCE', [
+      { type: 'MOVE', unit: 'BUR', destination: 'MUN' } as MoveOrder,
+    ]);
+    orders.set('GERMANY', [
+      { type: 'MOVE', unit: 'MUN', destination: 'RUH' } as MoveOrder,
+    ]);
+    orders.set('ITALY', [
+      { type: 'MOVE', unit: 'RUH', destination: 'BUR' } as MoveOrder,
+    ]);
+
+    const results = adjudicate({ units, orders });
+
+    // All three units rotate: each destination is vacated by the other
+    expect(results.get('BUR')?.success).toBe(true);
+    expect(results.get('MUN')?.success).toBe(true);
+    expect(results.get('RUH')?.success).toBe(true);
+  });
+
+  it('two-way head-to-head swap bounces both units at equal strength', () => {
+    const units: Unit[] = [
+      makeUnit('FRANCE', 'ARMY', 'BUR'),
+      makeUnit('GERMANY', 'ARMY', 'MUN'),
+    ];
+    const orders = new Map<Power, Order[]>();
+    // BUR -> MUN, MUN -> BUR (direct head-to-head)
+    orders.set('FRANCE', [
+      { type: 'MOVE', unit: 'BUR', destination: 'MUN' } as MoveOrder,
+    ]);
+    orders.set('GERMANY', [
+      { type: 'MOVE', unit: 'MUN', destination: 'BUR' } as MoveOrder,
+    ]);
+
+    const results = adjudicate({ units, orders });
+
+    // Equal strength head-to-head: both bounce
+    expect(results.get('BUR')?.success).toBe(false);
+    expect(results.get('MUN')?.success).toBe(false);
+  });
+
+  it('circular move fails when one leg is opposed and breaks the chain', () => {
+    const units: Unit[] = [
+      makeUnit('FRANCE', 'ARMY', 'BUR'),
+      makeUnit('GERMANY', 'ARMY', 'MUN'),
+      makeUnit('ENGLAND', 'ARMY', 'RUH'),
+      makeUnit('ITALY', 'ARMY', 'BOH'),
+    ];
+    const orders = new Map<Power, Order[]>();
+    // Circular: BUR -> MUN, MUN -> RUH, RUH -> BUR
+    // External: BOH -> MUN (opposes BUR -> MUN)
+    orders.set('FRANCE', [
+      { type: 'MOVE', unit: 'BUR', destination: 'MUN' } as MoveOrder,
+    ]);
+    orders.set('GERMANY', [
+      { type: 'MOVE', unit: 'MUN', destination: 'RUH' } as MoveOrder,
+    ]);
+    orders.set('ENGLAND', [
+      { type: 'MOVE', unit: 'RUH', destination: 'BUR' } as MoveOrder,
+    ]);
+    orders.set('ITALY', [
+      { type: 'MOVE', unit: 'BOH', destination: 'MUN' } as MoveOrder,
+    ]);
+
+    const results = adjudicate({ units, orders });
+
+    // BUR and BOH standoff at MUN - chain is broken
+    // MUN can't enter RUH (RUH's move to BUR also failed), RUH can't enter BUR
+    expect(results.get('BUR')?.success).toBe(false);
+    expect(results.get('BOH')?.success).toBe(false);
+    expect(results.get('MUN')?.success).toBe(false);
+    expect(results.get('RUH')?.success).toBe(false);
+  });
+
+  // BUG: depends on aot-nsu74 - defender moving away not resolved correctly
+  it.skip('four-way circular move succeeds', () => {
+    const units: Unit[] = [
+      makeUnit('FRANCE', 'ARMY', 'BUR'),
+      makeUnit('GERMANY', 'ARMY', 'MUN'),
+      makeUnit('ITALY', 'ARMY', 'RUH'),
+      makeUnit('ENGLAND', 'ARMY', 'BEL'),
+    ];
+    const orders = new Map<Power, Order[]>();
+    // BUR -> MUN -> RUH -> BEL -> BUR (all adjacent)
+    orders.set('FRANCE', [
+      { type: 'MOVE', unit: 'BUR', destination: 'MUN' } as MoveOrder,
+    ]);
+    orders.set('GERMANY', [
+      { type: 'MOVE', unit: 'MUN', destination: 'RUH' } as MoveOrder,
+    ]);
+    orders.set('ITALY', [
+      { type: 'MOVE', unit: 'RUH', destination: 'BEL' } as MoveOrder,
+    ]);
+    orders.set('ENGLAND', [
+      { type: 'MOVE', unit: 'BEL', destination: 'BUR' } as MoveOrder,
+    ]);
+
+    const results = adjudicate({ units, orders });
+
+    // All four units rotate successfully
+    expect(results.get('BUR')?.success).toBe(true);
+    expect(results.get('MUN')?.success).toBe(true);
+    expect(results.get('RUH')?.success).toBe(true);
+    expect(results.get('BEL')?.success).toBe(true);
+  });
+});
+
+// ============================================================================
+// MULTIPLE UNITS TO SAME DESTINATION (EXTENDED)
+// ============================================================================
+describe('Multiple units to same destination (extended)', () => {
+  it('four units to same empty destination - all bounce', () => {
+    const units: Unit[] = [
+      makeUnit('FRANCE', 'ARMY', 'PIC'),
+      makeUnit('GERMANY', 'ARMY', 'RUH'),
+      makeUnit('ENGLAND', 'ARMY', 'HOL'),
+      makeUnit('ITALY', 'ARMY', 'BUR'),
+    ];
+    const orders = new Map<Power, Order[]>();
+    // All four move to BEL (empty, all adjacent)
+    orders.set('FRANCE', [
+      { type: 'MOVE', unit: 'PIC', destination: 'BEL' } as MoveOrder,
+    ]);
+    orders.set('GERMANY', [
+      { type: 'MOVE', unit: 'RUH', destination: 'BEL' } as MoveOrder,
+    ]);
+    orders.set('ENGLAND', [
+      { type: 'MOVE', unit: 'HOL', destination: 'BEL' } as MoveOrder,
+    ]);
+    orders.set('ITALY', [
+      { type: 'MOVE', unit: 'BUR', destination: 'BEL' } as MoveOrder,
+    ]);
+
+    const results = adjudicate({ units, orders });
+
+    // Four-way standoff: all bounce
+    expect(results.get('PIC')?.success).toBe(false);
+    expect(results.get('RUH')?.success).toBe(false);
+    expect(results.get('HOL')?.success).toBe(false);
+    expect(results.get('BUR')?.success).toBe(false);
+  });
+
+  it('three units to same destination - two equally supported - all bounce', () => {
+    const units: Unit[] = [
+      makeUnit('FRANCE', 'ARMY', 'PIC'),
+      makeUnit('FRANCE', 'ARMY', 'BUR'),
+      makeUnit('GERMANY', 'ARMY', 'RUH'),
+      makeUnit('GERMANY', 'ARMY', 'HOL'),
+      makeUnit('ENGLAND', 'FLEET', 'NTH'),
+    ];
+    const orders = new Map<Power, Order[]>();
+    // France: A PIC -> BEL (supported by BUR), strength 2
+    // Germany: A RUH -> BEL (supported by HOL), strength 2
+    // England: F NTH -> BEL, strength 1
+    orders.set('FRANCE', [
+      { type: 'MOVE', unit: 'PIC', destination: 'BEL' } as MoveOrder,
+      { type: 'SUPPORT', unit: 'BUR', supportedUnit: 'PIC', destination: 'BEL' } as SupportOrder,
+    ]);
+    orders.set('GERMANY', [
+      { type: 'MOVE', unit: 'RUH', destination: 'BEL' } as MoveOrder,
+      { type: 'SUPPORT', unit: 'HOL', supportedUnit: 'RUH', destination: 'BEL' } as SupportOrder,
+    ]);
+    orders.set('ENGLAND', [
+      { type: 'MOVE', unit: 'NTH', destination: 'BEL' } as MoveOrder,
+    ]);
+
+    const results = adjudicate({ units, orders });
+
+    // France and Germany tied at strength 2 - all bounce (standoff)
+    expect(results.get('PIC')?.success).toBe(false);
+    expect(results.get('RUH')?.success).toBe(false);
+    expect(results.get('NTH')?.success).toBe(false);
+  });
+});
+
+// ============================================================================
+// HEAD-TO-HEAD WITH SUPPORT (EXTENDED)
+// ============================================================================
+describe('Head-to-head with support (extended)', () => {
+  it('both sides equally supported in head-to-head - both bounce', () => {
+    const units: Unit[] = [
+      makeUnit('FRANCE', 'ARMY', 'PAR'),
+      makeUnit('FRANCE', 'ARMY', 'GAS'),
+      makeUnit('GERMANY', 'ARMY', 'BUR'),
+      makeUnit('GERMANY', 'ARMY', 'PIC'),
+    ];
+    const orders = new Map<Power, Order[]>();
+    // France: A PAR -> BUR (supported by GAS), strength 2
+    // Germany: A BUR -> PAR (supported by PIC), strength 2
+    orders.set('FRANCE', [
+      { type: 'MOVE', unit: 'PAR', destination: 'BUR' } as MoveOrder,
+      { type: 'SUPPORT', unit: 'GAS', supportedUnit: 'PAR', destination: 'BUR' } as SupportOrder,
+    ]);
+    orders.set('GERMANY', [
+      { type: 'MOVE', unit: 'BUR', destination: 'PAR' } as MoveOrder,
+      { type: 'SUPPORT', unit: 'PIC', supportedUnit: 'BUR', destination: 'PAR' } as SupportOrder,
+    ]);
+
+    const results = adjudicate({ units, orders });
+
+    // Equal strength head-to-head: both bounce
+    expect(results.get('PAR')?.success).toBe(false);
+    expect(results.get('BUR')?.success).toBe(false);
+    // Supports succeed (not cut)
+    expect(results.get('GAS')?.success).toBe(true);
+    expect(results.get('PIC')?.success).toBe(true);
+  });
+
+  it('support cut during head-to-head flips the outcome', () => {
+    const units: Unit[] = [
+      makeUnit('FRANCE', 'ARMY', 'PAR'),
+      makeUnit('FRANCE', 'ARMY', 'GAS'),
+      makeUnit('GERMANY', 'ARMY', 'BUR'),
+      makeUnit('GERMANY', 'ARMY', 'PIC'),
+      makeUnit('ITALY', 'ARMY', 'SPA'),
+    ];
+    const orders = new Map<Power, Order[]>();
+    // France: A PAR -> BUR (supported by GAS), strength 2 (before cut)
+    // Germany: A BUR -> PAR (supported by PIC), strength 2
+    // Italy: A SPA -> GAS (cuts France's support!)
+    orders.set('FRANCE', [
+      { type: 'MOVE', unit: 'PAR', destination: 'BUR' } as MoveOrder,
+      { type: 'SUPPORT', unit: 'GAS', supportedUnit: 'PAR', destination: 'BUR' } as SupportOrder,
+    ]);
+    orders.set('GERMANY', [
+      { type: 'MOVE', unit: 'BUR', destination: 'PAR' } as MoveOrder,
+      { type: 'SUPPORT', unit: 'PIC', supportedUnit: 'BUR', destination: 'PAR' } as SupportOrder,
+    ]);
+    orders.set('ITALY', [
+      { type: 'MOVE', unit: 'SPA', destination: 'GAS' } as MoveOrder,
+    ]);
+
+    const results = adjudicate({ units, orders });
+
+    // Italy cuts France's support: PAR drops to strength 1, BUR still strength 2
+    // Germany wins the head-to-head and dislodges France
+    expect(results.get('GAS')?.success).toBe(false); // Support was cut
+    expect(results.get('GAS')?.reason).toBe('Support was cut');
+    expect(results.get('BUR')?.success).toBe(true); // Germany wins
+    expect(results.get('PAR')?.success).toBe(false); // France loses
+    expect(results.get('PAR')?.dislodged).toBe(true); // France dislodged
+  });
+
+  it('head-to-head where one side has double support overpowers single', () => {
+    const units: Unit[] = [
+      makeUnit('FRANCE', 'ARMY', 'PAR'),
+      makeUnit('FRANCE', 'ARMY', 'GAS'),
+      makeUnit('FRANCE', 'ARMY', 'MAR'),
+      makeUnit('GERMANY', 'ARMY', 'BUR'),
+      makeUnit('GERMANY', 'ARMY', 'PIC'),
+    ];
+    const orders = new Map<Power, Order[]>();
+    // France: A PAR -> BUR (supported by GAS and MAR), strength 3
+    // Germany: A BUR -> PAR (supported by PIC), strength 2
+    // GAS adj BUR ✓, MAR adj BUR ✓, PIC adj PAR ✓
+    orders.set('FRANCE', [
+      { type: 'MOVE', unit: 'PAR', destination: 'BUR' } as MoveOrder,
+      { type: 'SUPPORT', unit: 'GAS', supportedUnit: 'PAR', destination: 'BUR' } as SupportOrder,
+      { type: 'SUPPORT', unit: 'MAR', supportedUnit: 'PAR', destination: 'BUR' } as SupportOrder,
+    ]);
+    orders.set('GERMANY', [
+      { type: 'MOVE', unit: 'BUR', destination: 'PAR' } as MoveOrder,
+      { type: 'SUPPORT', unit: 'PIC', supportedUnit: 'BUR', destination: 'PAR' } as SupportOrder,
+    ]);
+
+    const results = adjudicate({ units, orders });
+
+    // France strength 3 vs Germany strength 2 - France wins
+    expect(results.get('PAR')?.success).toBe(true); // France takes BUR
+    expect(results.get('BUR')?.success).toBe(false); // Germany loses
+    expect(results.get('BUR')?.dislodged).toBe(true); // Germany dislodged
+  });
+});
+
+// ============================================================================
+// SELF-DISLODGEMENT RULES
+// ============================================================================
+describe('Self-dislodgement rules', () => {
+  // In standard Diplomacy, a power cannot dislodge its own unit.
+  // Own-power support should not count toward dislodging own units.
+  it.skip('same-power supported attack does not dislodge own unit', () => {
+    const units: Unit[] = [
+      makeUnit('FRANCE', 'ARMY', 'PAR'),
+      makeUnit('FRANCE', 'ARMY', 'GAS'),
+      makeUnit('FRANCE', 'ARMY', 'BUR'),
+    ];
+    const orders = new Map<Power, Order[]>();
+    // France: A PAR -> BUR (supported by GAS), A BUR HOLD
+    // France is attacking its own unit in BUR with support
+    orders.set('FRANCE', [
+      { type: 'MOVE', unit: 'PAR', destination: 'BUR' } as MoveOrder,
+      { type: 'SUPPORT', unit: 'GAS', supportedUnit: 'PAR', destination: 'BUR' } as SupportOrder,
+      { type: 'HOLD', unit: 'BUR' } as HoldOrder,
+    ]);
+
+    const results = adjudicate({ units, orders });
+
+    // Self-dislodgement should be prevented
+    expect(results.get('PAR')?.success).toBe(false); // Can't dislodge own unit
+    expect(results.get('BUR')?.dislodged).toBe(false); // Not dislodged by own power
+  });
+
+  it.skip('own support does not add strength against own units', () => {
+    const units: Unit[] = [
+      makeUnit('FRANCE', 'ARMY', 'PAR'),
+      makeUnit('FRANCE', 'ARMY', 'GAS'),
+      makeUnit('FRANCE', 'ARMY', 'BUR'),
+      makeUnit('GERMANY', 'ARMY', 'MUN'),
+    ];
+    const orders = new Map<Power, Order[]>();
+    // France: A PAR -> BUR (supported by GAS), A BUR HOLD
+    // Germany: A MUN -> BUR
+    // France's support shouldn't count against own unit BUR
+    // So effectively: PAR(1) and MUN(1) both attack BUR(1)
+    // Multiple moves to same dest, both strength 1 -> standoff
+    orders.set('FRANCE', [
+      { type: 'MOVE', unit: 'PAR', destination: 'BUR' } as MoveOrder,
+      { type: 'SUPPORT', unit: 'GAS', supportedUnit: 'PAR', destination: 'BUR' } as SupportOrder,
+      { type: 'HOLD', unit: 'BUR' } as HoldOrder,
+    ]);
+    orders.set('GERMANY', [
+      { type: 'MOVE', unit: 'MUN', destination: 'BUR' } as MoveOrder,
+    ]);
+
+    const results = adjudicate({ units, orders });
+
+    // France's support shouldn't count against own unit
+    // PAR(1) and MUN(1) competing: standoff, BUR holds
+    expect(results.get('PAR')?.success).toBe(false);
+    expect(results.get('MUN')?.success).toBe(false);
+    expect(results.get('BUR')?.dislodged).toBe(false);
+  });
 });
