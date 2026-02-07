@@ -526,6 +526,71 @@ export class AgentRuntime {
   }
 
   /**
+   * Format messages grouped by press round with direction labels and NEW markers.
+   */
+  private formatRoundAwareMessages(
+    power: Power,
+    messages: Message[],
+    unreadCount: number
+  ): string[] {
+    if (messages.length === 0) return [];
+
+    // Group messages by round number (0 = unknown/legacy)
+    const byRound = new Map<number, Message[]>();
+    for (const msg of messages) {
+      const round = msg.metadata?.pressRound ?? 0;
+      if (!byRound.has(round)) byRound.set(round, []);
+      byRound.get(round)!.push(msg);
+    }
+
+    // Sort round numbers ascending
+    const rounds = Array.from(byRound.keys()).sort((a, b) => a - b);
+    const maxRound = rounds[rounds.length - 1];
+
+    const lines: string[] = [];
+    if (unreadCount > 0) {
+      lines.push(`--- DIPLOMATIC MESSAGES (${unreadCount} new) ---`);
+    } else {
+      lines.push(`--- DIPLOMATIC MESSAGES ---`);
+    }
+
+    for (const round of rounds) {
+      const roundMsgs = byRound.get(round)!;
+      const isNew = round === maxRound && unreadCount > 0;
+      const label = round > 0
+        ? `[Round ${round}]${isNew ? ' [NEW]' : ''}`
+        : '[Previous]';
+      lines.push(label);
+
+      for (const msg of roundMsgs) {
+        if (msg.sender === power) {
+          // Extract target from bilateral channel ID
+          const target = this.extractChannelTarget(msg.channelId, power);
+          lines.push(`  You -> ${target}: "${msg.content}"`);
+        } else {
+          lines.push(`  ${msg.sender} -> You: "${msg.content}"`);
+        }
+      }
+    }
+
+    return lines;
+  }
+
+  /**
+   * Extract the other power from a bilateral channel ID.
+   */
+  private extractChannelTarget(channelId: string, self: Power): string {
+    // Channel format: "bilateral:POWER1:POWER2"
+    const parts = channelId.split(':');
+    if (parts.length >= 3 && parts[0] === 'bilateral') {
+      return parts[1] === self ? parts[2] : parts[1];
+    }
+    // Multiparty or global - just return the channel type
+    if (parts[0] === 'global') return 'ALL';
+    return channelId;
+  }
+
+  /**
    * Count total press messages in the system.
    */
   private countTotalPressMessages(): number {
@@ -1020,17 +1085,10 @@ export class AgentRuntime {
     // Refresh system prompt with compression at milestone turns
     this.refreshSystemPromptIfNeeded(power, session);
 
-    // Get recent messages from press - filter for INCOMING only (messages from other powers)
+    // Get recent messages from press - include both incoming and own messages, grouped by round
     const pressAPI = this.pressAPIs.get(power)!;
     const inbox = pressAPI.getInbox();
-    const incomingMessages = inbox.recentMessages
-      .filter((m: { sender: string }) => m.sender !== power)
-      .map((m: { sender: string; content: string }) =>
-        `FROM ${m.sender}: "${m.content}"`
-      );
-    const recentMessages = incomingMessages.length > 0
-      ? [`--- INCOMING MESSAGES (you should respond to these!) ---`, ...incomingMessages]
-      : [];
+    const recentMessages = this.formatRoundAwareMessages(power, inbox.recentMessages, inbox.unreadCount);
 
     // Build the turn prompt with progressive compression
     const turnPrompt = buildTurnPrompt(
