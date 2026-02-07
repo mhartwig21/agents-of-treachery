@@ -467,6 +467,373 @@ describe('Convoy validation', () => {
 });
 
 // ============================================================================
+// CONVOY SYSTEM
+// ============================================================================
+describe('Convoy system', () => {
+  describe('basic single-fleet convoy', () => {
+    it('army convoyed across one sea zone succeeds', () => {
+      // England: A LON -> BEL via convoy, F ENG convoys
+      const units: Unit[] = [
+        makeUnit('ENGLAND', 'ARMY', 'LON'),
+        makeUnit('ENGLAND', 'FLEET', 'ENG'),
+      ];
+      const orders = new Map<Power, Order[]>();
+      orders.set('ENGLAND', [
+        { type: 'MOVE', unit: 'LON', destination: 'BEL', viaConvoy: true } as MoveOrder,
+        { type: 'CONVOY', unit: 'ENG', convoyedUnit: 'LON', destination: 'BEL' } as ConvoyOrder,
+      ]);
+
+      const results = adjudicate({ units, orders });
+
+      expect(results.get('LON')?.success).toBe(true);
+      expect(results.get('ENG')?.success).toBe(true);
+    });
+
+    it('convoy into empty province succeeds', () => {
+      // England: A LVP -> NWY via convoy through NAO and NWG
+      // Actually simpler: A EDI -> NWY via NTH (single fleet)
+      const units: Unit[] = [
+        makeUnit('ENGLAND', 'ARMY', 'EDI'),
+        makeUnit('ENGLAND', 'FLEET', 'NTH'),
+      ];
+      const orders = new Map<Power, Order[]>();
+      orders.set('ENGLAND', [
+        { type: 'MOVE', unit: 'EDI', destination: 'NWY', viaConvoy: true } as MoveOrder,
+        { type: 'CONVOY', unit: 'NTH', convoyedUnit: 'EDI', destination: 'NWY' } as ConvoyOrder,
+      ]);
+
+      const results = adjudicate({ units, orders });
+
+      expect(results.get('EDI')?.success).toBe(true);
+      expect(results.get('NTH')?.success).toBe(true);
+    });
+
+    it('convoy order result reports convoyed army did not move', () => {
+      // Fleet convoys but the army's move bounces against a defender
+      const units: Unit[] = [
+        makeUnit('ENGLAND', 'ARMY', 'LON'),
+        makeUnit('ENGLAND', 'FLEET', 'ENG'),
+        makeUnit('FRANCE', 'ARMY', 'BEL'),
+      ];
+      const orders = new Map<Power, Order[]>();
+      orders.set('ENGLAND', [
+        { type: 'MOVE', unit: 'LON', destination: 'BEL', viaConvoy: true } as MoveOrder,
+        { type: 'CONVOY', unit: 'ENG', convoyedUnit: 'LON', destination: 'BEL' } as ConvoyOrder,
+      ]);
+      orders.set('FRANCE', [
+        { type: 'HOLD', unit: 'BEL' } as HoldOrder,
+      ]);
+
+      const results = adjudicate({ units, orders });
+
+      // Army bounces against defender (1 vs 1), convoy fails
+      expect(results.get('LON')?.success).toBe(false);
+      expect(results.get('ENG')?.success).toBe(false);
+      expect(results.get('ENG')?.reason).toContain('army did not move');
+    });
+  });
+
+  describe('multi-fleet convoy chains', () => {
+    it('two-fleet convoy chain succeeds', () => {
+      // England: A LON -> NAF via ENG, MAO
+      const units: Unit[] = [
+        makeUnit('ENGLAND', 'ARMY', 'LON'),
+        makeUnit('ENGLAND', 'FLEET', 'ENG'),
+        makeUnit('ENGLAND', 'FLEET', 'MAO'),
+      ];
+      const orders = new Map<Power, Order[]>();
+      orders.set('ENGLAND', [
+        { type: 'MOVE', unit: 'LON', destination: 'NAF', viaConvoy: true } as MoveOrder,
+        { type: 'CONVOY', unit: 'ENG', convoyedUnit: 'LON', destination: 'NAF' } as ConvoyOrder,
+        { type: 'CONVOY', unit: 'MAO', convoyedUnit: 'LON', destination: 'NAF' } as ConvoyOrder,
+      ]);
+
+      const results = adjudicate({ units, orders });
+
+      expect(results.get('LON')?.success).toBe(true);
+      expect(results.get('ENG')?.success).toBe(true);
+      expect(results.get('MAO')?.success).toBe(true);
+    });
+
+    it('three-fleet convoy chain succeeds', () => {
+      // England: A LON -> TUN via ENG, MAO, WES
+      const units: Unit[] = [
+        makeUnit('ENGLAND', 'ARMY', 'LON'),
+        makeUnit('ENGLAND', 'FLEET', 'ENG'),
+        makeUnit('ENGLAND', 'FLEET', 'MAO'),
+        makeUnit('ENGLAND', 'FLEET', 'WES'),
+      ];
+      const orders = new Map<Power, Order[]>();
+      orders.set('ENGLAND', [
+        { type: 'MOVE', unit: 'LON', destination: 'TUN', viaConvoy: true } as MoveOrder,
+        { type: 'CONVOY', unit: 'ENG', convoyedUnit: 'LON', destination: 'TUN' } as ConvoyOrder,
+        { type: 'CONVOY', unit: 'MAO', convoyedUnit: 'LON', destination: 'TUN' } as ConvoyOrder,
+        { type: 'CONVOY', unit: 'WES', convoyedUnit: 'LON', destination: 'TUN' } as ConvoyOrder,
+      ]);
+
+      const results = adjudicate({ units, orders });
+
+      expect(results.get('LON')?.success).toBe(true);
+      expect(results.get('ENG')?.success).toBe(true);
+      expect(results.get('MAO')?.success).toBe(true);
+      expect(results.get('WES')?.success).toBe(true);
+    });
+
+    it('multi-fleet chain fails with gap in chain', () => {
+      // A LON -> TUN via convoy, but only fleets at ENG and WES (missing MAO)
+      const units: Unit[] = [
+        makeUnit('ENGLAND', 'ARMY', 'LON'),
+        makeUnit('ENGLAND', 'FLEET', 'ENG'),
+        makeUnit('ENGLAND', 'FLEET', 'WES'), // Gap: no fleet at MAO
+      ];
+      const orders = new Map<Power, Order[]>();
+      orders.set('ENGLAND', [
+        { type: 'MOVE', unit: 'LON', destination: 'TUN', viaConvoy: true } as MoveOrder,
+        { type: 'CONVOY', unit: 'ENG', convoyedUnit: 'LON', destination: 'TUN' } as ConvoyOrder,
+        { type: 'CONVOY', unit: 'WES', convoyedUnit: 'LON', destination: 'TUN' } as ConvoyOrder,
+      ]);
+
+      const results = adjudicate({ units, orders });
+
+      // No continuous path from LON to TUN - move fails
+      expect(results.get('LON')?.success).toBe(false);
+      expect(results.get('LON')?.reason).toContain('convoy path');
+    });
+
+    it('multi-power convoy chain succeeds', () => {
+      // England's army convoyed by England's and France's fleets together
+      const units: Unit[] = [
+        makeUnit('ENGLAND', 'ARMY', 'LON'),
+        makeUnit('ENGLAND', 'FLEET', 'ENG'),
+        makeUnit('FRANCE', 'FLEET', 'MAO'),
+      ];
+      const orders = new Map<Power, Order[]>();
+      orders.set('ENGLAND', [
+        { type: 'MOVE', unit: 'LON', destination: 'NAF', viaConvoy: true } as MoveOrder,
+        { type: 'CONVOY', unit: 'ENG', convoyedUnit: 'LON', destination: 'NAF' } as ConvoyOrder,
+      ]);
+      orders.set('FRANCE', [
+        { type: 'CONVOY', unit: 'MAO', convoyedUnit: 'LON', destination: 'NAF' } as ConvoyOrder,
+      ]);
+
+      const results = adjudicate({ units, orders });
+
+      expect(results.get('LON')?.success).toBe(true);
+      expect(results.get('ENG')?.success).toBe(true);
+      expect(results.get('MAO')?.success).toBe(true);
+    });
+  });
+
+  describe('disrupted convoys', () => {
+    // BUG: aot-g4990 - Disrupted convoy doesn't prevent convoyed army from moving
+    it.skip('convoy fails when convoying fleet is dislodged', () => {
+      // England: A LON -> BEL via convoy, F ENG convoys
+      // France: F BRE -> ENG, F MAO supports BRE -> ENG (dislodges ENG)
+      const units: Unit[] = [
+        makeUnit('ENGLAND', 'ARMY', 'LON'),
+        makeUnit('ENGLAND', 'FLEET', 'ENG'),
+        makeUnit('FRANCE', 'FLEET', 'BRE'),
+        makeUnit('FRANCE', 'FLEET', 'MAO'),
+      ];
+      const orders = new Map<Power, Order[]>();
+      orders.set('ENGLAND', [
+        { type: 'MOVE', unit: 'LON', destination: 'BEL', viaConvoy: true } as MoveOrder,
+        { type: 'CONVOY', unit: 'ENG', convoyedUnit: 'LON', destination: 'BEL' } as ConvoyOrder,
+      ]);
+      orders.set('FRANCE', [
+        { type: 'MOVE', unit: 'BRE', destination: 'ENG' } as MoveOrder,
+        { type: 'SUPPORT', unit: 'MAO', supportedUnit: 'BRE', destination: 'ENG' } as SupportOrder,
+      ]);
+
+      const results = adjudicate({ units, orders });
+
+      expect(results.get('ENG')?.dislodged).toBe(true);
+      expect(results.get('ENG')?.reason).toContain('fleet was dislodged');
+      expect(results.get('LON')?.success).toBe(false);
+    });
+
+    it('convoy survives unsupported attack on convoying fleet', () => {
+      // England: A LON -> BEL via convoy, F ENG convoys
+      // France: F BRE -> ENG (attack without support - bounces)
+      const units: Unit[] = [
+        makeUnit('ENGLAND', 'ARMY', 'LON'),
+        makeUnit('ENGLAND', 'FLEET', 'ENG'),
+        makeUnit('FRANCE', 'FLEET', 'BRE'),
+      ];
+      const orders = new Map<Power, Order[]>();
+      orders.set('ENGLAND', [
+        { type: 'MOVE', unit: 'LON', destination: 'BEL', viaConvoy: true } as MoveOrder,
+        { type: 'CONVOY', unit: 'ENG', convoyedUnit: 'LON', destination: 'BEL' } as ConvoyOrder,
+      ]);
+      orders.set('FRANCE', [
+        { type: 'MOVE', unit: 'BRE', destination: 'ENG' } as MoveOrder,
+      ]);
+
+      const results = adjudicate({ units, orders });
+
+      // Attack on ENG bounces (1 vs 1), convoy succeeds
+      expect(results.get('ENG')?.dislodged).toBeFalsy();
+      expect(results.get('LON')?.success).toBe(true);
+      expect(results.get('ENG')?.success).toBe(true);
+    });
+
+    // BUG: aot-g4990 - Disrupted convoy doesn't prevent convoyed army from moving
+    it.skip('chain disrupted: dislodging one fleet in multi-fleet chain', () => {
+      // England: A LON -> NAF via convoy through ENG, MAO
+      // France: F WES -> MAO, F LYO supports WES -> MAO (dislodges MAO)
+      const units: Unit[] = [
+        makeUnit('ENGLAND', 'ARMY', 'LON'),
+        makeUnit('ENGLAND', 'FLEET', 'ENG'),
+        makeUnit('ENGLAND', 'FLEET', 'MAO'),
+        makeUnit('FRANCE', 'FLEET', 'WES'),
+        makeUnit('FRANCE', 'FLEET', 'LYO'),
+      ];
+      const orders = new Map<Power, Order[]>();
+      orders.set('ENGLAND', [
+        { type: 'MOVE', unit: 'LON', destination: 'NAF', viaConvoy: true } as MoveOrder,
+        { type: 'CONVOY', unit: 'ENG', convoyedUnit: 'LON', destination: 'NAF' } as ConvoyOrder,
+        { type: 'CONVOY', unit: 'MAO', convoyedUnit: 'LON', destination: 'NAF' } as ConvoyOrder,
+      ]);
+      orders.set('FRANCE', [
+        { type: 'MOVE', unit: 'WES', destination: 'MAO' } as MoveOrder,
+        { type: 'SUPPORT', unit: 'LYO', supportedUnit: 'WES', destination: 'MAO' } as SupportOrder,
+      ]);
+
+      const results = adjudicate({ units, orders });
+
+      // MAO is dislodged, breaking the chain
+      expect(results.get('MAO')?.dislodged).toBe(true);
+      expect(results.get('LON')?.success).toBe(false);
+    });
+  });
+
+  describe('convoy with support', () => {
+    it('supported convoyed army dislodges defender', () => {
+      // England: A LON -> BEL via convoy, F ENG convoys, F NTH supports LON -> BEL
+      // France: A BEL holds
+      const units: Unit[] = [
+        makeUnit('ENGLAND', 'ARMY', 'LON'),
+        makeUnit('ENGLAND', 'FLEET', 'ENG'),
+        makeUnit('ENGLAND', 'FLEET', 'NTH'),
+        makeUnit('FRANCE', 'ARMY', 'BEL'),
+      ];
+      const orders = new Map<Power, Order[]>();
+      orders.set('ENGLAND', [
+        { type: 'MOVE', unit: 'LON', destination: 'BEL', viaConvoy: true } as MoveOrder,
+        { type: 'CONVOY', unit: 'ENG', convoyedUnit: 'LON', destination: 'BEL' } as ConvoyOrder,
+        { type: 'SUPPORT', unit: 'NTH', supportedUnit: 'LON', destination: 'BEL' } as SupportOrder,
+      ]);
+      orders.set('FRANCE', [
+        { type: 'HOLD', unit: 'BEL' } as HoldOrder,
+      ]);
+
+      const results = adjudicate({ units, orders });
+
+      // Strength 2 (army + support) vs 1 (hold) - dislodge
+      expect(results.get('LON')?.success).toBe(true);
+      expect(results.get('BEL')?.dislodged).toBe(true);
+      expect(results.get('ENG')?.success).toBe(true);
+    });
+
+    it('convoyed army bounces against supported defender', () => {
+      // England: A LON -> BEL via convoy, F ENG convoys
+      // France: A BEL holds, A PIC supports BEL
+      const units: Unit[] = [
+        makeUnit('ENGLAND', 'ARMY', 'LON'),
+        makeUnit('ENGLAND', 'FLEET', 'ENG'),
+        makeUnit('FRANCE', 'ARMY', 'BEL'),
+        makeUnit('FRANCE', 'ARMY', 'PIC'),
+      ];
+      const orders = new Map<Power, Order[]>();
+      orders.set('ENGLAND', [
+        { type: 'MOVE', unit: 'LON', destination: 'BEL', viaConvoy: true } as MoveOrder,
+        { type: 'CONVOY', unit: 'ENG', convoyedUnit: 'LON', destination: 'BEL' } as ConvoyOrder,
+      ]);
+      orders.set('FRANCE', [
+        { type: 'HOLD', unit: 'BEL' } as HoldOrder,
+        { type: 'SUPPORT', unit: 'PIC', supportedUnit: 'BEL' } as SupportOrder,
+      ]);
+
+      const results = adjudicate({ units, orders });
+
+      // Strength 1 (convoyed army) vs 2 (hold + support) - bounce
+      expect(results.get('LON')?.success).toBe(false);
+      expect(results.get('BEL')?.dislodged).toBeFalsy();
+    });
+  });
+
+  describe('invalid convoy paths', () => {
+    it('convoy fails with no convoying fleet', () => {
+      // Army tries via convoy but no fleet exists to convoy
+      const units: Unit[] = [
+        makeUnit('ENGLAND', 'ARMY', 'LON'),
+      ];
+      const orders = new Map<Power, Order[]>();
+      orders.set('ENGLAND', [
+        { type: 'MOVE', unit: 'LON', destination: 'BEL', viaConvoy: true } as MoveOrder,
+      ]);
+
+      const results = adjudicate({ units, orders });
+
+      expect(results.get('LON')?.success).toBe(false);
+      expect(results.get('LON')?.reason).toContain('convoy path');
+    });
+
+    it('fleet at coastal province cannot convoy', () => {
+      // Fleet at BEL (coastal, not sea) tries to convoy
+      const units: Unit[] = [
+        makeUnit('ENGLAND', 'ARMY', 'LON'),
+        makeUnit('ENGLAND', 'FLEET', 'BEL'),
+      ];
+      const orders = new Map<Power, Order[]>();
+      orders.set('ENGLAND', [
+        { type: 'MOVE', unit: 'LON', destination: 'PIC', viaConvoy: true } as MoveOrder,
+        { type: 'CONVOY', unit: 'BEL', convoyedUnit: 'LON', destination: 'PIC' } as ConvoyOrder,
+      ]);
+
+      const results = adjudicate({ units, orders });
+
+      expect(results.get('BEL')?.success).toBe(false);
+      expect(results.get('BEL')?.reason).toContain('sea');
+    });
+
+    it('convoy with non-existent convoyed unit fails', () => {
+      // Fleet tries to convoy army that doesn't exist
+      const units: Unit[] = [
+        makeUnit('ENGLAND', 'FLEET', 'ENG'),
+      ];
+      const orders = new Map<Power, Order[]>();
+      orders.set('ENGLAND', [
+        { type: 'CONVOY', unit: 'ENG', convoyedUnit: 'LON', destination: 'BEL' } as ConvoyOrder,
+      ]);
+
+      const results = adjudicate({ units, orders });
+
+      expect(results.get('ENG')?.success).toBe(false);
+      expect(results.get('ENG')?.reason).toContain('No unit at LON');
+    });
+
+    it('convoy where fleet order does not match army destination fails', () => {
+      // Fleet convoys LON -> PIC, but army moves LON -> BEL
+      const units: Unit[] = [
+        makeUnit('ENGLAND', 'ARMY', 'LON'),
+        makeUnit('ENGLAND', 'FLEET', 'ENG'),
+      ];
+      const orders = new Map<Power, Order[]>();
+      orders.set('ENGLAND', [
+        { type: 'MOVE', unit: 'LON', destination: 'BEL', viaConvoy: true } as MoveOrder,
+        { type: 'CONVOY', unit: 'ENG', convoyedUnit: 'LON', destination: 'PIC' } as ConvoyOrder,
+      ]);
+
+      const results = adjudicate({ units, orders });
+
+      // Fleet convoys to PIC, army wants to go to BEL - mismatch, no valid path
+      expect(results.get('LON')?.success).toBe(false);
+    });
+  });
+});
+
+// ============================================================================
 // RETREAT OPTIONS
 // ============================================================================
 describe('Retreat options', () => {
