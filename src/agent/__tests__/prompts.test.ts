@@ -199,7 +199,7 @@ describe('buildTurnPrompt', () => {
     const memory = makeMemory();
     const prompt = buildTurnPrompt(view, memory, [], 'MOVEMENT');
 
-    expect(prompt).toContain('Supply Centers');
+    expect(prompt).toContain('SC:');
     expect(prompt).toContain('PAR');
     expect(prompt).toContain('BRE');
     expect(prompt).toContain('MAR');
@@ -210,8 +210,8 @@ describe('buildTurnPrompt', () => {
     const memory = makeMemory();
     const prompt = buildTurnPrompt(view, memory, [], 'MOVEMENT');
 
-    expect(prompt).toContain('ENGLAND');
-    expect(prompt).toContain('GERMANY');
+    expect(prompt).toContain('ENG:');
+    expect(prompt).toContain('GER:');
   });
 
   it('should include relationships section', () => {
@@ -373,7 +373,7 @@ describe('buildTurnPrompt', () => {
     const memory = makeMemory();
     const prompt = buildTurnPrompt(view, memory, [], 'RETREAT');
 
-    expect(prompt).toContain('Requiring Retreat');
+    expect(prompt).toContain('Retreats:');
     expect(prompt).toContain('A BUR');
     expect(prompt).toContain('MUN');
     expect(prompt).toContain('PAR, GAS');
@@ -405,7 +405,7 @@ describe('buildTurnPrompt', () => {
     const memory = makeMemory();
     const prompt = buildTurnPrompt(view, memory, [], 'MOVEMENT');
 
-    expect(prompt).toContain('Last Turn Results');
+    expect(prompt).toContain('Results:');
     expect(prompt).toMatch(/✓.*A PAR -> BUR/);
     expect(prompt).toMatch(/✗.*F BRE -> ENG.*Bounced/);
   });

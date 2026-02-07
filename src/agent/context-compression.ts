@@ -14,6 +14,36 @@ import type { Power } from '../engine/types';
 import type { AgentGameView, AgentMemory } from './types';
 
 /**
+ * Short power name abbreviations for compact game state notation.
+ */
+export const POWER_SHORT: Record<string, string> = {
+  ENGLAND: 'ENG',
+  FRANCE: 'FRA',
+  GERMANY: 'GER',
+  ITALY: 'ITA',
+  AUSTRIA: 'AUS',
+  RUSSIA: 'RUS',
+  TURKEY: 'TUR',
+};
+
+/**
+ * Format units in compact grouped notation: [A:PAR,MAR F:BRE]
+ */
+export function formatCompactUnits(units: Array<{ type: string; province: string; coast?: string }>): string {
+  const armies: string[] = [];
+  const fleets: string[] = [];
+  for (const u of units) {
+    const prov = u.coast ? `${u.province}/${u.coast.charAt(0).toUpperCase()}C` : u.province;
+    if (u.type === 'ARMY') armies.push(prov);
+    else fleets.push(prov);
+  }
+  const parts: string[] = [];
+  if (armies.length > 0) parts.push(`A:${armies.join(',')}`);
+  if (fleets.length > 0) parts.push(`F:${fleets.join(',')}`);
+  return parts.length > 0 ? `[${parts.join(' ')}]` : '[]';
+}
+
+/**
  * Compression level based on game progress.
  */
 export type CompressionLevel = 'none' | 'moderate' | 'aggressive';
@@ -203,8 +233,8 @@ export function getRelevantPowers(
 }
 
 /**
- * Build compressed game state section.
- * Shows full detail for relevant powers, one-line summary for others.
+ * Build compressed game state section using compact notation.
+ * Format: POWER: Xu/Ysc [A:prov,prov F:prov,prov] SC:prov,prov
  */
 export function compressGameState(
   view: AgentGameView,
@@ -217,78 +247,59 @@ export function compressGameState(
 
   const lines: string[] = [];
   lines.push(`## Current Game State`);
-  lines.push(`**Year**: ${view.year} **Season**: ${view.season} **Phase**: ${view.phase}`);
+  lines.push(`Y:${view.year} S:${view.season} P:${view.phase}`);
 
-  // Your units - always full detail
-  lines.push(`\n### Your Units (${view.myUnits.length})`);
-  for (const unit of view.myUnits) {
-    const coastStr = unit.coast ? ` (${unit.coast} coast)` : '';
-    lines.push(`- ${unit.type === 'ARMY' ? 'A' : 'F'} ${unit.province}${coastStr}`);
-  }
-
-  // Supply centers - always show yours
+  // Your forces - compact notation
   const yourSCs = view.supplyCenters.get(view.viewingPower) ?? [];
-  lines.push(`\n### Your Supply Centers (${yourSCs.length})`);
-  lines.push(yourSCs.join(', ') || 'None');
+  const shortName = POWER_SHORT[view.viewingPower] ?? view.viewingPower;
+  lines.push(`You (${shortName}): ${view.myUnits.length}u/${yourSCs.length}sc ${formatCompactUnits(view.myUnits)} SC:${yourSCs.join(',') || 'none'}`);
 
-  // Other powers - detailed for relevant, summarized for others
-  lines.push(`\n### Other Powers`);
-
+  // Other powers - compact notation
   const summarizedPowers: string[] = [];
   for (const [power, units] of view.otherUnits) {
     const scs = view.supplyCenters.get(power) ?? [];
     const isRelevant = relevantPowers?.has(power) ?? true;
+    const pShort = POWER_SHORT[power] ?? power;
 
-    if (level === 'moderate') {
-      // Moderate: compact format for all powers (unit list, no verbose headers)
-      lines.push(`**${power}**: ${units.length}u, ${scs.length}SC — ${units.map(u =>
-        `${u.type === 'ARMY' ? 'A' : 'F'} ${u.province}`
-      ).join(', ') || 'none'}`);
-    } else if (isRelevant) {
-      // Aggressive + relevant: show positions only
-      lines.push(`**${power}**: ${units.length} units, ${scs.length} SCs`);
-      if (units.length > 0) {
-        lines.push(`  Units: ${units.map(u => u.province).join(', ')}`);
-      }
+    if (level === 'moderate' || isRelevant) {
+      lines.push(`${pShort}: ${units.length}u/${scs.length}sc ${formatCompactUnits(units)} SC:${scs.join(',') || 'none'}`);
     } else {
-      // Aggressive + non-relevant: one-line summary
-      summarizedPowers.push(`${power}: ${units.length}u/${scs.length}SC`);
+      summarizedPowers.push(`${pShort}:${units.length}u/${scs.length}sc`);
     }
   }
 
   if (summarizedPowers.length > 0) {
-    lines.push(`*Others:* ${summarizedPowers.join(' | ')}`);
+    lines.push(`Others: ${summarizedPowers.join(' | ')}`);
   }
 
-  // Pending retreats - always show in full
+  // Pending retreats
   if (view.pendingRetreats && view.pendingRetreats.length > 0) {
-    lines.push(`\n### Units Requiring Retreat`);
+    lines.push(`Retreats:`);
     for (const retreat of view.pendingRetreats) {
-      lines.push(`- ${retreat.unit.type === 'ARMY' ? 'A' : 'F'} ${retreat.unit.province}`);
-      lines.push(`  Dislodged from: ${retreat.dislodgedFrom}`);
-      lines.push(`  Can retreat to: ${retreat.retreatOptions.join(', ') || 'MUST DISBAND'}`);
+      const unitStr = `${retreat.unit.type === 'ARMY' ? 'A' : 'F'} ${retreat.unit.province}`;
+      const opts = retreat.retreatOptions.length > 0 ? retreat.retreatOptions.join(', ') : 'MUST DISBAND';
+      lines.push(`${unitStr} from ${retreat.dislodgedFrom} -> ${opts}`);
     }
   }
 
-  // Build count - always show
+  // Build count
   if (view.buildCount !== undefined) {
     if (view.buildCount > 0) {
-      lines.push(`\n### Builds Available: ${view.buildCount}`);
+      lines.push(`Builds: ${view.buildCount}`);
       if (view.availableBuildLocations) {
-        lines.push(`Can build in: ${view.availableBuildLocations.join(', ')}`);
+        lines.push(`Locs: ${view.availableBuildLocations.join(',')}`);
       }
     } else if (view.buildCount < 0) {
-      lines.push(`\n### Must Disband: ${Math.abs(view.buildCount)} unit(s)`);
+      lines.push(`Must disband: ${Math.abs(view.buildCount)}`);
     }
   }
 
-  // Last order results - compress in aggressive mode
+  // Last order results
   if (view.lastOrderResults && view.lastOrderResults.length > 0) {
-    lines.push(`\n### Last Turn Results`);
     if (level === 'aggressive') {
-      // Only show failed orders (successes are implicit)
       const failures = view.lastOrderResults.filter(r => !r.success);
       if (failures.length > 0) {
+        lines.push(`Failed:`);
         for (const result of failures) {
           lines.push(`✗ ${result.order} (${result.reason ?? 'failed'})`);
         }
@@ -296,6 +307,7 @@ export function compressGameState(
         lines.push(`All orders succeeded.`);
       }
     } else {
+      lines.push(`Results:`);
       for (const result of view.lastOrderResults) {
         const status = result.success ? '✓' : '✗';
         const reason = result.reason ? ` (${result.reason})` : '';

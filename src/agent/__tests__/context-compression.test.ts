@@ -326,30 +326,30 @@ describe('compressGameState', () => {
   it('should include all powers at moderate level', () => {
     const view = makeGameView();
     const result = compressGameState(view, 'moderate');
-    expect(result).toContain('ENGLAND');
-    expect(result).toContain('GERMANY');
-    expect(result).toContain('Your Units');
+    expect(result).toContain('ENG:');
+    expect(result).toContain('GER:');
+    expect(result).toContain('You (');
   });
 
   it('should summarize non-relevant powers at aggressive level', () => {
     const view = makeGameView();
     const relevant = new Set<Power>(['GERMANY' as Power, 'ENGLAND' as Power]);
     const result = compressGameState(view, 'aggressive', relevant);
-    // Germany and England should be detailed
-    expect(result).toContain('**GERMANY**');
-    expect(result).toContain('**ENGLAND**');
+    // Germany and England should be detailed with compact notation
+    expect(result).toContain('GER:');
+    expect(result).toContain('ENG:');
     // Turkey should be in summary line
-    expect(result).toContain('TURKEY');
+    expect(result).toContain('TUR:');
     expect(result).toContain('Others:');
   });
 
-  it('should always include own units in full detail', () => {
+  it('should always include own units in compact notation', () => {
     const view = makeGameView();
     const relevant = new Set<Power>();
     const result = compressGameState(view, 'aggressive', relevant);
-    expect(result).toContain('A PAR');
-    expect(result).toContain('F BRE');
-    expect(result).toContain('A MAR');
+    expect(result).toContain('A:PAR');
+    expect(result).toContain('F:BRE');
+    expect(result).toContain('MAR');
   });
 });
 
@@ -469,7 +469,20 @@ describe('buildSystemPrompt with compression', () => {
 describe('buildTurnPrompt with compression', () => {
   it('should produce shorter prompts at higher turn numbers', () => {
     const view = makeGameView();
-    const memory = makeMemory();
+    const memory = makeMemory({
+      yearSummaries: [makeYearSummary(1901), makeYearSummary(1902)],
+      currentYearDiary: Array.from({ length: 8 }, (_, i) =>
+        makeDiaryEntry(`[S1903M]`, 'orders', `Order details for turn ${i} with various strategic notes`)
+      ),
+      events: Array.from({ length: 6 }, (_, i) => ({
+        year: 1901 + Math.floor(i / 3),
+        season: 'SPRING' as const,
+        type: 'COOPERATION' as const,
+        powers: ['ENGLAND' as Power],
+        description: `Event ${i}: cooperation with England in the north`,
+        impactOnTrust: 0.1,
+      })),
+    });
     const fullPrompt = buildTurnPrompt(view, memory, [], 'MOVEMENT', undefined, 0);
     const moderatePrompt = buildTurnPrompt(view, memory, [], 'MOVEMENT', undefined, 5);
     const aggressivePrompt = buildTurnPrompt(view, memory, [], 'MOVEMENT', undefined, 10);
