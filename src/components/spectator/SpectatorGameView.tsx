@@ -25,6 +25,7 @@ import { CollapsiblePanel } from '../shared/CollapsiblePanel';
 import { GameEventOverlay } from './GameEventOverlay';
 import { useGameSounds } from '../../audio';
 import { useResolutionAnimation } from '../../hooks/useResolutionAnimation';
+import { useActionRelationships } from '../../hooks/useActionRelationships';
 import { synthesizeResolutionEvent } from '../../spectator/synthesizeResolutionEvent';
 
 /** State for which sidebar panels are collapsed */
@@ -112,6 +113,13 @@ export function SpectatorGameView({ onBack }: SpectatorGameViewProps) {
       prevSnapshotIdRef.current = currentSnapshot?.id ?? null;
     }
   }, [currentSnapshot]);
+
+  // Relationship analysis from game actions
+  const { relationships: engineRelationships, betrayals } = useActionRelationships({
+    snapshots: activeGame?.snapshots ?? [],
+    currentYear: currentSnapshot?.year ?? 1901,
+    currentSeason: (currentSnapshot?.season ?? 'SPRING') as 'SPRING' | 'FALL',
+  });
 
   // Game sounds for audio feedback on events
   const { lastEvents } = useGameSounds(currentSnapshot);
@@ -231,6 +239,8 @@ export function SpectatorGameView({ onBack }: SpectatorGameViewProps) {
         setSelectedMessageId={setSelectedMessageId}
         accumulatedMessages={accumulatedMessages}
         accumulatedOrders={accumulatedOrders}
+        engineRelationships={engineRelationships}
+        betrayals={betrayals}
         lastEvents={lastEvents}
         animationState={animationState}
         animationControls={wrappedControls}
@@ -346,6 +356,12 @@ export function SpectatorGameView({ onBack }: SpectatorGameViewProps) {
               messages={accumulatedMessages}
               selectedPower={selectedPower}
               onPowerClick={setSelectedPower}
+              engineRelationships={engineRelationships}
+              betrayals={betrayals}
+              currentYear={currentSnapshot.year}
+              currentSeason={currentSnapshot.season as 'SPRING' | 'FALL'}
+              showBetrayals={true}
+              showHistory={true}
             />
           </CollapsiblePanel>
 
@@ -435,6 +451,10 @@ interface MobileGameViewProps {
   accumulatedMessages: Message[];
   /** Accumulated orders (snapshot + live) */
   accumulatedOrders: UIOrder[];
+  /** Engine-computed relationships from action analysis */
+  engineRelationships: import('../../analysis/relationships').PowerPairRelationship[];
+  /** Detected betrayals from action analysis */
+  betrayals: import('../../analysis/relationships').BetrayalInfo[];
   /** Last detected game events for sound/visual effects */
   lastEvents: import('../../audio').DetectedGameEvent[];
   /** Resolution animation state */
@@ -464,6 +484,8 @@ function MobileGameView({
   setSelectedMessageId,
   accumulatedMessages,
   accumulatedOrders,
+  engineRelationships,
+  betrayals,
   lastEvents,
   animationState,
   animationControls,
@@ -541,6 +563,12 @@ function MobileGameView({
           <div className="h-full overflow-auto p-4">
             <RelationshipGraphPanel
               messages={accumulatedMessages}
+              engineRelationships={engineRelationships}
+              betrayals={betrayals}
+              currentYear={currentSnapshot.year}
+              currentSeason={currentSnapshot.season as 'SPRING' | 'FALL'}
+              showBetrayals={true}
+              showHistory={true}
             />
           </div>
         )}
