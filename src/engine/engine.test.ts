@@ -1407,6 +1407,485 @@ describe('Build phase', () => {
 });
 
 // ============================================================================
+// BUILD PHASE - SUCCESSFUL BUILDS
+// ============================================================================
+describe('Build phase - successful builds', () => {
+  function makeBuildState(power: Power, pendingCount: number, occupiedProvinces: string[] = []) {
+    const state = createInitialState();
+    state.phase = 'BUILD';
+    state.season = 'WINTER';
+    state.pendingBuilds.set(power, pendingCount);
+    // Remove units from home centers so they're available for building
+    // Keep only units at specified occupied provinces
+    state.units = state.units.filter(u =>
+      u.power !== power || occupiedProvinces.includes(u.province)
+    );
+    return state;
+  }
+
+  it('builds army in unoccupied home center', () => {
+    const state = makeBuildState('FRANCE', 1);
+    submitBuilds(state, 'FRANCE', [{ type: 'BUILD', province: 'PAR', unitType: 'ARMY' }]);
+    resolveBuilds(state);
+
+    const parisUnit = state.units.find(u => u.province === 'PAR' && u.power === 'FRANCE');
+    expect(parisUnit).toBeDefined();
+    expect(parisUnit!.type).toBe('ARMY');
+  });
+
+  it('builds fleet in coastal home center', () => {
+    const state = makeBuildState('ENGLAND', 1);
+    submitBuilds(state, 'ENGLAND', [{ type: 'BUILD', province: 'LON', unitType: 'FLEET' }]);
+    resolveBuilds(state);
+
+    const lonUnit = state.units.find(u => u.province === 'LON' && u.power === 'ENGLAND');
+    expect(lonUnit).toBeDefined();
+    expect(lonUnit!.type).toBe('FLEET');
+  });
+
+  it('builds army in coastal home center', () => {
+    const state = makeBuildState('ENGLAND', 1);
+    submitBuilds(state, 'ENGLAND', [{ type: 'BUILD', province: 'LON', unitType: 'ARMY' }]);
+    resolveBuilds(state);
+
+    const lonUnit = state.units.find(u => u.province === 'LON' && u.power === 'ENGLAND');
+    expect(lonUnit).toBeDefined();
+    expect(lonUnit!.type).toBe('ARMY');
+  });
+
+  it('builds fleet with coast specification (STP)', () => {
+    const state = makeBuildState('RUSSIA', 1);
+    submitBuilds(state, 'RUSSIA', [
+      { type: 'BUILD', province: 'STP', unitType: 'FLEET', coast: 'SOUTH' },
+    ]);
+    resolveBuilds(state);
+
+    const stpUnit = state.units.find(u => u.province === 'STP' && u.power === 'RUSSIA');
+    expect(stpUnit).toBeDefined();
+    expect(stpUnit!.type).toBe('FLEET');
+    expect(stpUnit!.coast).toBe('SOUTH');
+  });
+
+  it('builds multiple units when allowed', () => {
+    const state = makeBuildState('FRANCE', 2);
+    submitBuilds(state, 'FRANCE', [
+      { type: 'BUILD', province: 'PAR', unitType: 'ARMY' },
+      { type: 'BUILD', province: 'BRE', unitType: 'FLEET' },
+    ]);
+    resolveBuilds(state);
+
+    expect(state.units.find(u => u.province === 'PAR' && u.power === 'FRANCE')).toBeDefined();
+    expect(state.units.find(u => u.province === 'BRE' && u.power === 'FRANCE')).toBeDefined();
+  });
+
+  it('builds fewer units than allowed (waive builds)', () => {
+    const state = makeBuildState('FRANCE', 2);
+    // Only build 1 of allowed 2 - should not throw
+    submitBuilds(state, 'FRANCE', [
+      { type: 'BUILD', province: 'PAR', unitType: 'ARMY' },
+    ]);
+    resolveBuilds(state);
+
+    const frenchUnits = state.units.filter(u => u.power === 'FRANCE');
+    expect(frenchUnits.length).toBe(1);
+  });
+});
+
+// ============================================================================
+// BUILD PHASE - VALIDATION FAILURES
+// ============================================================================
+describe('Build phase - validation failures', () => {
+  it('rejects build in home center not controlled by power', () => {
+    const state = createInitialState();
+    state.phase = 'BUILD';
+    state.season = 'WINTER';
+    state.pendingBuilds.set('FRANCE', 1);
+    // Remove unit from MAR but give SC ownership to another power
+    state.units = state.units.filter(u => u.province !== 'MAR');
+    state.supplyCenters.set('MAR', 'ITALY');
+
+    expect(() => {
+      submitBuilds(state, 'FRANCE', [{ type: 'BUILD', province: 'MAR', unitType: 'ARMY' }]);
+    }).toThrow('does not control');
+  });
+
+  it('rejects build without province specified', () => {
+    const state = createInitialState();
+    state.phase = 'BUILD';
+    state.season = 'WINTER';
+    state.pendingBuilds.set('FRANCE', 1);
+
+    expect(() => {
+      submitBuilds(state, 'FRANCE', [{ type: 'BUILD', unitType: 'ARMY' }]);
+    }).toThrow('must specify province and unit type');
+  });
+
+  it('rejects build without unitType specified', () => {
+    const state = createInitialState();
+    state.phase = 'BUILD';
+    state.season = 'WINTER';
+    state.pendingBuilds.set('FRANCE', 1);
+    state.units = state.units.filter(u => u.province !== 'PAR');
+
+    expect(() => {
+      submitBuilds(state, 'FRANCE', [{ type: 'BUILD', province: 'PAR' }]);
+    }).toThrow('must specify province and unit type');
+  });
+
+  it('rejects fleet build in STP without coast', () => {
+    const state = createInitialState();
+    state.phase = 'BUILD';
+    state.season = 'WINTER';
+    state.pendingBuilds.set('RUSSIA', 1);
+    state.units = state.units.filter(u => u.province !== 'STP');
+
+    expect(() => {
+      submitBuilds(state, 'RUSSIA', [{ type: 'BUILD', province: 'STP', unitType: 'FLEET' }]);
+    }).toThrow('Must specify coast');
+  });
+});
+
+// ============================================================================
+// DISBAND PHASE
+// ============================================================================
+describe('Disband phase', () => {
+  function makeDisbandState(power: Power, disbandCount: number, units: Unit[]) {
+    const state = createInitialState();
+    state.phase = 'BUILD';
+    state.season = 'WINTER';
+    state.pendingBuilds.set(power, -disbandCount);
+    // Replace all units with specified ones
+    state.units = units;
+    return state;
+  }
+
+  it('disbands a unit successfully', () => {
+    const units = [
+      makeUnit('GERMANY', 'ARMY', 'MUN'),
+      makeUnit('GERMANY', 'ARMY', 'BER'),
+      makeUnit('GERMANY', 'FLEET', 'KIE'),
+    ];
+    const state = makeDisbandState('GERMANY', 1, units);
+    submitBuilds(state, 'GERMANY', [{ type: 'DISBAND', province: 'KIE' }]);
+    resolveBuilds(state);
+
+    expect(state.units.find(u => u.province === 'KIE')).toBeUndefined();
+    expect(state.units.filter(u => u.power === 'GERMANY').length).toBe(2);
+  });
+
+  it('disbands multiple units', () => {
+    const units = [
+      makeUnit('GERMANY', 'ARMY', 'MUN'),
+      makeUnit('GERMANY', 'ARMY', 'BER'),
+      makeUnit('GERMANY', 'FLEET', 'KIE'),
+    ];
+    const state = makeDisbandState('GERMANY', 2, units);
+    submitBuilds(state, 'GERMANY', [
+      { type: 'DISBAND', province: 'MUN' },
+      { type: 'DISBAND', province: 'KIE' },
+    ]);
+    resolveBuilds(state);
+
+    expect(state.units.filter(u => u.power === 'GERMANY').length).toBe(1);
+    expect(state.units.find(u => u.province === 'BER')).toBeDefined();
+  });
+
+  it('rejects wrong number of disbands', () => {
+    const units = [
+      makeUnit('GERMANY', 'ARMY', 'MUN'),
+      makeUnit('GERMANY', 'ARMY', 'BER'),
+      makeUnit('GERMANY', 'FLEET', 'KIE'),
+    ];
+    const state = makeDisbandState('GERMANY', 2, units);
+
+    // Only disbanding 1 when 2 required
+    expect(() => {
+      submitBuilds(state, 'GERMANY', [{ type: 'DISBAND', province: 'MUN' }]);
+    }).toThrow('must disband exactly 2');
+  });
+
+  it('rejects disbanding unit not belonging to power', () => {
+    const units = [
+      makeUnit('GERMANY', 'ARMY', 'MUN'),
+      makeUnit('FRANCE', 'ARMY', 'PAR'),
+    ];
+    const state = makeDisbandState('GERMANY', 1, units);
+
+    expect(() => {
+      submitBuilds(state, 'GERMANY', [{ type: 'DISBAND', province: 'PAR' }]);
+    }).toThrow('No GERMANY unit at PAR');
+  });
+
+  it('rejects disbanding unit at empty province', () => {
+    const units = [
+      makeUnit('GERMANY', 'ARMY', 'MUN'),
+      makeUnit('GERMANY', 'ARMY', 'BER'),
+    ];
+    const state = makeDisbandState('GERMANY', 1, units);
+
+    expect(() => {
+      submitBuilds(state, 'GERMANY', [{ type: 'DISBAND', province: 'KIE' }]);
+    }).toThrow('No GERMANY unit at KIE');
+  });
+});
+
+// ============================================================================
+// RESOLVE BUILDS - STATE TRANSITIONS
+// ============================================================================
+describe('resolveBuilds state transitions', () => {
+  it('advances to next year spring diplomacy after builds', () => {
+    const state = createInitialState();
+    state.phase = 'BUILD';
+    state.season = 'WINTER';
+    state.year = 1901;
+    state.pendingBuilds.set('FRANCE', 1);
+    state.units = state.units.filter(u => u.province !== 'PAR');
+    submitBuilds(state, 'FRANCE', [{ type: 'BUILD', province: 'PAR', unitType: 'ARMY' }]);
+    resolveBuilds(state);
+
+    expect(state.year).toBe(1902);
+    expect(state.season).toBe('SPRING');
+    expect(state.phase).toBe('DIPLOMACY');
+  });
+
+  it('clears pendingBuilds after resolution', () => {
+    const state = createInitialState();
+    state.phase = 'BUILD';
+    state.season = 'WINTER';
+    state.pendingBuilds.set('FRANCE', 1);
+    state.units = state.units.filter(u => u.province !== 'MAR');
+    submitBuilds(state, 'FRANCE', [{ type: 'BUILD', province: 'MAR', unitType: 'ARMY' }]);
+    resolveBuilds(state);
+
+    expect(state.pendingBuilds.size).toBe(0);
+  });
+
+  it('clears orders after resolution', () => {
+    const state = createInitialState();
+    state.phase = 'BUILD';
+    state.season = 'WINTER';
+    state.pendingBuilds.set('FRANCE', 1);
+    state.units = state.units.filter(u => u.province !== 'BRE');
+    submitBuilds(state, 'FRANCE', [{ type: 'BUILD', province: 'BRE', unitType: 'FLEET' }]);
+    resolveBuilds(state);
+
+    expect(state.orders.size).toBe(0);
+  });
+
+  it('rejects resolveBuilds outside build phase', () => {
+    const state = createInitialState();
+    expect(() => resolveBuilds(state)).toThrow('Not in build phase');
+  });
+
+  it('handles multiple powers building in same phase', () => {
+    const state = createInitialState();
+    state.phase = 'BUILD';
+    state.season = 'WINTER';
+    state.pendingBuilds.set('FRANCE', 1);
+    state.pendingBuilds.set('ENGLAND', 1);
+    // Free up home centers
+    state.units = state.units.filter(u =>
+      !(u.province === 'MAR' && u.power === 'FRANCE') &&
+      !(u.province === 'LON' && u.power === 'ENGLAND')
+    );
+
+    submitBuilds(state, 'FRANCE', [{ type: 'BUILD', province: 'MAR', unitType: 'ARMY' }]);
+    submitBuilds(state, 'ENGLAND', [{ type: 'BUILD', province: 'LON', unitType: 'FLEET' }]);
+    resolveBuilds(state);
+
+    expect(state.units.find(u => u.province === 'MAR' && u.power === 'FRANCE')).toBeDefined();
+    expect(state.units.find(u => u.province === 'LON' && u.power === 'ENGLAND')).toBeDefined();
+    expect(state.year).toBe(1902);
+  });
+
+  it('handles mixed builds and disbands for different powers', () => {
+    const state = createInitialState();
+    state.phase = 'BUILD';
+    state.season = 'WINTER';
+    state.pendingBuilds.set('FRANCE', 1);
+    state.pendingBuilds.set('GERMANY', -1);
+    // Free up French home center
+    state.units = state.units.filter(u => u.province !== 'MAR');
+
+    submitBuilds(state, 'FRANCE', [{ type: 'BUILD', province: 'MAR', unitType: 'ARMY' }]);
+    submitBuilds(state, 'GERMANY', [{ type: 'DISBAND', province: 'MUN' }]);
+    resolveBuilds(state);
+
+    expect(state.units.find(u => u.province === 'MAR' && u.power === 'FRANCE')).toBeDefined();
+    expect(state.units.find(u => u.province === 'MUN' && u.power === 'GERMANY')).toBeUndefined();
+  });
+});
+
+// ============================================================================
+// BUILD PHASE - FULL GAME INTEGRATION
+// ============================================================================
+describe('Build phase - full game flow', () => {
+  it('enters build phase after fall when SC counts differ from unit counts', () => {
+    const state = createInitialState();
+
+    // Spring: Germany moves MUN->BUR, everyone else holds
+    const powers: Power[] = ['ENGLAND', 'FRANCE', 'GERMANY', 'ITALY', 'AUSTRIA', 'RUSSIA', 'TURKEY'];
+    for (const power of powers) {
+      if (power === 'GERMANY') {
+        submitOrders(state, power, [
+          { type: 'MOVE', unit: 'MUN', destination: 'BUR' } as MoveOrder,
+          { type: 'HOLD', unit: 'BER' } as HoldOrder,
+          { type: 'HOLD', unit: 'KIE' } as HoldOrder,
+        ]);
+      } else {
+        const powerUnits = state.units.filter(u => u.power === power);
+        submitOrders(state, power, powerUnits.map(u => ({ type: 'HOLD', unit: u.province })));
+      }
+    }
+    resolveMovement(state);
+
+    // Fall: Germany moves BUR->BEL (capturing neutral SC), everyone else holds
+    expect(state.season).toBe('FALL');
+    for (const power of powers) {
+      if (power === 'GERMANY') {
+        submitOrders(state, power, [
+          { type: 'MOVE', unit: 'BUR', destination: 'BEL' } as MoveOrder,
+          { type: 'HOLD', unit: 'BER' } as HoldOrder,
+          { type: 'HOLD', unit: 'KIE' } as HoldOrder,
+        ]);
+      } else {
+        const powerUnits = state.units.filter(u => u.power === power);
+        submitOrders(state, power, powerUnits.map(u => ({ type: 'HOLD', unit: u.province })));
+      }
+    }
+    resolveMovement(state);
+
+    // Germany now has 4 SCs (BER, MUN, KIE, BEL) but only 3 units -> build phase
+    expect(state.supplyCenters.get('BEL')).toBe('GERMANY');
+    expect(state.season).toBe('WINTER');
+    expect(state.phase).toBe('BUILD');
+    expect(state.pendingBuilds.get('GERMANY')).toBe(1);
+  });
+
+  it('skips build phase when all powers have units == SCs', () => {
+    const state = createInitialState();
+
+    // Spring: everyone holds
+    const powers: Power[] = ['ENGLAND', 'FRANCE', 'GERMANY', 'ITALY', 'AUSTRIA', 'RUSSIA', 'TURKEY'];
+    for (const power of powers) {
+      const powerUnits = state.units.filter(u => u.power === power);
+      submitOrders(state, power, powerUnits.map(u => ({ type: 'HOLD', unit: u.province })));
+    }
+    resolveMovement(state);
+
+    // Fall: everyone holds (no SC changes)
+    for (const power of powers) {
+      const powerUnits = state.units.filter(u => u.power === power);
+      submitOrders(state, power, powerUnits.map(u => ({ type: 'HOLD', unit: u.province })));
+    }
+    resolveMovement(state);
+
+    // Should skip BUILD and go to next year
+    expect(state.year).toBe(1902);
+    expect(state.season).toBe('SPRING');
+    expect(state.phase).toBe('DIPLOMACY');
+  });
+});
+
+// ============================================================================
+// FLEET VS ARMY BUILD CONSTRAINTS
+// ============================================================================
+describe('Fleet vs Army build constraints', () => {
+  it('allows army build in landlocked home center (MUN)', () => {
+    const state = createInitialState();
+    state.phase = 'BUILD';
+    state.season = 'WINTER';
+    state.pendingBuilds.set('GERMANY', 1);
+    state.units = state.units.filter(u => u.province !== 'MUN');
+
+    // Should not throw
+    submitBuilds(state, 'GERMANY', [{ type: 'BUILD', province: 'MUN', unitType: 'ARMY' }]);
+    resolveBuilds(state);
+
+    const munUnit = state.units.find(u => u.province === 'MUN' && u.power === 'GERMANY');
+    expect(munUnit).toBeDefined();
+    expect(munUnit!.type).toBe('ARMY');
+  });
+
+  it('allows fleet build in coastal home center (BRE)', () => {
+    const state = createInitialState();
+    state.phase = 'BUILD';
+    state.season = 'WINTER';
+    state.pendingBuilds.set('FRANCE', 1);
+    state.units = state.units.filter(u => u.province !== 'BRE');
+
+    submitBuilds(state, 'FRANCE', [{ type: 'BUILD', province: 'BRE', unitType: 'FLEET' }]);
+    resolveBuilds(state);
+
+    const breUnit = state.units.find(u => u.province === 'BRE' && u.power === 'FRANCE');
+    expect(breUnit).toBeDefined();
+    expect(breUnit!.type).toBe('FLEET');
+  });
+
+  it('allows army build in coastal home center (BRE)', () => {
+    const state = createInitialState();
+    state.phase = 'BUILD';
+    state.season = 'WINTER';
+    state.pendingBuilds.set('FRANCE', 1);
+    state.units = state.units.filter(u => u.province !== 'BRE');
+
+    submitBuilds(state, 'FRANCE', [{ type: 'BUILD', province: 'BRE', unitType: 'ARMY' }]);
+    resolveBuilds(state);
+
+    const breUnit = state.units.find(u => u.province === 'BRE' && u.power === 'FRANCE');
+    expect(breUnit).toBeDefined();
+    expect(breUnit!.type).toBe('ARMY');
+  });
+
+  it('rejects fleet in landlocked PAR', () => {
+    const state = createInitialState();
+    state.phase = 'BUILD';
+    state.season = 'WINTER';
+    state.pendingBuilds.set('FRANCE', 1);
+    state.units = state.units.filter(u => u.province !== 'PAR');
+
+    expect(() => {
+      submitBuilds(state, 'FRANCE', [{ type: 'BUILD', province: 'PAR', unitType: 'FLEET' }]);
+    }).toThrow('landlocked');
+  });
+
+  it('allows fleet with NORTH coast in STP', () => {
+    const state = createInitialState();
+    state.phase = 'BUILD';
+    state.season = 'WINTER';
+    state.pendingBuilds.set('RUSSIA', 1);
+    state.units = state.units.filter(u => u.province !== 'STP');
+
+    submitBuilds(state, 'RUSSIA', [
+      { type: 'BUILD', province: 'STP', unitType: 'FLEET', coast: 'NORTH' },
+    ]);
+    resolveBuilds(state);
+
+    const stpUnit = state.units.find(u => u.province === 'STP' && u.power === 'RUSSIA');
+    expect(stpUnit).toBeDefined();
+    expect(stpUnit!.type).toBe('FLEET');
+    expect(stpUnit!.coast).toBe('NORTH');
+  });
+
+  it('allows army in coasted province STP (no coast needed)', () => {
+    const state = createInitialState();
+    state.phase = 'BUILD';
+    state.season = 'WINTER';
+    state.pendingBuilds.set('RUSSIA', 1);
+    state.units = state.units.filter(u => u.province !== 'STP');
+
+    submitBuilds(state, 'RUSSIA', [
+      { type: 'BUILD', province: 'STP', unitType: 'ARMY' },
+    ]);
+    resolveBuilds(state);
+
+    const stpUnit = state.units.find(u => u.province === 'STP' && u.power === 'RUSSIA');
+    expect(stpUnit).toBeDefined();
+    expect(stpUnit!.type).toBe('ARMY');
+  });
+});
+
+// ============================================================================
 // VICTORY CONDITIONS
 // ============================================================================
 describe('Victory conditions', () => {
