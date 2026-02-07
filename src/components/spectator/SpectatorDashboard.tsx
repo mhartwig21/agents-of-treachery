@@ -4,7 +4,7 @@
  * Main entry point for the spectator interface showing available games.
  */
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useSpectator } from '../../spectator/SpectatorContext';
 import { useLiveGame, type ConnectionState } from '../../spectator/useLiveGame';
 import { createGameSummary, type GameSummary } from '../../spectator/types';
@@ -32,19 +32,43 @@ export function SpectatorDashboard({
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [searchQuery, setSearchQuery] = useState('');
-  const [isStartingGame, setIsStartingGame] = useState(false);
+  const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   // Live game connection (only active when enabled)
   const {
     connectionState,
     error: connectionError,
     startGame: startLiveGame,
+    gameStartEvent,
+    clearGameStartEvent,
     reconnect,
   } = useLiveGame({
     serverUrl,
     autoConnect: enableLiveConnection,
     autoReconnect: enableLiveConnection,
   });
+
+  const isStartingGame = gameStartEvent.status === 'pending';
+
+  // Show notifications based on game start events (B4)
+  useEffect(() => {
+    if (gameStartEvent.status === 'created') {
+      setNotification({ type: 'success', message: 'Game created successfully!' });
+      const timer = setTimeout(() => {
+        setNotification(null);
+        clearGameStartEvent();
+      }, 4000);
+      return () => clearTimeout(timer);
+    }
+    if (gameStartEvent.status === 'error') {
+      setNotification({ type: 'error', message: gameStartEvent.message });
+      const timer = setTimeout(() => {
+        setNotification(null);
+        clearGameStartEvent();
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [gameStartEvent, clearGameStartEvent]);
 
   // Convert games to summaries and filter
   const gameSummaries = useMemo(() => {
@@ -87,13 +111,13 @@ export function SpectatorDashboard({
   };
 
   const handleStartNewGame = () => {
-    if (connectionState !== 'connected') {
+    if (connectionState !== 'connected' || isStartingGame) {
       return;
     }
-    setIsStartingGame(true);
-    startLiveGame(`AI Game ${Date.now()}`);
-    // Reset after a brief moment (game creation is async)
-    setTimeout(() => setIsStartingGame(false), 1000);
+    const sent = startLiveGame(`AI Game ${Date.now()}`);
+    if (!sent) {
+      setNotification({ type: 'error', message: 'Cannot start game: not connected to server.' });
+    }
   };
 
   // Stats counts
@@ -114,25 +138,37 @@ export function SpectatorDashboard({
             </div>
             <div className="flex items-center gap-4">
               {enableLiveConnection && (
-                <div className="flex items-center gap-3">
-                  <ConnectionIndicator
-                    state={connectionState}
-                    error={connectionError}
-                    onReconnect={reconnect}
-                  />
-                  <button
-                    onClick={handleStartNewGame}
-                    disabled={connectionState !== 'connected' || isStartingGame}
-                    className={`
-                      px-4 py-2 rounded-lg font-medium transition-colors
-                      ${connectionState === 'connected' && !isStartingGame
-                        ? 'bg-green-600 hover:bg-green-500 text-white'
-                        : 'bg-gray-600 text-gray-400 cursor-not-allowed'
-                      }
-                    `}
-                  >
-                    {isStartingGame ? 'Starting...' : 'Start New Game'}
-                  </button>
+                <div className="flex flex-col items-end gap-2">
+                  <div className="flex items-center gap-3">
+                    <ConnectionIndicator
+                      state={connectionState}
+                      error={connectionError}
+                      onReconnect={reconnect}
+                    />
+                    <button
+                      onClick={handleStartNewGame}
+                      disabled={connectionState !== 'connected' || isStartingGame}
+                      className={`
+                        px-4 py-2 rounded-lg font-medium transition-colors
+                        ${connectionState === 'connected' && !isStartingGame
+                          ? 'bg-green-600 hover:bg-green-500 text-white'
+                          : 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                        }
+                      `}
+                    >
+                      {isStartingGame ? 'Starting...' : 'Start New Game'}
+                    </button>
+                  </div>
+                  {notification && (
+                    <GameNotification
+                      type={notification.type}
+                      message={notification.message}
+                      onDismiss={() => {
+                        setNotification(null);
+                        clearGameStartEvent();
+                      }}
+                    />
+                  )}
                 </div>
               )}
               <PowerBadgeRow size="md" />
@@ -302,9 +338,9 @@ interface ConnectionIndicatorProps {
 function ConnectionIndicator({ state, error, onReconnect }: ConnectionIndicatorProps) {
   const stateConfig: Record<ConnectionState, { color: string; label: string }> = {
     connected: { color: 'bg-green-500', label: 'Connected' },
-    connecting: { color: 'bg-yellow-500', label: 'Connecting...' },
+    connecting: { color: 'bg-yellow-500 animate-pulse', label: 'Connecting...' },
     disconnected: { color: 'bg-gray-500', label: 'Disconnected' },
-    error: { color: 'bg-red-500', label: 'Error' },
+    error: { color: 'bg-red-500', label: 'Connection Error' },
   };
 
   const config = stateConfig[state];
@@ -321,11 +357,38 @@ function ConnectionIndicator({ state, error, onReconnect }: ConnectionIndicatorP
           Reconnect
         </button>
       )}
-      {error && (
-        <span className="text-xs text-red-400" title={error}>
-          (!)
-        </span>
+      {error && state === 'error' && (
+        <span className="text-xs text-red-400">{error}</span>
       )}
+    </div>
+  );
+}
+
+interface GameNotificationProps {
+  type: 'success' | 'error';
+  message: string;
+  onDismiss: () => void;
+}
+
+function GameNotification({ type, message, onDismiss }: GameNotificationProps) {
+  const styles =
+    type === 'success'
+      ? 'bg-green-900/80 border-green-600 text-green-200'
+      : 'bg-red-900/80 border-red-600 text-red-200';
+
+  return (
+    <div
+      className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-sm ${styles}`}
+      role="alert"
+    >
+      <span>{message}</span>
+      <button
+        onClick={onDismiss}
+        className="ml-1 opacity-60 hover:opacity-100 text-xs"
+        aria-label="Dismiss"
+      >
+        x
+      </button>
     </div>
   );
 }

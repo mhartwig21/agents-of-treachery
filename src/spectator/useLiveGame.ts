@@ -35,6 +35,15 @@ type ClientMessage =
 export type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'error';
 
 /**
+ * Game start event for tracking creation lifecycle.
+ */
+export type GameStartEvent =
+  | { status: 'idle' }
+  | { status: 'pending' }
+  | { status: 'created'; gameId: string }
+  | { status: 'error'; message: string };
+
+/**
  * Hook return type.
  */
 export interface UseLiveGameReturn {
@@ -42,8 +51,12 @@ export interface UseLiveGameReturn {
   connectionState: ConnectionState;
   /** Error message if any */
   error: string | null;
-  /** Start a new game */
-  startGame: (name?: string) => void;
+  /** Start a new game. Returns false if the message could not be sent. */
+  startGame: (name?: string) => boolean;
+  /** Game creation lifecycle event */
+  gameStartEvent: GameStartEvent;
+  /** Reset gameStartEvent back to idle */
+  clearGameStartEvent: () => void;
   /** Subscribe to a specific game's updates */
   subscribeToGame: (gameId: string) => void;
   /** Unsubscribe from a game */
@@ -99,6 +112,7 @@ export function useLiveGame(options: UseLiveGameOptions = {}): UseLiveGameReturn
 
   const [connectionState, setConnectionState] = useState<ConnectionState>('disconnected');
   const [error, setError] = useState<string | null>(null);
+  const [gameStartEvent, setGameStartEvent] = useState<GameStartEvent>({ status: 'idle' });
 
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<number | null>(null);
@@ -126,6 +140,7 @@ export function useLiveGame(options: UseLiveGameOptions = {}): UseLiveGameReturn
             addGame(message.game);
             // Server auto-subscribes the client that created the game
             subscribedGamesRef.current.add(message.game.gameId);
+            setGameStartEvent({ status: 'created', gameId: message.game.gameId });
             break;
 
           case 'GAME_UPDATED':
@@ -150,6 +165,11 @@ export function useLiveGame(options: UseLiveGameOptions = {}): UseLiveGameReturn
 
           case 'ERROR':
             setError(message.message);
+            setGameStartEvent((prev) =>
+              prev.status === 'pending'
+                ? { status: 'error', message: message.message }
+                : prev
+            );
             break;
         }
       } catch (err) {
@@ -214,22 +234,37 @@ export function useLiveGame(options: UseLiveGameOptions = {}): UseLiveGameReturn
 
   /**
    * Sends a message to the server.
+   * Returns true if the message was sent, false if the connection is not open.
    */
-  const send = useCallback((message: ClientMessage) => {
+  const send = useCallback((message: ClientMessage): boolean => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify(message));
+      return true;
     }
+    return false;
   }, []);
 
   /**
    * Starts a new game.
+   * Returns true if the request was sent, false if the connection is not open.
    */
   const startGame = useCallback(
-    (name?: string) => {
-      send({ type: 'START_GAME', name });
+    (name?: string): boolean => {
+      const sent = send({ type: 'START_GAME', name });
+      if (sent) {
+        setGameStartEvent({ status: 'pending' });
+      }
+      return sent;
     },
     [send]
   );
+
+  /**
+   * Resets the game start event back to idle.
+   */
+  const clearGameStartEvent = useCallback(() => {
+    setGameStartEvent({ status: 'idle' });
+  }, []);
 
   /**
    * Subscribes to a game's updates.
@@ -295,6 +330,8 @@ export function useLiveGame(options: UseLiveGameOptions = {}): UseLiveGameReturn
     connectionState,
     error,
     startGame,
+    gameStartEvent,
+    clearGameStartEvent,
     subscribeToGame,
     unsubscribeFromGame,
     refreshGames,
