@@ -239,6 +239,7 @@ export function SupplyCenterBalanceChart({
                 strokeWidth: 2,
                 fill: '#1f2937',
               }}
+              style={{ pointerEvents: 'none' }}
             />
           ))}
         </AreaChart>
