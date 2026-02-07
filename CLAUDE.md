@@ -161,8 +161,9 @@ src/
 
 ### Critical
 - ~~**Engine bugs**: Multi-destination support and support-cut mechanics~~ RESOLVED (aot-eoid5 was test bug, aot-hidn8 fixed)
-- **Parallel state mutation**: Previous review identified Promise.all + direct mutation patterns
-- **Orphaned modules** (aot-5rh6z): consolidation.ts, context-compression.ts, negotiation-metrics.ts are tested but never called by runtime
+- **Parallel state mutation**: Previous review identified Promise.all + direct mutation patterns (partially mitigated by aot-ppn6h crash fix)
+- ~~**Orphaned modules** (aot-5rh6z): consolidation.ts, context-compression.ts, negotiation-metrics.ts~~ WIRED (a0f147e)
+- **Diary content gap**: Negotiation diary entries record analysis metadata (intent, credibility) but NOT actual message content. Blocks aot-m9emi Step 3.
 
 ### High Priority
 - FileMemoryStore uses localStorage fallback - not suitable for production
@@ -196,17 +197,29 @@ Multi-agent orchestration for data workflows. 7 epics planned:
 - aot-rl68: Phase 3 - Module Boundaries (P2)
 - aot-h4ir: Phase 4 - Scalability (P2)
 
-### Agent Architecture Optimization (Submitted 2026-02-07)
-Waiting for mayor to create beads. 7 tasks:
-1. Context Window Efficiency (P0)
-2. Memory Consolidation System (P1)
-3. Power-Specific Prompt Optimization (P1)
-4. Multi-Model Framework (P1)
-5. LLM Failure Resilience (P2)
-6. Order Parser Hardening (P2)
-7. Negotiation Quality Metrics (P2)
+### Agent Architecture Optimization (aot-h2uk6) [P1]
+Created as epic with 10 children. Most closed by polecats:
+- aot-h2uk6.1: Context window efficiency (CLOSED)
+- aot-h2uk6.4: Multi-model framework (CLOSED - created model-registry.ts)
+- aot-h2uk6.5/7: LLM failure resilience (CLOSED)
+- aot-h2uk6.6/9: Order parser hardening (CLOSED)
+- aot-h2uk6.10/8: Negotiation quality metrics (CLOSED)
 
-**Blocking**: Engine bugs aot-eoid5, aot-hidn8 must resolve first.
+**Gap**: ModelRegistry exists but NOT wired to runtime. See Token Orchestration epic below.
+
+### Token-Aware Agent Orchestration (Proposed 2026-02-07)
+Designed architecture to leverage OpenAI free tier (250K premium/day, 2.5M mini/day).
+- BudgetAwareProvider wraps LLMProvider with task-based model routing
+- Premium: Diplomacy Round 1 only (~49K/season). Mini: everything else (~468K/season)
+- Mixed model personalities per power for behavioral diversity
+- 7 tasks: types, provider, runtime integration, server wiring, TPM pacing, dashboard, personality
+Mailed to mayor, awaiting bead creation.
+
+### Pull-Based Recall (aot-m9emi) [P0]
+Replace push model (20-msg history) with pull model (diary + recall tool).
+- **Prerequisite found**: Diary needs message content summaries before Step 3 (reduce window to 0)
+- Steps 1-2 (tool schema + runtime integration) can proceed now
+- Expected: 70-90% token reduction
 
 ---
 
@@ -314,3 +327,24 @@ Waiting for mayor to create beads. 7 tasks:
 - **Reviewed** polecat code: compact notation (b9eed10), orphaned modules wiring (a0f147e)
 - **Filed** aot-ppn6h (P1 crash bug), aot-beyaw (P2 name collision)
 - **Flagged** merge conflict for refinery on aot-hhw67 - successfully resolved
+
+### 2026-02-07 (Session 4)
+- **Architecture**: Token-Aware Agent Orchestration for OpenAI Free Tier
+  - Responded to mayor's request (hq-bukyi) with full architecture document
+  - BudgetAwareProvider design: wraps LLMProvider with task-based model routing + tier budgets
+  - Optimal routing: premium for Round 1 diplomacy only (~49K/season), mini for everything else
+  - Mixed model personalities via createDiverseOpenAIRegistry (already exists, needs wiring)
+  - 7 implementation tasks proposed, core is 4 tasks (2-3 polecat sessions)
+- **Assessment**: Pull-Based Recall (aot-m9emi) readiness
+  - Reviewed diary system (diary.ts): records orders, reflections, negotiation analysis
+  - **Found gap**: Diary records analysis metadata (intent, credibility, recommendation) but NOT actual message content
+  - This blocks Step 3 (reduce window to 0) - agents would lose all diplomatic context
+  - Steps 1-2 can proceed now; prerequisite task needed before Step 3
+  - Commented on aot-m9emi bead with finding
+- **Observed** Game 2 on dev server: reached 1902 Spring
+  - 258 LLM calls, 1508 rate limit retries (5.8:1 ratio)
+  - Context growing: ~6K chars (1901 Spring) to ~15K (1902 Spring)
+  - Press overhaul working: 72 messages in a diplomacy round, promise extraction active
+  - Rate limit pattern validates need for token orchestration architecture
+- **Board cleanup**: Suggested closing aot-7j1kh (integration wiring) - all items complete on main
+- **Updated**: CLAUDE.md with current epic status and new findings
