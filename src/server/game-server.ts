@@ -20,6 +20,8 @@ import {
 } from '../spectator/types';
 import type { Message } from '../press/types';
 import { GameLogger, getGameLogger, removeGameLogger, createLoggingLLMProvider } from './game-logger';
+import { GameStore } from '../store/game-store';
+import { SnapshotManager } from '../store/snapshot-manager';
 
 /**
  * Protocol version for API evolution.
@@ -79,6 +81,7 @@ interface ActiveGame {
 export interface GameServerConfig {
   port: number;
   llmProvider: LLMProvider;
+  snapshotManager?: SnapshotManager;
 }
 
 /**
@@ -90,10 +93,12 @@ export class GameServer {
   private games: Map<string, ActiveGame> = new Map();
   private clients: Set<WebSocket> = new Set();
   private llmProvider: LLMProvider;
+  private snapshotManager: SnapshotManager | null;
   private gameCounter: number = 0;
 
   constructor(config: GameServerConfig) {
     this.llmProvider = config.llmProvider;
+    this.snapshotManager = config.snapshotManager ?? null;
   }
 
   /**
@@ -465,6 +470,18 @@ export class GameServer {
       // Clear accumulated data for next phase
       game.accumulatedMessages = [];
       game.accumulatedOrders.clear();
+
+      // Persist snapshot to disk via SnapshotManager
+      if (this.snapshotManager) {
+        const store = new GameStore(game.gameId);
+        store.initializeGame(gameState.units, gameState.supplyCenters);
+        if (snapshotYear !== 1901 || snapshotSeason !== 'SPRING' || snapshotPhase !== 'DIPLOMACY') {
+          store.advancePhase(1901, 'SPRING', 'DIPLOMACY', snapshotYear, snapshotSeason, snapshotPhase);
+        }
+        this.snapshotManager.saveSnapshot(store, `${snapshotSeason} ${snapshotYear} ${snapshotPhase}`).catch(err => {
+          console.error(`[${game.gameId}] Snapshot persist failed:`, err);
+        });
+      }
 
       // Broadcast snapshot to subscribers
       console.log(`[${game.gameId}] Broadcasting snapshot: ${snapshot.id} (${snapshot.messages.length} msgs, ${uiOrders.length} orders) to ${game.subscribers.size} subscribers`);
