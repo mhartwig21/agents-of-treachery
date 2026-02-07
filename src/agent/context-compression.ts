@@ -17,7 +17,7 @@ import type { AgentGameView, AgentMemory } from './types';
  * Short power name abbreviations for compact game state notation.
  */
 export const POWER_SHORT: Record<string, string> = {
-  ENGLAND: 'ENG',
+  ENGLAND: 'ENGLAND',
   FRANCE: 'FRA',
   GERMANY: 'GER',
   ITALY: 'ITA',

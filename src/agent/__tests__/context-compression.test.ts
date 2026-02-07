@@ -326,7 +326,7 @@ describe('compressGameState', () => {
   it('should include all powers at moderate level', () => {
     const view = makeGameView();
     const result = compressGameState(view, 'moderate');
-    expect(result).toContain('ENG:');
+    expect(result).toContain('ENGLAND:');
     expect(result).toContain('GER:');
     expect(result).toContain('You (');
   });
@@ -337,7 +337,7 @@ describe('compressGameState', () => {
     const result = compressGameState(view, 'aggressive', relevant);
     // Germany and England should be detailed with compact notation
     expect(result).toContain('GER:');
-    expect(result).toContain('ENG:');
+    expect(result).toContain('ENGLAND:');
     // Turkey should be in summary line
     expect(result).toContain('TUR:');
     expect(result).toContain('Others:');

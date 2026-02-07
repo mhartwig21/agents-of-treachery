@@ -291,9 +291,10 @@ Use \`A\` for Army and \`F\` for Fleet. Province names should be standard abbrev
  * Compact game state notation guide for agent system prompts.
  */
 const COMPACT_NOTATION_GUIDE = `## Game State Notation
-Powers: ENG=England, FRA=France, GER=Germany, ITA=Italy, AUS=Austria, RUS=Russia, TUR=Turkey
+Powers: ENGLAND, FRA=France, GER=Germany, ITA=Italy, AUS=Austria, RUS=Russia, TUR=Turkey
+Note: ENGLAND is not abbreviated to avoid confusion with ENG (English Channel province).
 Format: POWER: Xu/Ysc [A:prov,prov F:prov,prov] SC:prov,prov
-Example: ENG: 3u/3sc [F:LON,EDI A:LVP] SC:LON,EDI,LVP`;
+Example: ENGLAND: 3u/3sc [F:LON,EDI A:LVP] SC:LON,EDI,LVP`;
 
 /**
  * Response guidelines fallback (inline).

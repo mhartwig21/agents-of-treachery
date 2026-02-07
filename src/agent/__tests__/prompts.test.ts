@@ -210,7 +210,7 @@ describe('buildTurnPrompt', () => {
     const memory = makeMemory();
     const prompt = buildTurnPrompt(view, memory, [], 'MOVEMENT');
 
-    expect(prompt).toContain('ENG:');
+    expect(prompt).toContain('ENGLAND:');
     expect(prompt).toContain('GER:');
   });
 
