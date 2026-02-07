@@ -21,6 +21,7 @@ import {
   getInvalidOrderStats,
   getLieStats,
 } from '../server/game-logger';
+import { fetchWithRetry } from '../server/providers';
 
 import type {
   ExperimentConfig,
@@ -66,7 +67,7 @@ class AnthropicLLMProvider implements LLMProvider {
       .filter(m => m.role !== 'system')
       .map(m => ({ role: m.role as 'user' | 'assistant', content: m.content }));
 
-    const response = await fetch(`${this.baseUrl}/v1/messages`, {
+    const response = await fetchWithRetry(`${this.baseUrl}/v1/messages`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -148,7 +149,7 @@ class OpenAICompatibleLLMProvider implements LLMProvider {
       headers['Authorization'] = `Bearer ${this.apiKey}`;
     }
 
-    const response = await fetch(`${this.baseUrl}/v1/chat/completions`, {
+    const response = await fetchWithRetry(`${this.baseUrl}/v1/chat/completions`, {
       method: 'POST',
       headers,
       body: JSON.stringify({
