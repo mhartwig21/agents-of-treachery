@@ -407,6 +407,7 @@ export function DiplomacyMap({
             return (
               <path
                 key={territory.id}
+                id={territory.id}
                 d={territory.path}
                 fill={fill}
                 stroke={isSelected ? '#ffd700' : isHighlighted ? '#60a5fa' : '#5c4a32'}
