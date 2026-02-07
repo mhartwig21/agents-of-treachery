@@ -7,9 +7,8 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import type { Power, GameState } from '../../engine/types';
+import type { Power } from '../../engine/types';
 import { POWERS } from '../../engine/types';
-import { submitOrders } from '../../engine/game';
 import { GameSession } from '../session';
 import type { GameEvent, AgentHandle } from '../types';
 
@@ -63,7 +62,6 @@ describe('GameSession', () => {
     });
 
     it('should emit GAME_CREATED event', () => {
-      const events: GameEvent[] = [];
       session = new GameSession({ gameId: 'test' });
       // GAME_CREATED is emitted in constructor, before we can subscribe
       // Check event history instead

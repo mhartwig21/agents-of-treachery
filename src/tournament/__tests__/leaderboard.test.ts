@@ -5,7 +5,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { Leaderboard } from '../leaderboard';
 import { createInitialRating, calculateRatingChanges } from '../elo';
-import type { Participant, GameResult, RatingChange } from '../types';
+import type { Participant, GameResult } from '../types';
 import type { Power } from '../../engine/types';
 
 describe('Leaderboard', () => {

@@ -4,7 +4,7 @@
 
 import { describe, it, expect } from 'vitest';
 import type { GameSnapshot } from '../../spectator/types';
-import type { DetectedGameEvent } from '../useGameSounds';
+import type { Power } from '../../types/game';
 
 // Import the detectEvents function by re-implementing the logic for testing
 // (The actual function is not exported, so we test via the hook behavior)
@@ -108,7 +108,7 @@ describe('Game Event Detection', () => {
 
   describe('Solo victory', () => {
     it('should detect when a power reaches 18 supply centers', () => {
-      const supplyCenters: Record<string, string> = {};
+      const supplyCenters: Record<string, Power | undefined> = {};
       // Give France 18 SCs
       for (let i = 0; i < 18; i++) {
         supplyCenters[`sc${i}`] = 'france';

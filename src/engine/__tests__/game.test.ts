@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import type { GameState, Power, Unit, Order, RetreatOrder, BuildOrder } from '../types';
+import type { Power, Order } from '../types';
 import { POWERS } from '../types';
 import {
   createInitialState,

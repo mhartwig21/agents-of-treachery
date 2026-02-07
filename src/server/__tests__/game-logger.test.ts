@@ -9,8 +9,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { existsSync, mkdirSync, rmSync, readFileSync } from 'fs';
-import { join } from 'path';
+import { existsSync, rmSync, readFileSync } from 'fs';
 import {
   GameLogger,
   getGameLogger,
@@ -517,7 +516,7 @@ describe('createLoggingLLMProvider', () => {
   it('should wrap LLM calls with logging', async () => {
     const logger = new GameLogger('llm-wrap', TEST_LOGS_DIR);
     const mockProvider = {
-      complete: async () => ({
+      complete: async (_params: { messages: { role: string; content: string }[] }) => ({
         content: 'test response',
         usage: { inputTokens: 10, outputTokens: 5 },
       }),
@@ -535,7 +534,7 @@ describe('createLoggingLLMProvider', () => {
   it('should log errors on LLM failure', async () => {
     const logger = new GameLogger('llm-err', TEST_LOGS_DIR);
     const mockProvider = {
-      complete: async () => { throw new Error('API down'); },
+      complete: async (_params: { messages: { role: string; content: string }[] }): Promise<never> => { throw new Error('API down'); },
     };
 
     const wrapped = createLoggingLLMProvider(mockProvider, logger);
@@ -550,7 +549,7 @@ describe('createLoggingLLMProvider', () => {
   it('should extract power from system message', async () => {
     const logger = new GameLogger('llm-power', TEST_LOGS_DIR);
     const mockProvider = {
-      complete: async () => ({
+      complete: async (_params: { messages: { role: string; content: string }[] }) => ({
         content: 'response',
         usage: { inputTokens: 10, outputTokens: 5 },
       }),

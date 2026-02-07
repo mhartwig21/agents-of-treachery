@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import type { GameState, Power, Unit, OrderResolution, Order } from '../../engine/types';
+import type { GameState, Power, OrderResolution } from '../../engine/types';
 import {
   createAgentGameView,
   createFullGameSummary,

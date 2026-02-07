@@ -4,7 +4,7 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { TournamentManager } from '../tournament';
-import type { GameResult, TournamentFormat } from '../types';
+import type { GameResult } from '../types';
 import type { Power } from '../../engine/types';
 import { POWERS } from '../../engine/types';
 
@@ -238,7 +238,7 @@ describe('TournamentManager', () => {
       const match = manager.getNextMatch(tournament.id)!;
       manager.startMatch(tournament.id, match.id);
 
-      const initialRating = manager.getLeaderboard().getRating(participants[0])?.rating ?? 1500;
+      manager.getLeaderboard().getRating(participants[0])?.rating ?? 1500;
 
       const gameResult = createMockGameResult(
         'game1',

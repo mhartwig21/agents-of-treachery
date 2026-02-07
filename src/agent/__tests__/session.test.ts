@@ -6,13 +6,11 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { POWERS } from '../../engine/types';
-import type { Power } from '../../engine/types';
 import {
   AgentSessionManager,
   createTestSessionManager,
   MockLLMProvider,
 } from '../session';
-import { InMemoryStore } from '../memory';
 
 describe('AgentSessionManager', () => {
   let manager: AgentSessionManager;

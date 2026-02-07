@@ -13,7 +13,6 @@ import {
   getMatchmakingRating,
   calculateWinProbability,
   getProvisionalKFactor,
-  DEFAULT_K_FACTOR,
   DEFAULT_STARTING_ELO,
 } from '../elo';
 import type { GameResult, Rating } from '../types';

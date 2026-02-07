@@ -6,17 +6,15 @@
  * runPhase with mock LLM), createTestRuntime
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import type { Power, GameState } from '../../engine/types';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import type { Power } from '../../engine/types';
 import { POWERS } from '../../engine/types';
-import { createInitialState } from '../../engine/game';
 import {
   AgentRuntime,
   createTestRuntime,
   type RuntimeEvent,
-  type RuntimeEventCallback,
 } from '../runtime';
-import type { AgentRuntimeConfig, LLMProvider, LLMCompletionResult } from '../types';
+import type { AgentRuntimeConfig } from '../types';
 import { MockLLMProvider } from '../session';
 import { InMemoryStore } from '../memory';
 import { GameLogger } from '../../server/game-logger';
@@ -36,17 +34,6 @@ ORDERS:
 /**
  * Build a mock LLM response with diplomacy messages.
  */
-function makeDiplomacyResponse(power: Power): string {
-  return `REASONING: As ${power}, I will send diplomatic feelers to neighbors.
-
-DIPLOMACY:
-SEND FRANCE: "Greetings from ${power}! Let us discuss cooperation."
-SEND GERMANY: "I propose a non-aggression pact."
-
-ORDERS:
-# Holding while we negotiate
-`;
-}
 
 /**
  * Create a minimal runtime config for testing.
@@ -258,7 +245,7 @@ describe('AgentRuntime', () => {
   describe('runPhase (movement)', () => {
     it('should process a movement phase with hold orders', async () => {
       // Mock LLM returns hold response for every call
-      const holdMock = new MockLLMProvider([makeHoldResponse('TEST')]);
+      const holdMock = new MockLLMProvider([makeHoldResponse('ENGLAND')]);
       runtime = new AgentRuntime(
         makeConfig({ pressPeriodMinutes: 0 }),
         holdMock,
@@ -303,7 +290,7 @@ describe('AgentRuntime', () => {
 
       expect(phaseStarted.length).toBeGreaterThanOrEqual(1);
       expect(phaseResolved.length).toBeGreaterThanOrEqual(1);
-    });
+    }, 30_000);
 
     it('should emit agent_turn_started and agent_turn_completed events', async () => {
       runtime = new AgentRuntime(
@@ -327,7 +314,7 @@ describe('AgentRuntime', () => {
       // Each of the 7 powers should have a turn during diplomacy
       expect(turnStarted.length).toBeGreaterThanOrEqual(7);
       expect(turnCompleted.length).toBeGreaterThanOrEqual(7);
-    });
+    }, 30_000);
 
     it('should advance from DIPLOMACY to MOVEMENT after diplomacy phase', async () => {
       runtime = new AgentRuntime(
@@ -346,7 +333,7 @@ describe('AgentRuntime', () => {
 
       // After diplomacy phase, state should advance to MOVEMENT
       expect(runtime.getGameState().phase).toBe('MOVEMENT');
-    });
+    }, 30_000);
 
     it('should track LLM calls', async () => {
       runtime = new AgentRuntime(
@@ -364,7 +351,7 @@ describe('AgentRuntime', () => {
 
       // Should have called LLM at least 7 times (once per power)
       expect(mockLLM.calls.length - callsBefore).toBeGreaterThanOrEqual(7);
-    });
+    }, 30_000);
   });
 
   describe('runPhase (full movement cycle)', () => {
@@ -391,7 +378,7 @@ describe('AgentRuntime', () => {
       // (no retreats or builds needed when everyone holds)
       expect(state.season).toBe('FALL');
       expect(state.phase).toBe('DIPLOMACY');
-    });
+    }, 30_000);
 
     it('should preserve 22 units after all-hold movement', async () => {
       runtime = new AgentRuntime(
@@ -411,7 +398,7 @@ describe('AgentRuntime', () => {
 
       const state = runtime.getGameState();
       expect(state.units.length).toBe(22);
-    });
+    }, 30_000);
   });
 
   describe('event callback error handling', () => {

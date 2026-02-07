@@ -7,7 +7,6 @@
 
 import { describe, it, expect } from 'vitest';
 import { POWERS } from '../../engine/types';
-import type { Power } from '../../engine/types';
 import {
   POWER_PERSONALITIES,
   POWER_PERSONALITY_PROMPTS,

@@ -19,7 +19,7 @@ import {
   getSupplyCenterCounts,
   getUnitCounts,
 } from './index';
-import { Order, MoveOrder, HoldOrder, SupportOrder, ConvoyOrder, Power, Unit, GameState, BuildOrder, RetreatOrder } from './types';
+import { Order, MoveOrder, HoldOrder, SupportOrder, ConvoyOrder, Power, Unit, GameState } from './types';
 
 describe('Map data', () => {
   it('has 75 provinces', () => {
@@ -216,13 +216,6 @@ describe('Turn progression', () => {
     expect(counts.get('TURKEY')).toBe(3);
   });
 });
-
-// ============================================================================
-// Helper: create a custom game state with specific units for targeted testing
-// ============================================================================
-function createCustomState(units: Unit[]): { units: Unit[]; orders: Map<Power, Order[]> } {
-  return { units, orders: new Map() };
-}
 
 function makeUnit(power: Power, type: 'ARMY' | 'FLEET', province: string): Unit {
   return { power, type, province };
@@ -2426,7 +2419,7 @@ describe('Victory conditions', () => {
       state.supplyCenters.set(sc, 'FRANCE');
     }
 
-    const result = checkVictory(state);
+    checkVictory(state);
     // 17 SCs doesn't trigger victory (only last-power-standing check applies)
     // Since other powers still have units, no winner
     expect(state.winner).toBeUndefined();

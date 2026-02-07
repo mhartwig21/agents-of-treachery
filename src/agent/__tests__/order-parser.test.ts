@@ -913,7 +913,7 @@ describe('validateOrders', () => {
       year: 1901,
       pendingRetreats: [],
       dislodgedUnits: [],
-    } as GameState;
+    } as unknown as GameState;
   }
 
   it('should accept valid HOLD order', () => {
@@ -1050,7 +1050,7 @@ describe('fillDefaultOrders', () => {
       year: 1901,
       pendingRetreats: [],
       dislodgedUnits: [],
-    } as GameState;
+    } as unknown as GameState;
   }
 
   it('should fill HOLD for units without orders', () => {

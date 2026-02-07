@@ -19,7 +19,7 @@ describe('RelationshipGraphPanel', () => {
     sender: sender as Message['sender'],
     content: 'Test message',
     timestamp: new Date(),
-    metadata: intent ? { intent: intent as Message['metadata']['intent'] } : undefined,
+    metadata: intent ? { intent: intent as NonNullable<Message['metadata']>['intent'] } : undefined,
   });
 
   it('renders all 7 power nodes', () => {

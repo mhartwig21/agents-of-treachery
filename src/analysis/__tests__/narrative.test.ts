@@ -9,7 +9,6 @@ import {
   formatNarrativeAsMarkdown,
   formatContextForLLM,
   NARRATIVE_SYSTEM_PROMPT,
-  type NarrativeContext,
   type NarrativeEvent,
 } from '../narrative';
 import * as gameLogger from '../../server/game-logger';

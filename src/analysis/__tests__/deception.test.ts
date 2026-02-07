@@ -6,7 +6,6 @@ import { describe, it, expect } from 'vitest';
 import {
   extractIntentions,
   extractReasoning,
-  extractAnalysis,
   createDiaryEntry,
   analyzeDiaryForDeception,
   computeDeceptionStats,

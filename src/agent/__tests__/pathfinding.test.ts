@@ -2,7 +2,7 @@
  * Tests for BFS pathfinding and strategic analysis.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import type { GameState, Unit, Power } from '../../engine/types';
 import {
   findShortestPath,
@@ -11,7 +11,6 @@ import {
   findNearestOpportunities,
   findConvoyRoutes,
   getAdjacentStatus,
-  generateUnitStrategicContext,
   calculateThreatLevel,
   findImmediateThreatPowers,
   findReachableTargets,
@@ -48,7 +47,7 @@ function createTestGameState(
     retreats: new Map(),
     pendingRetreats: [],
     pendingBuilds: new Map(),
-    winner: null,
+    winner: undefined,
     draw: false,
   };
 }

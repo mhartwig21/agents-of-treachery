@@ -44,7 +44,6 @@ describe('Phase Reflection', () => {
           sender: 'FRANCE',
           content: 'I will stay out of the English Channel.',
           timestamp: new Date(),
-          recipients: ['ENGLAND'],
         },
       ];
 

@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import type { Power, GameState, Phase } from '../../engine/types';
+import type { GameState } from '../../engine/types';
 import { POWERS } from '../../engine/types';
 import { createInitialState, submitOrders } from '../../engine/game';
 import { GameOrchestrator } from '../orchestrator';
@@ -245,7 +245,7 @@ describe('GameOrchestrator', () => {
         submitOrders(state, power, state.units.filter(u => u.power === power).map(u => ({ type: 'HOLD', unit: u.province })));
       }
 
-      const summary = orchestrator.resolvePhase(state);
+      orchestrator.resolvePhase(state);
       const resolved = events.find((e) => e.type === 'ORDERS_RESOLVED');
       expect(resolved).toBeTruthy();
     });
