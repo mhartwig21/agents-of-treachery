@@ -257,6 +257,21 @@ export {
   generateAnalysisSummary,
 } from './negotiation';
 
+// Negotiation quality metrics
+export {
+  NegotiationMetricsTracker,
+  createNegotiationMetricsTracker,
+  calculatePromiseCorrelationFromReconciliations,
+} from './negotiation-metrics';
+
+export type {
+  PromiseCorrelation,
+  AlliancePattern,
+  DeceptionMetrics,
+  PowerNegotiationScore,
+  NegotiationMetricsReport,
+} from './negotiation-metrics';
+
 // Runtime
 export {
   AgentRuntime,
