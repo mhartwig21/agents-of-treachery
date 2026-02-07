@@ -195,6 +195,8 @@ export class AgentRuntime {
       }
     }
 
+    this.logger.gameStarted(this.config.gameId, POWERS as unknown as string[]);
+
     this.emitEvent({
       type: 'game_started',
       timestamp: new Date(),
@@ -220,6 +222,8 @@ export class AgentRuntime {
     }
 
     this.isRunning = false;
+
+    this.logger.gameEnded(this.gameState.winner, this.gameState.draw);
 
     this.emitEvent({
       type: 'game_ended',
@@ -253,6 +257,8 @@ export class AgentRuntime {
     const phaseYear = this.gameState.year;
     const phaseSeason = this.gameState.season;
     const phasePhase = this.gameState.phase;
+
+    this.logger.phaseStarted(phasePhase, phaseYear, phaseSeason);
 
     this.emitEvent({
       type: 'phase_started',
@@ -291,6 +297,8 @@ export class AgentRuntime {
         await this.runBuildPhase();
         break;
     }
+
+    this.logger.phaseResolved(phasePhase, phaseYear, phaseSeason);
 
     // Emit phase_resolved with the phase that COMPLETED (not the new phase)
     this.emitEvent({
@@ -474,6 +482,7 @@ export class AgentRuntime {
         if (action.type === 'SEND_MESSAGE') {
           for (const target of action.targetPowers) {
             api.sendTo(target, action.content);
+            this.logger.messageSent(power, target, action.content.slice(0, 100));
             console.log(`  [${power} → ${target}] ${action.content.slice(0, 60)}${action.content.length > 60 ? '...' : ''}`);
           }
         }
@@ -511,6 +520,12 @@ export class AgentRuntime {
       const orders = fillDefaultOrders(result.orders, this.gameState, power);
       ordersByPower.set(power, orders);
       submitOrders(this.gameState, power, orders);
+
+      const orderStrings = orders.map(o => {
+        if ('destination' in o && o.destination) return `${o.unit} -> ${o.destination}`;
+        return `${o.unit} ${o.type}`;
+      });
+      this.logger.ordersSubmitted(power, orderStrings, true);
 
       this.emitEvent({
         type: 'orders_submitted',
@@ -878,6 +893,8 @@ export class AgentRuntime {
       throw new Error(`No session for ${power}`);
     }
 
+    this.logger.agentTurnStarted(power);
+
     this.emitEvent({
       type: 'agent_turn_started',
       timestamp: new Date(),
@@ -963,6 +980,7 @@ export class AgentRuntime {
     const llm = this.sessionManager.getLLMProvider();
     console.log(`[${power}] Calling LLM (${session.conversationHistory.length} msgs, ~${fullPrompt.length} chars, turn ${this.turnNumber}, ${contextStats.compressionLevel})...`);
     const startTime = Date.now();
+    this.logger.llmRequest(power, session.config.model, session.conversationHistory.length, fullPrompt.length);
     let response;
     try {
       response = await llm.complete({
@@ -971,7 +989,9 @@ export class AgentRuntime {
         temperature: session.config.temperature,
         maxTokens: session.config.maxTokens,
       });
-      console.log(`[${power}] LLM responded in ${((Date.now() - startTime) / 1000).toFixed(1)}s (${response.content.length} chars)`);
+      const durationMs = Date.now() - startTime;
+      this.logger.llmResponse(power, durationMs, session.config.model, response.usage, response.stopReason);
+      console.log(`[${power}] LLM responded in ${(durationMs / 1000).toFixed(1)}s (${response.content.length} chars)`);
 
       // Verbose: log the full response
       if (this.config.verbose) {
@@ -982,6 +1002,8 @@ export class AgentRuntime {
         console.log(`${'─'.repeat(80)}\n`);
       }
     } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      this.logger.llmError(power, errorMsg, session.config.model);
       console.error(`[${power}] LLM error:`, error);
       throw error;
     }
@@ -994,6 +1016,15 @@ export class AgentRuntime {
 
     // Parse the response
     const parsed = parseAgentResponse(response.content);
+
+    // Log parsed orders
+    if (parsed.orders.length > 0) {
+      const orderStrings = parsed.orders.map(o => {
+        if ('destination' in o && o.destination) return `${o.unit} -> ${o.destination}`;
+        return `${o.unit} ${o.type}`;
+      });
+      this.logger.ordersParsed(power, orderStrings, response.content);
+    }
 
     // Debug: show what was parsed during MOVEMENT phase
     if (this.gameState.phase === 'MOVEMENT') {
@@ -1135,6 +1166,8 @@ export class AgentRuntime {
     };
 
     const durationMs = Date.now() - startTime;
+    this.logger.agentTurnCompleted(power, durationMs);
+
     this.emitEvent({
       type: 'agent_turn_completed',
       timestamp: new Date(),
