@@ -31,6 +31,21 @@ import {
   type ModelFamily,
   type PromptVariables
 } from './prompt-loader';
+import {
+  getCompressionLevel,
+  compressRules,
+  compressStrategy,
+  compressPowerStrategy,
+  compressOrderFormat,
+  compressGuidelines,
+  compressGameState,
+  compressDiaryContext,
+  getRelevantPowers,
+  getMaxRecentEvents,
+  getMaxRecentMessages,
+  estimateTokens,
+  type ContextStats,
+} from './context-compression';
 
 /**
  * Try to load a prompt from external files, falling back to inline content.
@@ -295,49 +310,66 @@ Respond with your orders and brief strategic reasoning.`;
  * @param power - The power the agent is playing as
  * @param personality - The agent's personality traits
  * @param modelFamily - Optional model family for model-specific prompts
+ * @param turnNumber - Current turn number for progressive compression (0 = full)
  */
 export function buildSystemPrompt(
   power: Power,
   personality: AgentPersonality,
-  modelFamily?: ModelFamily
+  modelFamily?: ModelFamily,
+  turnNumber: number = 0
 ): string {
   const loader = modelFamily
     ? getPromptLoader().withModelFamily(modelFamily)
     : getPromptLoader();
 
+  const level = getCompressionLevel(turnNumber);
   const personalityDesc = describePersonality(personality);
 
   // Load prompts from external files with inline fallbacks
-  const rules = tryLoadPrompt(loader, 'rules.md', DIPLOMACY_RULES);
-  const strategy = tryLoadPrompt(loader, 'strategy.md', STRATEGY_CONCEPTS);
-  const powerStrategy = tryLoadPowerStrategy(loader, power, POWER_STRATEGIES[power]);
+  const fullRules = tryLoadPrompt(loader, 'rules.md', DIPLOMACY_RULES);
+  const fullStrategy = tryLoadPrompt(loader, 'strategy.md', STRATEGY_CONCEPTS);
+  const fullPowerStrategy = tryLoadPowerStrategy(loader, power, POWER_STRATEGIES[power]);
   const powerPersonality = tryLoadPowerPersonality(
     loader,
     power,
     getPowerPersonalityPrompt(power)
   );
-  const orderFormat = tryLoadPrompt(loader, 'orders.md', ORDER_FORMAT);
-  const guidelines = tryLoadPrompt(loader, 'guidelines.md', RESPONSE_GUIDELINES);
+  const fullOrderFormat = tryLoadPrompt(loader, 'orders.md', ORDER_FORMAT);
+  const fullGuidelines = tryLoadPrompt(loader, 'guidelines.md', RESPONSE_GUIDELINES);
 
-  return `You are an AI playing as ${power} in a game of Diplomacy.
+  // Apply compression
+  const rules = compressRules(fullRules, level);
+  const strategy = compressStrategy(fullStrategy, level);
+  const powerStrategy = compressPowerStrategy(fullPowerStrategy, level);
+  const orderFormat = compressOrderFormat(fullOrderFormat, level);
+  const guidelines = compressGuidelines(fullGuidelines, level);
 
-${rules}
+  const sections = [
+    `You are an AI playing as ${power} in a game of Diplomacy.`,
+    rules,
+    strategy,
+  ];
 
-${strategy}
+  // Power strategy omitted in aggressive mode
+  if (powerStrategy) {
+    sections.push(powerStrategy);
+  }
 
-${powerStrategy}
+  // Personality always included but condensed in aggressive mode
+  if (level === 'aggressive') {
+    sections.push(`## Personality\n${personalityDesc}`);
+  } else {
+    sections.push(`## Your Personality\n\n### Character\n${powerPersonality}\n\n### Traits\n${personalityDesc}`);
+  }
 
-## Your Personality
+  sections.push(orderFormat);
 
-### Character
-${powerPersonality}
+  // Guidelines omitted in aggressive mode
+  if (guidelines) {
+    sections.push(guidelines);
+  }
 
-### Traits
-${personalityDesc}
-
-${orderFormat}
-
-${guidelines}`;
+  return sections.filter(s => s.length > 0).join('\n\n');
 }
 
 /**
@@ -395,18 +427,29 @@ function describePersonality(personality: AgentPersonality): string {
  * @param recentMessages - Recent diplomatic messages
  * @param phase - Current game phase
  * @param gameState - Optional full game state for strategic analysis
+ * @param turnNumber - Current turn number for progressive compression (0 = full)
  */
 export function buildTurnPrompt(
   gameView: AgentGameView,
   memory: AgentMemory,
   recentMessages: string[],
   phase: Phase,
-  gameState?: GameState
+  gameState?: GameState,
+  turnNumber: number = 0
 ): string {
   const sections: string[] = [];
+  const level = getCompressionLevel(turnNumber);
 
-  // Current game state
-  sections.push(buildGameStateSection(gameView));
+  // Current game state (compressed based on level)
+  const relevantPowers = level !== 'none'
+    ? getRelevantPowers(gameView, memory)
+    : undefined;
+  const compressedState = compressGameState(gameView, level, relevantPowers);
+  if (compressedState) {
+    sections.push(compressedState);
+  } else {
+    sections.push(buildGameStateSection(gameView));
+  }
 
   // Strategic analysis (if game state provided)
   if (gameState && (phase === 'MOVEMENT' || phase === 'DIPLOMACY')) {
@@ -420,37 +463,80 @@ export function buildTurnPrompt(
   // Relationships and trust
   sections.push(`## Your Relationships\n${getRelationshipSummary(memory)}`);
 
-  // Diary context (consolidated memories from past years + current year notes)
-  const diaryContext = getContextDiary(memory);
-  if (diaryContext) {
-    sections.push(diaryContext);
+  // Diary context (compressed based on level)
+  const compressedDiary = compressDiaryContext(memory, level);
+  if (compressedDiary) {
+    sections.push(compressedDiary);
+  } else {
+    const diaryContext = getContextDiary(memory);
+    if (diaryContext) {
+      sections.push(diaryContext);
+    }
   }
 
-  // Recent events
-  const events = getRecentEvents(memory, 5);
+  // Recent events (limited by compression)
+  const maxEvents = getMaxRecentEvents(level);
+  const events = getRecentEvents(memory, maxEvents);
   if (events.length > 0) {
     sections.push(`## Recent Events\n${events.map(e =>
       `- ${e.year} ${e.season}: ${e.description}`
     ).join('\n')}`);
   }
 
-  // High priority notes
+  // High priority notes - always include CRITICAL, limit others
   const notes = getHighPriorityNotes(memory);
   if (notes.length > 0) {
-    sections.push(`## Strategic Notes\n${notes.map(n =>
-      `- [${n.priority}] ${n.content}`
-    ).join('\n')}`);
+    const filteredNotes = level === 'aggressive'
+      ? notes.filter(n => n.priority === 'CRITICAL')
+      : notes;
+    if (filteredNotes.length > 0) {
+      sections.push(`## Strategic Notes\n${filteredNotes.map(n =>
+        `- [${n.priority}] ${n.content}`
+      ).join('\n')}`);
+    }
   }
 
-  // Recent diplomatic messages
+  // Recent diplomatic messages (limited by compression)
+  const maxMessages = getMaxRecentMessages(level);
   if (recentMessages.length > 0) {
-    sections.push(`## Recent Diplomatic Messages\n${recentMessages.join('\n\n')}`);
+    const limitedMessages = maxMessages === Infinity
+      ? recentMessages
+      : recentMessages.slice(-maxMessages);
+    sections.push(`## Recent Diplomatic Messages\n${limitedMessages.join('\n\n')}`);
   }
 
   // Phase-specific instructions
   sections.push(getPhaseInstructions(phase, gameView, gameState));
 
   return sections.join('\n\n');
+}
+
+/**
+ * Estimate token usage for current prompts and return stats.
+ */
+export function getPromptContextStats(
+  systemPrompt: string,
+  turnPrompt: string,
+  turnNumber: number
+): ContextStats {
+  const systemTokens = estimateTokens(systemPrompt);
+  const turnTokens = estimateTokens(turnPrompt);
+  const totalTokens = systemTokens + turnTokens;
+
+  // Estimate what uncompressed would be (based on typical full prompt sizes)
+  // Full system prompt: ~3000 tokens, full turn prompt: ~2000-4000 tokens
+  const estimatedFullSystem = 3000;
+  const estimatedFullTurn = 3000 + (turnNumber * 200); // Grows with game history
+  const estimatedFull = estimatedFullSystem + estimatedFullTurn;
+
+  return {
+    turnNumber,
+    compressionLevel: getCompressionLevel(turnNumber),
+    systemPromptTokens: systemTokens,
+    turnPromptTokens: turnTokens,
+    totalTokens,
+    compressionRatio: estimatedFull > 0 ? totalTokens / estimatedFull : 1,
+  };
 }
 
 /**
