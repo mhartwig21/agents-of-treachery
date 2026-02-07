@@ -13,6 +13,9 @@ import type {
   GameState as EngineGameState,
 } from '../engine/types';
 import type { Message, ChannelId } from '../press/types';
+import type { DeceptionRecord } from '../analysis/deception';
+import type { PromiseMemoryUpdate } from '../analysis/promise-tracker';
+import type { NarrativeEvent } from '../analysis/narrative';
 
 // Re-export press Power type
 export type { EnginePower, Season, Phase };
@@ -56,6 +59,15 @@ export const POWER_COLORS: Record<LowercasePower, string> = {
 };
 
 /**
+ * Analysis data attached to a snapshot.
+ */
+export interface SnapshotAnalysis {
+  deceptions?: DeceptionRecord[];
+  promiseUpdates?: PromiseMemoryUpdate[];
+  narrativeEvents?: NarrativeEvent[];
+}
+
+/**
  * Represents a snapshot of game state at a specific point.
  */
 export interface GameSnapshot {
@@ -72,6 +84,8 @@ export interface GameSnapshot {
   messages: Message[];
   /** Timestamp when snapshot was captured */
   timestamp: Date;
+  /** Analysis results for this phase */
+  analysis?: SnapshotAnalysis;
 }
 
 /**

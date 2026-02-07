@@ -47,6 +47,7 @@ import { GameLogger, getGameLogger, getInvalidOrderStats, formatModelStatsReport
 import {
   createDiaryEntry,
   analyzeDiaryForDeception,
+  type DeceptionRecord,
 } from '../analysis/deception';
 import {
   createPromiseTracker,
@@ -77,7 +78,9 @@ export type RuntimeEventType =
   | 'agent_turn_completed'
   | 'orders_submitted'
   | 'phase_resolved'
-  | 'game_ended';
+  | 'game_ended'
+  | 'deception_detected'
+  | 'promise_reconciled';
 
 /**
  * Event data for runtime events.
@@ -94,6 +97,8 @@ export interface RuntimeEvent {
     winner?: Power;
     draw?: boolean;
     durationMs?: number;
+    deceptions?: DeceptionRecord[];
+    promiseUpdates?: PromiseMemoryUpdate[];
   };
 }
 
@@ -561,6 +566,16 @@ export class AgentRuntime {
 
       // Apply trust updates to agent memories
       this.applyPromiseUpdatesToMemory(promiseUpdates);
+
+      this.emitEvent({
+        type: 'promise_reconciled',
+        timestamp: new Date(),
+        data: {
+          year: this.gameState.year,
+          season: this.gameState.season,
+          promiseUpdates,
+        },
+      });
     }
 
     // Generate phase reflections for all powers
@@ -1126,6 +1141,13 @@ export class AgentRuntime {
         deception.diaryEvidence,
         deception.confidence
       );
+    }
+    if (deceptions.length > 0) {
+      this.emitEvent({
+        type: 'deception_detected',
+        timestamp: new Date(),
+        data: { power, deceptions },
+      });
     }
 
     // Record to agent's persistent diary for context management
