@@ -384,13 +384,13 @@ export class AgentRuntime {
         continue;
       }
 
-      // Let agents with unread messages respond
+      // Let agents with unread messages respond - all compose simultaneously (no ordering bias)
       roundNumber++;
       this.pressSystem.setCurrentRound(roundNumber);
       console.log(`\n📨 Press round ${roundNumber}: ${agentsWithUnread.length} agents responding`);
 
-      for (const power of agentsWithUnread) {
-        const result = await this.runSingleAgentTurn(power, 'diplomacy');
+      const roundTurns = await this.runAgentTurns('diplomacy', new Set(agentsWithUnread));
+      for (const [power, result] of roundTurns) {
         this.processAgentDiplomacy(power, result);
       }
     }
