@@ -49,6 +49,7 @@ import {
   type ContextStats,
 } from './context-compression';
 import { formatConsolidatedMemory } from './consolidation';
+import { formatPowerGuideMarkdown, getOpeningAdvice } from './power-guides';
 
 /**
  * Try to load a prompt from external files, falling back to inline content.
@@ -356,6 +357,7 @@ export function buildSystemPrompt(
   const powerStrategy = compressPowerStrategy(fullPowerStrategy, level);
   const orderFormat = compressOrderFormat(fullOrderFormat, level);
   const guidelines = compressGuidelines(fullGuidelines, level);
+  const powerGuide = formatPowerGuideMarkdown(power);
 
   const sections = [
     `You are an AI playing as ${power} in a game of Diplomacy.`,
@@ -378,6 +380,11 @@ export function buildSystemPrompt(
   // Notation guide helps agents parse compact game state (omit in aggressive - agent knows by now)
   if (level !== 'aggressive') {
     sections.push(COMPACT_NOTATION_GUIDE);
+  }
+
+  // Power-specific strategic guide with opening theory
+  if (powerGuide) {
+    sections.push(powerGuide);
   }
 
   sections.push(orderFormat);
@@ -477,6 +484,12 @@ export function buildTurnPrompt(
       gameState
     );
     sections.push(formatStrategicContextMarkdown(strategicContext));
+  }
+
+  // Opening-phase advice (years 1901-1902)
+  const openingAdvice = getOpeningAdvice(gameView.viewingPower, gameView.year);
+  if (openingAdvice) {
+    sections.push(openingAdvice);
   }
 
   // Relationships and trust
