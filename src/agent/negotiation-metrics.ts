@@ -466,7 +466,7 @@ export class NegotiationMetricsTracker {
         : 0.5,
       contradictionCount: contradictions,
       deceptionRate: totalSent > 0
-        ? (redFlagCount + deceptiveIntentCount) / (totalSent * 2)
+        ? (redFlagCount + deceptiveIntentCount) / totalSent
         : 0,
       topRedFlags,
     };
