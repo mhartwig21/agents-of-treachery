@@ -948,10 +948,15 @@ export class AgentRuntime {
     const powersToAct = activePowers ?? new Set(POWERS);
 
     if (this.config.parallelExecution) {
-      // Run all agents in parallel
+      // Run all agents in parallel - individual failures produce HOLD orders
       const promises = Array.from(powersToAct).map(async power => {
-        const result = await this.runSingleAgentTurn(power, turnType);
-        return [power, result] as const;
+        try {
+          const result = await this.runSingleAgentTurn(power, turnType);
+          return [power, result] as const;
+        } catch (error) {
+          console.error(`[${power}] Agent turn failed, defaulting to HOLD orders:`, error instanceof Error ? error.message : error);
+          return [power, this.createFallbackResult(power)] as const;
+        }
       });
 
       const completed = await Promise.all(promises);
@@ -959,14 +964,32 @@ export class AgentRuntime {
         results.set(power, result);
       }
     } else {
-      // Run agents sequentially
+      // Run agents sequentially - individual failures produce HOLD orders
       for (const power of powersToAct) {
-        const result = await this.runSingleAgentTurn(power, turnType);
-        results.set(power, result);
+        try {
+          const result = await this.runSingleAgentTurn(power, turnType);
+          results.set(power, result);
+        } catch (error) {
+          console.error(`[${power}] Agent turn failed, defaulting to HOLD orders:`, error instanceof Error ? error.message : error);
+          results.set(power, this.createFallbackResult(power));
+        }
       }
     }
 
     return results;
+  }
+
+  /**
+   * Create a fallback result when an agent's LLM call fails.
+   * All units HOLD, no diplomatic messages.
+   */
+  private createFallbackResult(power: Power): AgentTurnResult {
+    const holdOrders = fillDefaultOrders([], this.gameState, power);
+    return {
+      power,
+      orders: holdOrders,
+      reasoning: '[LLM call failed - defaulting to HOLD orders]',
+    };
   }
 
   /**
