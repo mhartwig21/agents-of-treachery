@@ -48,6 +48,7 @@ import {
   formatCompactUnits,
   type ContextStats,
 } from './context-compression';
+import { formatConsolidatedMemory } from './consolidation';
 
 /**
  * Try to load a prompt from external files, falling back to inline content.
@@ -488,6 +489,11 @@ export function buildTurnPrompt(
     if (diaryContext) {
       sections.push(diaryContext);
     }
+  }
+
+  // Consolidated historical memory (from turn summary consolidation)
+  if (memory.consolidatedBlocks && memory.consolidatedBlocks.length > 0) {
+    sections.push(formatConsolidatedMemory(memory));
   }
 
   // Recent events (limited by compression)
