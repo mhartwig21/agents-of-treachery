@@ -48,6 +48,7 @@ export class PressSystem {
   private context: PressContext;
   private notificationCallbacks: NotificationCallback[] = [];
   private messageCountByPowerAndPhase: Map<string, number> = new Map();
+  private currentRound: number = 0;
 
   constructor(
     context: PressContext,
@@ -118,6 +119,31 @@ export class PressSystem {
     this.context = context;
     // Clear rate limits on phase change
     this.messageCountByPowerAndPhase.clear();
+    // Reset round counter on phase change
+    this.currentRound = 0;
+  }
+
+  /**
+   * Sets the current press round number (1-based).
+   * Call this at the start of each round in the diplomacy phase.
+   */
+  setCurrentRound(round: number): void {
+    this.currentRound = round;
+  }
+
+  /**
+   * Gets the current press round number.
+   */
+  getCurrentRound(): number {
+    return this.currentRound;
+  }
+
+  /**
+   * Gets the phase identifier string for the current context.
+   * Format: "YEAR-SEASON-PHASE" (e.g., "1901-SPRING-DIPLOMACY")
+   */
+  getPhaseId(): string {
+    return `${this.context.year}-${this.context.season}-${this.context.phase}`;
   }
 
   /**
@@ -155,6 +181,16 @@ export class PressSystem {
       throw new Error(`Channel not found: ${request.channelId}`);
     }
 
+    // Build metadata with round tracking
+    let metadata = this.config.includeMetadata ? request.metadata : undefined;
+    if (this.currentRound > 0) {
+      metadata = {
+        ...metadata,
+        pressRound: this.currentRound,
+        phaseId: this.getPhaseId(),
+      };
+    }
+
     // Create the message
     const message: Message = {
       id: generateMessageId(),
@@ -163,7 +199,7 @@ export class PressSystem {
       content: request.content,
       timestamp: new Date(),
       replyTo: request.replyTo,
-      metadata: this.config.includeMetadata ? request.metadata : undefined,
+      metadata,
     };
 
     // Store the message
@@ -327,6 +363,15 @@ export class PressSystem {
     }
 
     return messages.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+  }
+
+  /**
+   * Gets all messages sent during a specific press round.
+   */
+  getMessagesByRound(round: number): Message[] {
+    return Array.from(this.messages.values()).filter(
+      (m) => m.metadata?.pressRound === round
+    );
   }
 
   /**

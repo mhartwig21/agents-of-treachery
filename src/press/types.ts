@@ -71,6 +71,10 @@ export interface MessageMetadata {
   conditional?: ConditionalClause;
   /** ID of the proposal this message responds to (for threading negotiations) */
   inResponseTo?: MessageId;
+  /** Press round number within a diplomacy phase (1-based) */
+  pressRound?: number;
+  /** Phase identifier: "YEAR-SEASON-PHASE" (e.g., "1901-SPRING-DIPLOMACY") */
+  phaseId?: string;
   /** Custom key-value pairs for agent use */
   custom?: Record<string, unknown>;
 }

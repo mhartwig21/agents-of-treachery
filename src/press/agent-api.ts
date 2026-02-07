@@ -341,6 +341,19 @@ export class AgentPressAPI {
   }
 
   /**
+   * Gets all messages visible to this power from a specific press round.
+   */
+  getMessagesByRound(round: number): Message[] {
+    const allRoundMessages = this.pressSystem.getMessagesByRound(round);
+    const myChannels = new Set(
+      this.pressSystem.getChannelsForPower(this.power).map((c) => c.id)
+    );
+    return allRoundMessages
+      .filter((m) => myChannels.has(m.channelId))
+      .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+  }
+
+  /**
    * Searches messages for keywords.
    */
   searchMessages(
