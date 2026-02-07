@@ -9,7 +9,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   createInitialMemory,
-  updateTrust,
   recordEvent,
   addCommitment,
   fulfillCommitment,
@@ -24,7 +23,6 @@ import {
 } from '../memory';
 import {
   consolidateMemory,
-  consolidateTurnSummaries,
   getAllTrustEvents,
   CONSOLIDATION_THRESHOLD,
   MAX_CONSOLIDATED_BLOCKS,
@@ -550,7 +548,7 @@ describe('Commitments track fulfilled/broken status across turns', () => {
     });
     breakCommitment(memory, c2.id, 1902, 'FALL');
 
-    const c3 = addCommitment(memory, {
+    addCommitment(memory, {
       year: 1903, season: 'SPRING',
       fromPower: 'ENGLAND', toPower: 'RUSSIA',
       description: 'Non-aggression pact',

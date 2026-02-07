@@ -180,7 +180,7 @@ describe('Agent Win Condition Pursuit', () => {
 
     it('mock agent with 17 SCs produces MOVE orders toward target', () => {
       const { state, targetSC } = create17SCState();
-      const gameView = createAgentGameView(state, 'FRANCE');
+      createAgentGameView(state, 'FRANCE');
 
       // Simulate an aggressive LLM response: units near BER attack it
       const aggressiveResponse = `REASONING: I have 17 SCs and need just one more to win. Berlin is the target - I must take it this turn with overwhelming force.
@@ -244,7 +244,7 @@ A SPA HOLD`;
     it('MockLLMProvider default response does not HOLD all units', async () => {
       const provider = new MockLLMProvider();
       const response = await provider.complete({ messages: [] });
-      const parsed = parseAgentResponse(response.content);
+      parseAgentResponse(response.content);
 
       // The default mock response may hold, but let's verify the parser
       // works with aggressive responses
