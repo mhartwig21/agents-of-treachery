@@ -348,6 +348,7 @@ export class AgentRuntime {
 
     // First round: everyone sends initial messages
     roundNumber++;
+    this.pressSystem.setCurrentRound(roundNumber);
     console.log(`\n📨 Press round ${roundNumber}: Initial outreach`);
     const initialTurns = await this.runAgentTurns('diplomacy');
     for (const [power, result] of initialTurns) {
@@ -385,6 +386,7 @@ export class AgentRuntime {
 
       // Let agents with unread messages respond
       roundNumber++;
+      this.pressSystem.setCurrentRound(roundNumber);
       console.log(`\n📨 Press round ${roundNumber}: ${agentsWithUnread.length} agents responding`);
 
       for (const power of agentsWithUnread) {

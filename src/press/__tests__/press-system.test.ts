@@ -222,6 +222,97 @@ describe('PressSystem', () => {
       expect(result.hasMore).toBe(true);
     });
   });
+
+  describe('round tracking', () => {
+    it('stamps messages with pressRound and phaseId when round is set', () => {
+      const channelId = getBilateralChannelId('ENGLAND', 'FRANCE');
+      press.setCurrentRound(1);
+
+      const message = press.sendMessage('ENGLAND', {
+        channelId,
+        content: 'Round 1 message',
+      });
+
+      expect(message.metadata?.pressRound).toBe(1);
+      expect(message.metadata?.phaseId).toBe('1901-SPRING-DIPLOMACY');
+    });
+
+    it('does not stamp messages when round is 0', () => {
+      const channelId = getBilateralChannelId('ENGLAND', 'FRANCE');
+
+      const message = press.sendMessage('ENGLAND', {
+        channelId,
+        content: 'No round set',
+      });
+
+      expect(message.metadata?.pressRound).toBeUndefined();
+    });
+
+    it('preserves existing metadata when adding round info', () => {
+      const channelId = getBilateralChannelId('ENGLAND', 'FRANCE');
+      press.setCurrentRound(2);
+
+      const message = press.sendMessage('ENGLAND', {
+        channelId,
+        content: 'With metadata',
+        metadata: { intent: 'PROPOSAL', references: ['BEL'] },
+      });
+
+      expect(message.metadata?.pressRound).toBe(2);
+      expect(message.metadata?.phaseId).toBe('1901-SPRING-DIPLOMACY');
+      expect(message.metadata?.intent).toBe('PROPOSAL');
+      expect(message.metadata?.references).toContain('BEL');
+    });
+
+    it('resets round counter on context update', () => {
+      press.setCurrentRound(3);
+      expect(press.getCurrentRound()).toBe(3);
+
+      press.updateContext({
+        gameId: 'test-game',
+        year: 1901,
+        season: 'FALL',
+        phase: 'DIPLOMACY',
+      });
+
+      expect(press.getCurrentRound()).toBe(0);
+    });
+
+    it('queries messages by round', () => {
+      const channelId = getBilateralChannelId('ENGLAND', 'FRANCE');
+
+      press.setCurrentRound(1);
+      press.sendMessage('ENGLAND', { channelId, content: 'Round 1 msg 1' });
+      press.sendMessage('FRANCE', { channelId, content: 'Round 1 msg 2' });
+
+      press.setCurrentRound(2);
+      press.sendMessage('ENGLAND', { channelId, content: 'Round 2 msg 1' });
+
+      const round1 = press.getMessagesByRound(1);
+      expect(round1).toHaveLength(2);
+      expect(round1[0].content).toBe('Round 1 msg 1');
+
+      const round2 = press.getMessagesByRound(2);
+      expect(round2).toHaveLength(1);
+      expect(round2[0].content).toBe('Round 2 msg 1');
+
+      const round3 = press.getMessagesByRound(3);
+      expect(round3).toHaveLength(0);
+    });
+
+    it('generates correct phaseId', () => {
+      expect(press.getPhaseId()).toBe('1901-SPRING-DIPLOMACY');
+
+      press.updateContext({
+        gameId: 'test-game',
+        year: 1902,
+        season: 'FALL',
+        phase: 'MOVEMENT',
+      });
+
+      expect(press.getPhaseId()).toBe('1902-FALL-MOVEMENT');
+    });
+  });
 });
 
 describe('AgentPressAPI', () => {
@@ -307,6 +398,35 @@ describe('AgentPressAPI', () => {
     expect(notifications[0].message?.content).toBe('Hello!');
 
     expect(franceAPI.hasNotifications()).toBe(false);
+  });
+
+  it('gets messages by round', () => {
+    press.setCurrentRound(1);
+    englandAPI.sendTo('FRANCE', 'Round 1 to France');
+    englandAPI.sendTo('GERMANY', 'Round 1 to Germany');
+
+    press.setCurrentRound(2);
+    franceAPI.sendTo('ENGLAND', 'Round 2 reply');
+
+    const englandRound1 = englandAPI.getMessagesByRound(1);
+    expect(englandRound1).toHaveLength(2);
+
+    const franceRound1 = franceAPI.getMessagesByRound(1);
+    // France can only see the message sent to them, not England-Germany
+    expect(franceRound1).toHaveLength(1);
+    expect(franceRound1[0].content).toBe('Round 1 to France');
+
+    const franceRound2 = franceAPI.getMessagesByRound(2);
+    expect(franceRound2).toHaveLength(1);
+    expect(franceRound2[0].content).toBe('Round 2 reply');
+  });
+
+  it('getMessagesByRound returns empty for non-existent round', () => {
+    press.setCurrentRound(1);
+    englandAPI.sendTo('FRANCE', 'Hello');
+
+    const result = englandAPI.getMessagesByRound(5);
+    expect(result).toHaveLength(0);
   });
 });
 
