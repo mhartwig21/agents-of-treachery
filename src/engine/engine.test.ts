@@ -19,7 +19,7 @@ import {
   getSupplyCenterCounts,
   getUnitCounts,
 } from './index';
-import { Order, MoveOrder, HoldOrder, SupportOrder, ConvoyOrder, Power, Unit, GameState, BuildOrder } from './types';
+import { Order, MoveOrder, HoldOrder, SupportOrder, ConvoyOrder, Power, Unit, GameState, BuildOrder, RetreatOrder } from './types';
 
 describe('Map data', () => {
   it('has 75 provinces', () => {
@@ -874,6 +874,417 @@ describe('Retreat options', () => {
       const prov = getProvince(opt);
       expect(prov?.type).not.toBe('SEA');
     }
+  });
+});
+
+// ============================================================================
+// RETREAT PHASE: VALID DESTINATIONS (extended)
+// ============================================================================
+describe('Retreat valid destinations', () => {
+  it('returns all valid adjacent provinces when no restrictions', () => {
+    // Army in BUR, dislodged from PAR. BUR adj: PIC, PAR, GAS, MAR, BEL, RUH, MUN
+    // PAR is attacker origin, so excluded. Rest all LAND/COASTAL -> valid for army
+    const unit = makeUnit('FRANCE', 'ARMY', 'BUR');
+    const options = getRetreatOptions(unit, 'PAR', { units: [], orders: new Map() }, new Set<string>(), new Set<string>());
+
+    expect(options).toContain('PIC');
+    expect(options).toContain('GAS');
+    expect(options).toContain('MAR');
+    expect(options).toContain('BEL');
+    expect(options).toContain('RUH');
+    expect(options).toContain('MUN');
+    expect(options).not.toContain('PAR'); // attacker origin
+    expect(options.length).toBe(6);
+  });
+
+  it('excludes multiple occupied provinces', () => {
+    const unit = makeUnit('GERMANY', 'ARMY', 'MUN');
+    // MUN adj: KIE, BER, SIL, BOH, TYR, BUR, RUH
+    // Dislodged from BUR, occupied: KIE, BER, RUH
+    const occupied = new Set(['KIE', 'BER', 'RUH']);
+    const options = getRetreatOptions(unit, 'BUR', { units: [], orders: new Map() }, occupied, new Set<string>());
+
+    expect(options).not.toContain('BUR'); // attacker origin
+    expect(options).not.toContain('KIE'); // occupied
+    expect(options).not.toContain('BER'); // occupied
+    expect(options).not.toContain('RUH'); // occupied
+    expect(options).toContain('SIL');
+    expect(options).toContain('BOH');
+    expect(options).toContain('TYR');
+    expect(options.length).toBe(3);
+  });
+
+  it('excludes both standoff and occupied provinces', () => {
+    const unit = makeUnit('AUSTRIA', 'ARMY', 'VIE');
+    // VIE adj: BOH, GAL, BUD, TRI, TYR
+    // Dislodged from BUD, standoff at GAL, occupied: TRI
+    const occupied = new Set(['TRI']);
+    const standoffs = new Set(['GAL']);
+    const options = getRetreatOptions(unit, 'BUD', { units: [], orders: new Map() }, occupied, standoffs);
+
+    expect(options).not.toContain('BUD'); // attacker origin
+    expect(options).not.toContain('GAL'); // standoff
+    expect(options).not.toContain('TRI'); // occupied
+    expect(options).toContain('BOH');
+    expect(options).toContain('TYR');
+    expect(options.length).toBe(2);
+  });
+
+  it('returns empty array when no valid retreat destinations exist', () => {
+    const unit = makeUnit('AUSTRIA', 'ARMY', 'VIE');
+    // VIE adj: BOH, GAL, BUD, TRI, TYR
+    // Dislodged from BOH, occupied: GAL, BUD, TRI, TYR
+    const occupied = new Set(['GAL', 'BUD', 'TRI', 'TYR']);
+    const options = getRetreatOptions(unit, 'BOH', { units: [], orders: new Map() }, occupied, new Set<string>());
+
+    expect(options).toEqual([]);
+  });
+
+  it('fleet cannot retreat to landlocked province', () => {
+    // Fleet in TRI (COASTAL), dislodged from VEN
+    // TRI adj: TYR, VIE, BUD, SER, ALB, VEN, ADR
+    // TYR=LAND, VIE=LAND, BUD=LAND, SER=LAND -> fleet can't go
+    // ALB=COASTAL, ADR=SEA -> fleet can go
+    const unit = makeUnit('AUSTRIA', 'FLEET', 'TRI');
+    const options = getRetreatOptions(unit, 'VEN', { units: [], orders: new Map() }, new Set<string>(), new Set<string>());
+
+    for (const opt of options) {
+      const prov = getProvince(opt);
+      expect(prov?.type).not.toBe('LAND');
+    }
+    expect(options).toContain('ALB');
+    expect(options).toContain('ADR');
+    expect(options).not.toContain('TYR'); // LAND
+    expect(options).not.toContain('VIE'); // LAND
+    expect(options).not.toContain('BUD'); // LAND
+    expect(options).not.toContain('SER'); // LAND
+  });
+
+  it('fleet can retreat to both sea and coastal provinces', () => {
+    // Fleet in LON (COASTAL), dislodged from WAL
+    // LON adj: YOR, WAL, NTH, ENG
+    // YOR=COASTAL, NTH=SEA, ENG=SEA -> all valid for fleet
+    const unit = makeUnit('ENGLAND', 'FLEET', 'LON');
+    const options = getRetreatOptions(unit, 'WAL', { units: [], orders: new Map() }, new Set<string>(), new Set<string>());
+
+    expect(options).toContain('YOR');
+    expect(options).toContain('NTH');
+    expect(options).toContain('ENG');
+    expect(options).not.toContain('WAL'); // attacker origin
+    expect(options.length).toBe(3);
+  });
+});
+
+// ============================================================================
+// RETREAT PHASE: BOUNCES (two units to same province)
+// ============================================================================
+describe('Retreat bounces', () => {
+  function makeRetreatState(pendingRetreats: Unit[], retreatOptions: Map<string, string[]>): GameState {
+    return {
+      year: 1901,
+      season: 'SPRING',
+      phase: 'RETREAT' as const,
+      units: [],
+      supplyCenters: new Map(),
+      orders: new Map(),
+      retreats: retreatOptions,
+      pendingRetreats,
+      pendingBuilds: new Map(),
+    };
+  }
+
+  it('two units retreating to same province are both destroyed', () => {
+    const unit1 = makeUnit('FRANCE', 'ARMY', 'BUR');
+    const unit2 = makeUnit('GERMANY', 'ARMY', 'RUH');
+    const retreatOptions = new Map<string, string[]>();
+    retreatOptions.set('BUR', ['BEL', 'PIC']); // France can retreat to BEL or PIC
+    retreatOptions.set('RUH', ['BEL', 'HOL']); // Germany can retreat to BEL or HOL
+
+    const state = makeRetreatState([unit1, unit2], retreatOptions);
+
+    // Both submit retreat to BEL
+    submitRetreats(state, 'FRANCE', [{ unit: 'BUR', destination: 'BEL' }]);
+    submitRetreats(state, 'GERMANY', [{ unit: 'RUH', destination: 'BEL' }]);
+    resolveRetreats(state);
+
+    // Both units should be destroyed - neither survives
+    expect(state.units.length).toBe(0);
+    expect(state.pendingRetreats.length).toBe(0);
+  });
+
+  it('non-conflicting retreats both succeed', () => {
+    const unit1 = makeUnit('FRANCE', 'ARMY', 'BUR');
+    const unit2 = makeUnit('GERMANY', 'ARMY', 'RUH');
+    const retreatOptions = new Map<string, string[]>();
+    retreatOptions.set('BUR', ['BEL', 'PIC']);
+    retreatOptions.set('RUH', ['BEL', 'HOL']);
+
+    const state = makeRetreatState([unit1, unit2], retreatOptions);
+
+    // France retreats to PIC, Germany retreats to HOL (no conflict)
+    submitRetreats(state, 'FRANCE', [{ unit: 'BUR', destination: 'PIC' }]);
+    submitRetreats(state, 'GERMANY', [{ unit: 'RUH', destination: 'HOL' }]);
+    resolveRetreats(state);
+
+    expect(state.units.length).toBe(2);
+    expect(state.units.find(u => u.power === 'FRANCE')?.province).toBe('PIC');
+    expect(state.units.find(u => u.power === 'GERMANY')?.province).toBe('HOL');
+  });
+
+  it('one unit retreats successfully while another bounces with a third', () => {
+    const unit1 = makeUnit('FRANCE', 'ARMY', 'BUR');
+    const unit2 = makeUnit('GERMANY', 'ARMY', 'RUH');
+    const unit3 = makeUnit('ENGLAND', 'ARMY', 'PIC');
+    const retreatOptions = new Map<string, string[]>();
+    retreatOptions.set('BUR', ['BEL', 'GAS']);
+    retreatOptions.set('RUH', ['BEL', 'HOL']);
+    retreatOptions.set('PIC', ['BRE', 'GAS']); // Not contesting BEL
+
+    const state = makeRetreatState([unit1, unit2, unit3], retreatOptions);
+
+    // France and Germany both try BEL (bounce), England goes to BRE (succeeds)
+    submitRetreats(state, 'FRANCE', [{ unit: 'BUR', destination: 'BEL' }]);
+    submitRetreats(state, 'GERMANY', [{ unit: 'RUH', destination: 'BEL' }]);
+    submitRetreats(state, 'ENGLAND', [{ unit: 'PIC', destination: 'BRE' }]);
+    resolveRetreats(state);
+
+    // Only England survives
+    expect(state.units.length).toBe(1);
+    expect(state.units[0].power).toBe('ENGLAND');
+    expect(state.units[0].province).toBe('BRE');
+  });
+});
+
+// ============================================================================
+// RETREAT PHASE: MANDATORY DISBAND
+// ============================================================================
+describe('Retreat mandatory disband', () => {
+  function makeRetreatState(pendingRetreats: Unit[], retreatOptions: Map<string, string[]>): GameState {
+    return {
+      year: 1901,
+      season: 'SPRING',
+      phase: 'RETREAT' as const,
+      units: [],
+      supplyCenters: new Map(),
+      orders: new Map(),
+      retreats: retreatOptions,
+      pendingRetreats,
+      pendingBuilds: new Map(),
+    };
+  }
+
+  it('unit with no retreat order is disbanded', () => {
+    const unit = makeUnit('FRANCE', 'ARMY', 'BUR');
+    const retreatOptions = new Map<string, string[]>();
+    retreatOptions.set('BUR', ['PIC', 'GAS']);
+
+    const state = makeRetreatState([unit], retreatOptions);
+
+    // France submits no retreat orders at all
+    resolveRetreats(state);
+
+    // Unit is disbanded (not added to state.units)
+    expect(state.units.length).toBe(0);
+    expect(state.pendingRetreats.length).toBe(0);
+  });
+
+  it('unit with no valid options is automatically disbanded', () => {
+    const unit = makeUnit('AUSTRIA', 'ARMY', 'VIE');
+    const retreatOptions = new Map<string, string[]>();
+    retreatOptions.set('VIE', []); // No valid retreat destinations
+
+    const state = makeRetreatState([unit], retreatOptions);
+
+    // Even with no orders submitted, unit is gone
+    resolveRetreats(state);
+
+    expect(state.units.length).toBe(0);
+  });
+
+  it('explicit disband (no destination) removes unit', () => {
+    const unit = makeUnit('FRANCE', 'ARMY', 'BUR');
+    const retreatOptions = new Map<string, string[]>();
+    retreatOptions.set('BUR', ['PIC', 'GAS']);
+
+    const state = makeRetreatState([unit], retreatOptions);
+
+    // France explicitly chooses to disband (destination undefined)
+    submitRetreats(state, 'FRANCE', [{ unit: 'BUR' }]);
+    resolveRetreats(state);
+
+    expect(state.units.length).toBe(0);
+  });
+
+  it('mix of successful retreat and disband', () => {
+    const unit1 = makeUnit('FRANCE', 'ARMY', 'BUR');
+    const unit2 = makeUnit('GERMANY', 'ARMY', 'MUN');
+    const retreatOptions = new Map<string, string[]>();
+    retreatOptions.set('BUR', ['PIC', 'GAS']);
+    retreatOptions.set('MUN', ['BOH', 'TYR']);
+
+    const state = makeRetreatState([unit1, unit2], retreatOptions);
+
+    // France retreats to PIC, Germany submits nothing (disbanded)
+    submitRetreats(state, 'FRANCE', [{ unit: 'BUR', destination: 'PIC' }]);
+    resolveRetreats(state);
+
+    expect(state.units.length).toBe(1);
+    expect(state.units[0].power).toBe('FRANCE');
+    expect(state.units[0].province).toBe('PIC');
+  });
+});
+
+// ============================================================================
+// RETREAT PHASE: SUBMIT VALIDATION
+// ============================================================================
+describe('Retreat submission validation', () => {
+  function makeRetreatState(pendingRetreats: Unit[], retreatOptions: Map<string, string[]>): GameState {
+    return {
+      year: 1901,
+      season: 'SPRING',
+      phase: 'RETREAT' as const,
+      units: [],
+      supplyCenters: new Map(),
+      orders: new Map(),
+      retreats: retreatOptions,
+      pendingRetreats,
+      pendingBuilds: new Map(),
+    };
+  }
+
+  it('throws error when submitting retreats outside retreat phase', () => {
+    const state: GameState = {
+      year: 1901,
+      season: 'SPRING',
+      phase: 'DIPLOMACY',
+      units: [],
+      supplyCenters: new Map(),
+      orders: new Map(),
+      retreats: new Map(),
+      pendingRetreats: [],
+      pendingBuilds: new Map(),
+    };
+
+    expect(() => submitRetreats(state, 'FRANCE', [{ unit: 'BUR', destination: 'PIC' }]))
+      .toThrow('Cannot submit retreats outside retreat phase');
+  });
+
+  it('throws error when submitting retreat for non-existent unit', () => {
+    const unit = makeUnit('FRANCE', 'ARMY', 'BUR');
+    const retreatOptions = new Map<string, string[]>();
+    retreatOptions.set('BUR', ['PIC', 'GAS']);
+
+    const state = makeRetreatState([unit], retreatOptions);
+
+    // Germany has no retreating unit
+    expect(() => submitRetreats(state, 'GERMANY', [{ unit: 'MUN', destination: 'BOH' }]))
+      .toThrow('No retreating unit');
+  });
+
+  it('throws error for invalid retreat destination', () => {
+    const unit = makeUnit('FRANCE', 'ARMY', 'BUR');
+    const retreatOptions = new Map<string, string[]>();
+    retreatOptions.set('BUR', ['PIC', 'GAS']);
+
+    const state = makeRetreatState([unit], retreatOptions);
+
+    // MAR is not in the valid options
+    expect(() => submitRetreats(state, 'FRANCE', [{ unit: 'BUR', destination: 'MAR' }]))
+      .toThrow('Invalid retreat destination');
+  });
+
+  it('throws error when resolving retreats outside retreat phase', () => {
+    const state: GameState = {
+      year: 1901,
+      season: 'SPRING',
+      phase: 'DIPLOMACY',
+      units: [],
+      supplyCenters: new Map(),
+      orders: new Map(),
+      retreats: new Map(),
+      pendingRetreats: [],
+      pendingBuilds: new Map(),
+    };
+
+    expect(() => resolveRetreats(state)).toThrow('Not in retreat phase');
+  });
+
+  it('allows submitting retreat to valid destination', () => {
+    const unit = makeUnit('FRANCE', 'ARMY', 'BUR');
+    const retreatOptions = new Map<string, string[]>();
+    retreatOptions.set('BUR', ['PIC', 'GAS']);
+
+    const state = makeRetreatState([unit], retreatOptions);
+
+    // Should not throw
+    expect(() => submitRetreats(state, 'FRANCE', [{ unit: 'BUR', destination: 'PIC' }]))
+      .not.toThrow();
+  });
+});
+
+// ============================================================================
+// RETREAT PHASE: PHASE TRANSITION
+// ============================================================================
+describe('Retreat phase transitions', () => {
+  function makeRetreatState(pendingRetreats: Unit[], retreatOptions: Map<string, string[]>): GameState {
+    return {
+      year: 1901,
+      season: 'SPRING',
+      phase: 'RETREAT' as const,
+      units: [],
+      supplyCenters: new Map(),
+      orders: new Map(),
+      retreats: retreatOptions,
+      pendingRetreats,
+      pendingBuilds: new Map(),
+    };
+  }
+
+  it('advances phase after retreat resolution in spring', () => {
+    const unit = makeUnit('FRANCE', 'ARMY', 'BUR');
+    const retreatOptions = new Map<string, string[]>();
+    retreatOptions.set('BUR', ['PIC']);
+
+    const state = makeRetreatState([unit], retreatOptions);
+    state.season = 'SPRING';
+
+    submitRetreats(state, 'FRANCE', [{ unit: 'BUR', destination: 'PIC' }]);
+    resolveRetreats(state);
+
+    // Spring retreat -> advances to fall diplomacy
+    expect(state.season).toBe('FALL');
+    expect(state.phase).toBe('DIPLOMACY');
+  });
+
+  it('clears retreat state after resolution', () => {
+    const unit = makeUnit('FRANCE', 'ARMY', 'BUR');
+    const retreatOptions = new Map<string, string[]>();
+    retreatOptions.set('BUR', ['PIC']);
+
+    const state = makeRetreatState([unit], retreatOptions);
+
+    submitRetreats(state, 'FRANCE', [{ unit: 'BUR', destination: 'PIC' }]);
+    resolveRetreats(state);
+
+    expect(state.pendingRetreats.length).toBe(0);
+    expect(state.retreats.size).toBe(0);
+  });
+
+  it('successful retreat adds unit back to game state', () => {
+    const existingUnit = makeUnit('GERMANY', 'ARMY', 'MUN');
+    const retreatingUnit = makeUnit('FRANCE', 'ARMY', 'BUR');
+    const retreatOptions = new Map<string, string[]>();
+    retreatOptions.set('BUR', ['PIC', 'GAS']);
+
+    const state = makeRetreatState([retreatingUnit], retreatOptions);
+    state.units = [existingUnit]; // Existing unit on the board
+
+    submitRetreats(state, 'FRANCE', [{ unit: 'BUR', destination: 'PIC' }]);
+    resolveRetreats(state);
+
+    expect(state.units.length).toBe(2);
+    expect(state.units.find(u => u.province === 'PIC' && u.power === 'FRANCE')).toBeDefined();
+    expect(state.units.find(u => u.province === 'MUN' && u.power === 'GERMANY')).toBeDefined();
   });
 });
 
