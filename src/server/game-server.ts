@@ -13,11 +13,15 @@ import { POWERS, type Power } from '../engine/types';
 import {
   type GameSnapshot,
   type GameHistory,
+  type SnapshotAnalysis,
   generateSnapshotId,
   engineToUIGameState,
   engineToUIOrder,
   toUIPower,
 } from '../spectator/types';
+import type { DeceptionRecord } from '../analysis/deception';
+import type { PromiseMemoryUpdate } from '../analysis/promise-tracker';
+import { extractNarrativeContext } from '../analysis/narrative';
 import type { Message } from '../press/types';
 import { GameLogger, getGameLogger, removeGameLogger, createLoggingLLMProvider } from './game-logger';
 
@@ -45,6 +49,7 @@ export type ServerMessage = VersionedMessage & (
   | { type: 'GAME_ENDED'; gameId: string; winner?: string; draw?: boolean }
   | { type: 'ERROR'; message: string }
   | { type: 'PROTOCOL_INFO'; version: number; minSupported: number }
+  | { type: 'ANALYSIS_UPDATE'; gameId: string; analysisType: 'deception' | 'promise' | 'narrative'; data: DeceptionRecord[] | PromiseMemoryUpdate[] }
 );
 
 /**
@@ -70,6 +75,7 @@ interface ActiveGame {
   subscribers: Set<WebSocket>;
   accumulatedMessages: Message[];
   accumulatedOrders: Map<Power, import('../engine/types').Order[]>;
+  accumulatedAnalysis: SnapshotAnalysis;
   logger: GameLogger;
 }
 
@@ -266,6 +272,7 @@ export class GameServer {
       subscribers: new Set([ws]),
       accumulatedMessages: [],
       accumulatedOrders: new Map(),
+      accumulatedAnalysis: {},
       logger,
     };
 
@@ -356,6 +363,7 @@ export class GameServer {
     // Clear accumulated data
     game.accumulatedMessages = [];
     game.accumulatedOrders.clear();
+    game.accumulatedAnalysis = {};
     game.subscribers.clear();
 
     // Keep the game in the map for history access but mark as cleaned
@@ -404,6 +412,34 @@ export class GameServer {
       }
     }
 
+    // Accumulate and broadcast deception detection results
+    if (event.type === 'deception_detected' && event.data.deceptions) {
+      game.accumulatedAnalysis.deceptions = [
+        ...(game.accumulatedAnalysis.deceptions ?? []),
+        ...event.data.deceptions,
+      ];
+      this.broadcastToGame(game, {
+        type: 'ANALYSIS_UPDATE',
+        gameId: game.gameId,
+        analysisType: 'deception',
+        data: event.data.deceptions,
+      });
+    }
+
+    // Accumulate and broadcast promise reconciliation results
+    if (event.type === 'promise_reconciled' && event.data.promiseUpdates) {
+      game.accumulatedAnalysis.promiseUpdates = [
+        ...(game.accumulatedAnalysis.promiseUpdates ?? []),
+        ...event.data.promiseUpdates,
+      ];
+      this.broadcastToGame(game, {
+        type: 'ANALYSIS_UPDATE',
+        gameId: game.gameId,
+        analysisType: 'promise',
+        data: event.data.promiseUpdates,
+      });
+    }
+
     // Track orders as they're submitted
     if (event.type === 'orders_submitted' && event.data.power && event.data.orders) {
       console.log(`[${game.gameId}] ${event.data.power} submitted ${event.data.orders.length} orders`);
@@ -447,6 +483,22 @@ export class GameServer {
         }
       }
 
+      // Extract narrative events from game logs
+      let narrativeEvents;
+      try {
+        const context = extractNarrativeContext(game.gameId);
+        narrativeEvents = context.events;
+      } catch {
+        // Narrative extraction may fail early in game (no logs yet)
+      }
+
+      // Build analysis for this snapshot
+      const analysis: SnapshotAnalysis = {
+        ...game.accumulatedAnalysis,
+        ...(narrativeEvents ? { narrativeEvents } : {}),
+      };
+      const hasAnalysis = analysis.deceptions?.length || analysis.promiseUpdates?.length || analysis.narrativeEvents?.length;
+
       const snapshot: GameSnapshot = {
         id: generateSnapshotId(snapshotYear, snapshotSeason, snapshotPhase),
         year: snapshotYear,
@@ -456,6 +508,7 @@ export class GameServer {
         orders: uiOrders,
         messages: [...game.accumulatedMessages],
         timestamp: event.timestamp,
+        ...(hasAnalysis ? { analysis } : {}),
       };
 
       // Add snapshot to history
@@ -465,6 +518,7 @@ export class GameServer {
       // Clear accumulated data for next phase
       game.accumulatedMessages = [];
       game.accumulatedOrders.clear();
+      game.accumulatedAnalysis = {};
 
       // Broadcast snapshot to subscribers
       console.log(`[${game.gameId}] Broadcasting snapshot: ${snapshot.id} (${snapshot.messages.length} msgs, ${uiOrders.length} orders) to ${game.subscribers.size} subscribers`);
