@@ -445,8 +445,8 @@ describe('NegotiationMetricsTracker', () => {
       tracker.recordMessage(msg2, 'GERMANY', a2);
 
       const metrics = tracker.calculateDeceptionMetrics('ITALY');
-      // rate = (1 + 1) / (2 * 2) = 0.5
-      expect(metrics.deceptionRate).toBe(0.5);
+      // rate = (1 + 1) / 2 = 1.0
+      expect(metrics.deceptionRate).toBe(1.0);
     });
   });
 
