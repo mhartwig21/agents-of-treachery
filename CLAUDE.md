@@ -294,3 +294,23 @@ Waiting for mayor to create beads. 7 tasks:
   - HIGH: RelationshipGraphPanel renders empty (hook exists but not called), GameLogger at 40% utilization, snapshot persistence in-memory only, analysis modules invisible to spectators, orchestrator enforcement toothless
   - Pattern: polecats build modules in isolation, modules get exported/tested, but nobody wires them into runtime
   - Proposed 4 epics: Core Integration Wiring (P0), Architectural Direction Decisions (P0), Server Hardening (P1), Game Lifecycle Completeness (P2)
+
+### 2026-02-07 (Session 3)
+- **Implemented**: Model registry (aot-x5cmh) - 20 OpenAI free-tier models, tier-level budget tracking
+- **Live game testing**: Game crashed at Spring 1905 (rate limit exhaustion, 200K TPM for gpt-4o-mini)
+- **Token analysis**: 5.35M input tokens in 4 years, 58:1 input/output ratio, 4.7x context growth
+  - Press rounds: 37.1% of tokens, Order submission: 35.6%, per-agent calls hitting 40K+ tokens by year 4
+  - Rate limiting: 1,440 retries, 75 failed analyses, 6 failed reflections
+- **P0 Press Exchange Overhaul** (aot-h064c): Designed and mostly implemented (5/6 tasks)
+  - Task 1: Round tracking in press system (aot-ihwg9 by furiosa)
+  - Task 2: Synchronous press rounds (aot-rlpf8 by trossard) - eliminates ordering bias
+  - Task 3: Round-aware prompt formatting (aot-ha8y0 by trossard) - [Round N] labels, own messages, [NEW] markers
+  - Task 5: Chronological sort + dedup (aot-m7ryp by nux)
+  - Task 6: Per-round message analysis (aot-mbfik by trossard)
+  - Task 4 (history compaction): OPEN, P1, deferred - will be superseded by pull-based recall (aot-m9emi)
+- **Bug fixes**:
+  - aot-ppn6h: Promise.all crash in runAgentTurns - agents now get HOLD orders on LLM failure
+  - aot-beyaw: ENGLAND/ENG disambiguation - power name kept unabbreviated to avoid English Channel collision
+- **Reviewed** polecat code: compact notation (b9eed10), orphaned modules wiring (a0f147e)
+- **Filed** aot-ppn6h (P1 crash bug), aot-beyaw (P2 name collision)
+- **Flagged** merge conflict for refinery on aot-hhw67 - successfully resolved
