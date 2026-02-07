@@ -841,3 +841,176 @@ describe('calculateBuildCounts', () => {
     expect(counts.get('FRANCE')).toBe(-1);  // 1 SC - 2 units
   });
 });
+
+// ---------------------------------------------------------------------------
+// Regression tests for closed engine bugs
+// ---------------------------------------------------------------------------
+
+describe('regression: aot-eoid5 — multi-destination with 3+ competing moves', () => {
+  it('should resolve in favor of supported unit when 3 units target same province', () => {
+    // France A PIC -> BEL (supported by BUR), Germany A RUH -> BEL, England A HOL -> BEL
+    // Expected: France wins BEL (strength 2 vs 1 vs 1)
+    const ctx = makeCtx(
+      [
+        army('FRANCE', 'PIC'),
+        army('FRANCE', 'BUR'),
+        army('GERMANY', 'RUH'),
+        army('ENGLAND', 'HOL'),
+      ],
+      [
+        ['FRANCE', [
+          move('PIC', 'BEL'),
+          support('BUR', 'PIC', 'BEL'),
+        ]],
+        ['GERMANY', [move('RUH', 'BEL')]],
+        ['ENGLAND', [move('HOL', 'BEL')]],
+      ]
+    );
+    const results = adjudicate(ctx);
+    // France PIC -> BEL should succeed (strength 2 beats strength 1)
+    expect(results.get('PIC')?.success).toBe(true);
+    // Germany and England should bounce
+    expect(results.get('RUH')?.success).toBe(false);
+    expect(results.get('HOL')?.success).toBe(false);
+    // France's support should succeed
+    expect(results.get('BUR')?.success).toBe(true);
+  });
+
+  it('should bounce all 3 when two have equal support and one unsupported', () => {
+    // France A PIC -> BEL (supported by BUR), Germany A RUH -> BEL (supported by MUN), England A HOL -> BEL
+    // Expected: France and Germany both strength 2, standoff; England strength 1, bounces
+    const ctx = makeCtx(
+      [
+        army('FRANCE', 'PIC'),
+        army('FRANCE', 'BUR'),
+        army('GERMANY', 'RUH'),
+        army('GERMANY', 'MUN'),
+        army('ENGLAND', 'HOL'),
+      ],
+      [
+        ['FRANCE', [
+          move('PIC', 'BEL'),
+          support('BUR', 'PIC', 'BEL'),
+        ]],
+        ['GERMANY', [
+          move('RUH', 'BEL'),
+          support('MUN', 'RUH', 'BEL'),
+        ]],
+        ['ENGLAND', [move('HOL', 'BEL')]],
+      ]
+    );
+    const results = adjudicate(ctx);
+    // All three should bounce — two at strength 2 = standoff
+    expect(results.get('PIC')?.success).toBe(false);
+    expect(results.get('RUH')?.success).toBe(false);
+    expect(results.get('HOL')?.success).toBe(false);
+  });
+
+  it('should handle 3 unsupported moves to same empty province as 3-way bounce', () => {
+    const ctx = makeCtx(
+      [
+        army('FRANCE', 'PIC'),
+        army('GERMANY', 'RUH'),
+        army('ENGLAND', 'HOL'),
+      ],
+      [
+        ['FRANCE', [move('PIC', 'BEL')]],
+        ['GERMANY', [move('RUH', 'BEL')]],
+        ['ENGLAND', [move('HOL', 'BEL')]],
+      ]
+    );
+    const results = adjudicate(ctx);
+    // All three bounce — equal strength
+    expect(results.get('PIC')?.success).toBe(false);
+    expect(results.get('RUH')?.success).toBe(false);
+    expect(results.get('HOL')?.success).toBe(false);
+  });
+});
+
+describe('regression: aot-hidn8 — support cut when supporting unit is attacked', () => {
+  it('should cut support when a third party attacks the supporting unit', () => {
+    // Germany: A MUN -> BOH, A TYR supports MUN -> BOH
+    // Austria: A VIE -> TYR (attacks the supporting unit), A BOH HOLD
+    // Expected: VIE -> TYR cuts TYR's support, MUN -> BOH bounces (strength 1 vs hold 1)
+    const ctx = makeCtx(
+      [
+        army('GERMANY', 'MUN'),
+        army('GERMANY', 'TYR'),
+        army('AUSTRIA', 'VIE'),
+        army('AUSTRIA', 'BOH'),
+      ],
+      [
+        ['GERMANY', [
+          move('MUN', 'BOH'),
+          support('TYR', 'MUN', 'BOH'),
+        ]],
+        ['AUSTRIA', [
+          move('VIE', 'TYR'),
+          hold('BOH'),
+        ]],
+      ]
+    );
+    const results = adjudicate(ctx);
+    // TYR's support should be cut by VIE's attack
+    expect(results.get('TYR')?.success).toBe(false);
+    expect(results.get('TYR')?.reason).toContain('cut');
+    // MUN -> BOH should fail (strength 1 vs hold strength 1)
+    expect(results.get('MUN')?.success).toBe(false);
+  });
+
+  it('should NOT cut support when the attack comes from the unit being attacked', () => {
+    // France: A PAR -> BUR, A MAR supports PAR -> BUR
+    // Germany: A BUR -> MAR (attacks the supporter, but is the unit being attacked)
+    // Expected: support NOT cut (exception rule), PAR succeeds
+    const ctx = makeCtx(
+      [
+        army('FRANCE', 'PAR'),
+        army('FRANCE', 'MAR'),
+        army('GERMANY', 'BUR'),
+      ],
+      [
+        ['FRANCE', [
+          move('PAR', 'BUR'),
+          support('MAR', 'PAR', 'BUR'),
+        ]],
+        ['GERMANY', [
+          move('BUR', 'MAR'),
+        ]],
+      ]
+    );
+    const results = adjudicate(ctx);
+    // MAR's support should NOT be cut (exception: attacker is the target of the supported attack)
+    expect(results.get('MAR')?.success).toBe(true);
+    // PAR -> BUR should succeed (strength 2 vs 0 defense since BUR moved out)
+    expect(results.get('PAR')?.success).toBe(true);
+  });
+
+  it('should cut support when attacked even if the attack itself fails', () => {
+    // France: A PAR -> BUR, A MAR supports PAR -> BUR
+    // Germany: A BUR HOLD, Italy: A PIE -> MAR (attacks supporter)
+    // Expected: PIE -> MAR cuts support (even though PIE doesn't dislodge MAR)
+    const ctx = makeCtx(
+      [
+        army('FRANCE', 'PAR'),
+        army('FRANCE', 'MAR'),
+        army('GERMANY', 'BUR'),
+        army('ITALY', 'PIE'),
+      ],
+      [
+        ['FRANCE', [
+          move('PAR', 'BUR'),
+          support('MAR', 'PAR', 'BUR'),
+        ]],
+        ['GERMANY', [hold('BUR')]],
+        ['ITALY', [move('PIE', 'MAR')]],
+      ]
+    );
+    const results = adjudicate(ctx);
+    // MAR's support should be cut by Italy's attack
+    expect(results.get('MAR')?.success).toBe(false);
+    // PAR -> BUR should bounce (strength 1 vs hold 1)
+    expect(results.get('PAR')?.success).toBe(false);
+    // Italy's PIE -> MAR should also fail (MAR holds with 1, PIE attacks with 1 = bounce)
+    expect(results.get('PIE')?.success).toBe(false);
+  });
+});
