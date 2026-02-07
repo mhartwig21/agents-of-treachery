@@ -206,6 +206,8 @@ export function RelationshipGraphPanel({
   const [selectedEdge, setSelectedEdge] = useState<EdgeKey | null>(null);
   const [tooltipPosition, setTooltipPosition] = useState<{ x: number; y: number } | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Build relationship history from engine data
   const relationshipHistory = useRelationshipHistory({
@@ -259,24 +261,40 @@ export function RelationshipGraphPanel({
     setSelectedBetrayal(betrayal);
   }, []);
 
-  // Handle edge hover with tooltip positioning
+  // Handle edge hover with tooltip positioning (debounced to prevent rapid flicker)
   const handleEdgeMouseEnter = useCallback(
     (edge: EdgeKey, event: React.MouseEvent) => {
       if (!showHistory) return;
-      setHoveredEdge(edge);
 
-      // Calculate tooltip position based on mouse event
-      if (svgRef.current) {
-        const svgRect = svgRef.current.getBoundingClientRect();
-        const x = event.clientX - svgRect.left;
-        const y = event.clientY - svgRect.top;
-        setTooltipPosition({ x, y });
+      // Clear any pending hover timer
+      if (hoverTimerRef.current) {
+        clearTimeout(hoverTimerRef.current);
       }
+
+      // Capture position synchronously from the event
+      const clientX = event.clientX;
+      const clientY = event.clientY;
+
+      hoverTimerRef.current = setTimeout(() => {
+        setHoveredEdge(edge);
+
+        // Calculate tooltip position relative to the container div (positioning context)
+        if (containerRef.current) {
+          const containerRect = containerRef.current.getBoundingClientRect();
+          const x = clientX - containerRect.left;
+          const y = clientY - containerRect.top;
+          setTooltipPosition({ x, y });
+        }
+      }, 50);
     },
     [showHistory]
   );
 
   const handleEdgeMouseLeave = useCallback(() => {
+    if (hoverTimerRef.current) {
+      clearTimeout(hoverTimerRef.current);
+      hoverTimerRef.current = null;
+    }
     setHoveredEdge(null);
     setTooltipPosition(null);
   }, []);
@@ -360,7 +378,7 @@ export function RelationshipGraphPanel({
   return (
     <div className={`flex flex-col ${className}`}>
       {/* Graph */}
-      <div className="relative">
+      <div ref={containerRef} className="relative">
         <svg
           ref={svgRef}
           viewBox={`0 0 ${width} ${height}`}
@@ -404,8 +422,8 @@ export function RelationshipGraphPanel({
                     y2={pos2.y}
                     stroke={getEdgeColor(rel.status)}
                     strokeWidth={isHovered ? getEdgeWidth(rel.strength) + 2 : getEdgeWidth(rel.strength)}
-                    strokeOpacity={highlighted ? (isHovered ? 1 : 0.8) : 0.15}
-                    className="transition-all duration-200 pointer-events-none"
+                    strokeOpacity={highlighted ? (isHovered ? 0.9 : 0.7) : 0.35}
+                    className="transition-opacity duration-300 pointer-events-none"
                   />
                 </g>
               );
