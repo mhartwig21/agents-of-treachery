@@ -20,6 +20,37 @@ import { getProvince, PROVINCES, areAdjacent } from '../engine/map';
 import type { DiplomaticAction } from './types';
 
 /**
+ * Parse failure record for diagnostics.
+ */
+export interface ParseFailure {
+  line: string;
+  error: string;
+  timestamp: number;
+}
+
+/** In-memory log of recent parse failures for diagnostics. */
+const parseFailureLog: ParseFailure[] = [];
+const MAX_FAILURE_LOG = 200;
+
+/** Record a parse failure for diagnostics. */
+function logParseFailure(line: string, error: string): void {
+  parseFailureLog.push({ line, error, timestamp: Date.now() });
+  if (parseFailureLog.length > MAX_FAILURE_LOG) {
+    parseFailureLog.shift();
+  }
+}
+
+/** Get recent parse failures (for diagnostics / monitoring). */
+export function getParseFailures(): ReadonlyArray<ParseFailure> {
+  return parseFailureLog;
+}
+
+/** Clear parse failure log (for testing). */
+export function clearParseFailures(): void {
+  parseFailureLog.length = 0;
+}
+
+/**
  * Result of parsing orders from agent response.
  */
 export interface ParseResult {
@@ -159,10 +190,32 @@ const COAST_ALIASES: Record<string, Coast> = {
 };
 
 /**
+ * Compute Levenshtein edit distance between two strings.
+ */
+function editDistance(a: string, b: string): number {
+  const m = a.length;
+  const n = b.length;
+  const dp: number[][] = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
+  for (let i = 0; i <= m; i++) dp[i][0] = i;
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] = a[i - 1] === b[j - 1]
+        ? dp[i - 1][j - 1]
+        : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+    }
+  }
+  return dp[m][n];
+}
+
+/**
  * Normalize a province name to its ID.
+ * Uses exact matching first, then fuzzy matching for close misspellings.
  */
 export function normalizeProvince(input: string): string | null {
   const normalized = input.trim().toLowerCase();
+
+  if (!normalized) return null;
 
   // Check direct alias match
   if (PROVINCE_ALIASES[normalized]) {
@@ -175,13 +228,45 @@ export function normalizeProvince(input: string): string | null {
     return upper;
   }
 
-  // Try partial match
+  // Try partial match on province name or id
   const province = PROVINCES.find(p =>
     p.name.toLowerCase() === normalized ||
     p.id.toLowerCase() === normalized
   );
 
-  return province?.id ?? null;
+  if (province) return province.id;
+
+  // Fuzzy match: try alias keys with edit distance <= 2
+  // Only for inputs of length >= 4 to avoid false positives on short strings
+  if (normalized.length >= 4) {
+    let bestAlias: string | null = null;
+    let bestDist = Infinity;
+    for (const [alias, id] of Object.entries(PROVINCE_ALIASES)) {
+      if (Math.abs(alias.length - normalized.length) > 2) continue;
+      const dist = editDistance(normalized, alias);
+      if (dist <= 2 && dist < bestDist) {
+        bestDist = dist;
+        bestAlias = id;
+      }
+    }
+    if (bestAlias) return bestAlias;
+
+    // Fuzzy match on province names
+    let bestProvince: string | null = null;
+    bestDist = Infinity;
+    for (const p of PROVINCES) {
+      const pName = p.name.toLowerCase();
+      if (Math.abs(pName.length - normalized.length) > 2) continue;
+      const dist = editDistance(normalized, pName);
+      if (dist <= 2 && dist < bestDist) {
+        bestDist = dist;
+        bestProvince = p.id;
+      }
+    }
+    if (bestProvince) return bestProvince;
+  }
+
+  return null;
 }
 
 /**
@@ -196,8 +281,8 @@ export function parseCoast(input: string): Coast | null {
  * Extract the orders section from agent response.
  */
 export function extractOrdersSection(response: string): string | null {
-  // Look for ORDERS: section
-  const ordersMatch = response.match(/ORDERS:\s*([\s\S]*?)(?=(?:RETREATS:|BUILDS:|REASONING:|DIPLOMACY:|$))/i);
+  // Look for ORDERS: section (with optional markdown heading markers)
+  const ordersMatch = response.match(/(?:#{1,3}\s*)?ORDERS:\s*([\s\S]*?)(?=(?:RETREATS:|BUILDS:|REASONING:|DIPLOMACY:|$))/i);
   if (ordersMatch) {
     let content = ordersMatch[1].trim();
     // Remove any trailing code block markers
@@ -212,6 +297,24 @@ export function extractOrdersSection(response: string): string | null {
     // Strip "ORDERS:" prefix if it appears at the start of the code block
     content = content.replace(/^ORDERS:\s*/i, '');
     return content;
+  }
+
+  // Last resort: look for lines that look like orders (A/F followed by province patterns)
+  // This handles responses where the LLM just outputs orders without a section header
+  const orderLinePattern = /^[•\-*\d.)]*\s*[AF]\s+[A-Z]{3}\s+(?:HOLD|SUPPORT|CONVOY|->|H$|MOVE)/im;
+  if (orderLinePattern.test(response)) {
+    // Extract all lines that look like orders
+    const lines = response.split('\n');
+    const orderLines: string[] = [];
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (/^[•\-*\d.)]*\s*[AF]\s+[A-Za-z]/i.test(trimmed)) {
+        orderLines.push(trimmed);
+      }
+    }
+    if (orderLines.length > 0) {
+      return orderLines.join('\n');
+    }
   }
 
   return null;
@@ -251,6 +354,43 @@ export function extractDiplomacySection(response: string): string | null {
 }
 
 /**
+ * Clean raw order line: strip markdown, numbering, bullets, and normalize whitespace.
+ */
+function cleanOrderLine(line: string): string {
+  let cleaned = line.trim();
+
+  // Strip markdown bold/italic
+  cleaned = cleaned.replace(/\*\*(.+?)\*\*/g, '$1');
+  cleaned = cleaned.replace(/__(.+?)__/g, '$1');
+  cleaned = cleaned.replace(/\*(.+?)\*/g, '$1');
+  cleaned = cleaned.replace(/_(.+?)_/g, '$1');
+
+  // Strip inline backticks
+  cleaned = cleaned.replace(/`([^`]+)`/g, '$1');
+
+  // Remove numbered list prefixes: "1.", "2)", "1:", etc.
+  cleaned = cleaned.replace(/^\d+[.):\-]\s*/, '');
+
+  // Remove leading dashes, asterisks, or bullets
+  cleaned = cleaned.replace(/^[-*•]\s*/, '');
+
+  // Normalize unicode arrows to ->
+  cleaned = cleaned.replace(/[→⇒⟶]/g, '->');
+
+  // Normalize "Army" / "Fleet" to A / F
+  cleaned = cleaned.replace(/^Army\s+/i, 'A ');
+  cleaned = cleaned.replace(/^Fleet\s+/i, 'F ');
+  // Also handle within support/convoy: "SUPPORT Army" -> "SUPPORT A"
+  cleaned = cleaned.replace(/\bArmy\s+/gi, 'A ');
+  cleaned = cleaned.replace(/\bFleet\s+/gi, 'F ');
+
+  // Collapse multiple spaces
+  cleaned = cleaned.replace(/\s{2,}/g, ' ');
+
+  return cleaned.trim();
+}
+
+/**
  * Parse a single order line.
  */
 export function parseOrderLine(line: string): {
@@ -258,26 +398,37 @@ export function parseOrderLine(line: string): {
   error: string | null;
 } {
   // Clean up the line
-  let cleaned = line.trim();
+  let cleaned = cleanOrderLine(line);
   if (!cleaned || cleaned.startsWith('#') || cleaned.startsWith('//')) {
     return { order: null, error: null };
   }
-
-  // Remove leading dashes or bullets
-  cleaned = cleaned.replace(/^[-*•]\s*/, '');
 
   // Normalize "MOVE TO" and "MOVES TO" to "->"
   cleaned = cleaned.replace(/\s+MOVES?\s+TO\s+/gi, ' -> ');
   // Normalize "MOVE" followed by destination to "->"
   cleaned = cleaned.replace(/\s+MOVE\s+(?!.*(?:SUPPORT|CONVOY|HOLD))/gi, ' -> ');
 
+  // Normalize shorthand: S -> SUPPORT, C -> CONVOY
+  // Only when S or C appears as a standalone word between province-like tokens
+  cleaned = cleaned.replace(/\s+S\s+(?=[AF]\s|[A-Z]{3})/i, ' SUPPORT ');
+  cleaned = cleaned.replace(/\s+C\s+(?=[AF]\s|[A-Z]{3})/i, ' CONVOY ');
+
   // Try to find the action keyword and split there
-  const actionKeywords = ['HOLD', 'SUPPORT', 'CONVOY', '->'];
+  // Include 'H' as a keyword for HOLD shorthand
+  const actionKeywords = ['HOLD', 'SUPPORT', 'CONVOY', '->', 'H'];
   let actionIndex = -1;
 
   for (const kw of actionKeywords) {
     const idx = cleaned.toUpperCase().indexOf(` ${kw}`);
     if (idx !== -1 && (actionIndex === -1 || idx < actionIndex)) {
+      // For single-char keywords (H), verify it's at end of line or followed by space
+      // to avoid matching province names containing H
+      if (kw === 'H') {
+        const afterH = idx + 2; // position after " H"
+        if (afterH < cleaned.length && cleaned[afterH] !== ' ' && cleaned[afterH] !== '\t') {
+          continue; // 'H' is part of a longer word, skip
+        }
+      }
       actionIndex = idx;
     }
   }
@@ -288,9 +439,26 @@ export function parseOrderLine(line: string): {
     actionIndex = arrowIdx;
   }
 
+  // Also check for single dash move pattern: "A PAR - BUR" (but not "->")
+  if (actionIndex === -1) {
+    const singleDashMatch = cleaned.match(/^([AF]?\s*[A-Za-z\s.]+?)\s+-\s+([A-Za-z\s.]+)$/i);
+    if (singleDashMatch) {
+      // Rewrite as arrow notation and re-parse
+      cleaned = cleaned.replace(/\s+-\s+/, ' -> ');
+      const newArrowIdx = cleaned.indexOf('->');
+      if (newArrowIdx !== -1) {
+        actionIndex = newArrowIdx;
+      }
+    }
+  }
+
   if (actionIndex === -1) {
     // No action keyword found, try simple format
-    return parseSimpleOrder(cleaned);
+    const result = parseSimpleOrder(cleaned);
+    if (result.error) {
+      logParseFailure(line, result.error);
+    }
+    return result;
   }
 
   // Extract unit part (before action)
@@ -309,11 +477,17 @@ export function parseOrderLine(line: string): {
   }
 
   if (!unitProvince) {
-    return { order: null, error: `Unknown province: ${unitPart}` };
+    const error = `Unknown province: ${unitPart}`;
+    logParseFailure(line, error);
+    return { order: null, error };
   }
 
   // Parse the action
-  return parseAction(unitProvince, actionPart);
+  const result = parseAction(unitProvince, actionPart);
+  if (result.error) {
+    logParseFailure(line, result.error);
+  }
+  return result;
 }
 
 /**
@@ -360,8 +534,8 @@ function parseAction(
 ): { order: Order | null; error: string | null } {
   const action = actionStr.trim();
 
-  // HOLD
-  if (/^(HOLD|H)$/i.test(action)) {
+  // HOLD (including "H" shorthand and "HOLDS")
+  if (/^(HOLD|HOLDS|H)$/i.test(action)) {
     return {
       order: { type: 'HOLD', unit },
       error: null,
@@ -373,7 +547,7 @@ function parseAction(
   const viaConvoy = /VIA\s+CONVOY/i.test(action);
   const actionClean = action.replace(/\s+VIA\s+CONVOY/gi, '').trim();
 
-  const moveMatch = actionClean.match(/^(?:->|-|MOVE\s+)([A-Za-z\s.\-]+?)(?:\s*\(([^)]+)\))?$/i);
+  const moveMatch = actionClean.match(/^(?:->|-|M\s+|MOVE\s+)([A-Za-z\s.\-]+?)(?:\s*\(([^)]+)\))?$/i);
   if (moveMatch) {
     const destination = normalizeProvince(moveMatch[1]);
     if (!destination) {
@@ -471,12 +645,10 @@ export function parseRetreatLine(line: string): {
   order: RetreatOrder | null;
   error: string | null;
 } {
-  let cleaned = line.trim();
+  let cleaned = cleanOrderLine(line);
   if (!cleaned || cleaned.startsWith('#')) {
     return { order: null, error: null };
   }
-
-  cleaned = cleaned.replace(/^[-*•]\s*/, '');
 
   // DISBAND: [Unit] [Province] DISBAND
   const disbandMatch = cleaned.match(/^([AF])?\s*([A-Za-z\s.]+?)\s+DISBAND$/i);
@@ -488,7 +660,7 @@ export function parseRetreatLine(line: string): {
   }
 
   // RETREAT: [Unit] [Province] -> [Destination]
-  const retreatMatch = cleaned.match(/^([AF])?\s*([A-Za-z\s.]+?)\s*(?:->|-|to)\s*([A-Za-z\s.]+)$/i);
+  const retreatMatch = cleaned.match(/^([AF])?\s*([A-Za-z\s.]+?)\s*(?:->|→|-|to)\s*([A-Za-z\s.]+)$/i);
   if (retreatMatch) {
     const unit = normalizeProvince(retreatMatch[2]);
     const destination = normalizeProvince(retreatMatch[3]);
@@ -498,7 +670,9 @@ export function parseRetreatLine(line: string): {
     }
   }
 
-  return { order: null, error: `Could not parse retreat: ${line}` };
+  const error = `Could not parse retreat: ${line}`;
+  logParseFailure(line, error);
+  return { order: null, error };
 }
 
 /**
@@ -508,12 +682,10 @@ export function parseBuildLine(line: string): {
   order: BuildOrder | null;
   error: string | null;
 } {
-  let cleaned = line.trim();
+  let cleaned = cleanOrderLine(line);
   if (!cleaned || cleaned.startsWith('#')) {
     return { order: null, error: null };
   }
-
-  cleaned = cleaned.replace(/^[-*•]\s*/, '');
 
   // DISBAND: DISBAND [Unit] [Province]
   const disbandMatch = cleaned.match(/^DISBAND\s+([AF])?\s*([A-Za-z\s.]+?)(?:\s*\(([^)]+)\))?$/i);
@@ -545,7 +717,9 @@ export function parseBuildLine(line: string): {
     }
   }
 
-  return { order: null, error: `Could not parse build: ${line}` };
+  const error = `Could not parse build: ${line}`;
+  logParseFailure(line, error);
+  return { order: null, error };
 }
 
 /**
@@ -610,7 +784,8 @@ export function parseDiplomacyLine(line: string): {
     return { action: null, error: null };
   }
 
-  // Remove leading dashes or bullets
+  // Remove leading dashes, bullets, or numbered prefixes
+  cleaned = cleaned.replace(/^\d+[.):\-]\s*/, '');
   cleaned = cleaned.replace(/^[-*•]\s*/, '');
 
   // Parse SEND POWER: "message" format
