@@ -44,6 +44,8 @@ import {
   getMaxRecentEvents,
   getMaxRecentMessages,
   estimateTokens,
+  POWER_SHORT,
+  formatCompactUnits,
   type ContextStats,
 } from './context-compression';
 
@@ -286,6 +288,14 @@ Use \`A\` for Army and \`F\` for Fleet. Province names should be standard abbrev
 `;
 
 /**
+ * Compact game state notation guide for agent system prompts.
+ */
+const COMPACT_NOTATION_GUIDE = `## Game State Notation
+Powers: ENG=England, FRA=France, GER=Germany, ITA=Italy, AUS=Austria, RUS=Russia, TUR=Turkey
+Format: POWER: Xu/Ysc [A:prov,prov F:prov,prov] SC:prov,prov
+Example: ENG: 3u/3sc [F:LON,EDI A:LVP] SC:LON,EDI,LVP`;
+
+/**
  * Response guidelines fallback (inline).
  */
 const RESPONSE_GUIDELINES = `## Response Guidelines
@@ -360,6 +370,11 @@ export function buildSystemPrompt(
     sections.push(`## Personality\n${personalityDesc}`);
   } else {
     sections.push(`## Your Personality\n\n### Character\n${powerPersonality}\n\n### Traits\n${personalityDesc}`);
+  }
+
+  // Notation guide helps agents parse compact game state (omit in aggressive - agent knows by now)
+  if (level !== 'aggressive') {
+    sections.push(COMPACT_NOTATION_GUIDE);
   }
 
   sections.push(orderFormat);
@@ -557,63 +572,52 @@ export function formatStrategicContext(context: PowerStrategicContext): string {
 }
 
 /**
- * Build the game state section of the prompt.
+ * Build the game state section of the prompt using compact notation.
+ * Format: POWER: Xu/Ysc [A:prov,prov F:prov,prov] SC:prov,prov
  */
 function buildGameStateSection(view: AgentGameView): string {
   const lines: string[] = [];
 
   lines.push(`## Current Game State`);
-  lines.push(`**Year**: ${view.year} **Season**: ${view.season} **Phase**: ${view.phase}`);
+  lines.push(`Y:${view.year} S:${view.season} P:${view.phase}`);
 
-  // Your units
-  lines.push(`\n### Your Units (${view.myUnits.length})`);
-  for (const unit of view.myUnits) {
-    const coastStr = unit.coast ? ` (${unit.coast} coast)` : '';
-    lines.push(`- ${unit.type === 'ARMY' ? 'A' : 'F'} ${unit.province}${coastStr}`);
-  }
-
-  // Supply centers
+  // Your forces - compact notation
   const yourSCs = view.supplyCenters.get(view.viewingPower) ?? [];
-  lines.push(`\n### Your Supply Centers (${yourSCs.length})`);
-  lines.push(yourSCs.join(', ') || 'None');
+  const shortName = POWER_SHORT[view.viewingPower] ?? view.viewingPower;
+  lines.push(`You (${shortName}): ${view.myUnits.length}u/${yourSCs.length}sc ${formatCompactUnits(view.myUnits)} SC:${yourSCs.join(',') || 'none'}`);
 
-  // Other powers' units and SCs
-  lines.push(`\n### Other Powers`);
+  // Other powers - compact notation
   for (const [power, units] of view.otherUnits) {
     const scs = view.supplyCenters.get(power) ?? [];
-    lines.push(`**${power}**: ${units.length} units, ${scs.length} SCs`);
-    if (units.length > 0) {
-      lines.push(`  Units: ${units.map(u =>
-        `${u.type === 'ARMY' ? 'A' : 'F'} ${u.province}`
-      ).join(', ')}`);
-    }
+    const pShort = POWER_SHORT[power] ?? power;
+    lines.push(`${pShort}: ${units.length}u/${scs.length}sc ${formatCompactUnits(units)} SC:${scs.join(',') || 'none'}`);
   }
 
   // Pending retreats
   if (view.pendingRetreats && view.pendingRetreats.length > 0) {
-    lines.push(`\n### Units Requiring Retreat`);
+    lines.push(`Retreats:`);
     for (const retreat of view.pendingRetreats) {
-      lines.push(`- ${retreat.unit.type === 'ARMY' ? 'A' : 'F'} ${retreat.unit.province}`);
-      lines.push(`  Dislodged from: ${retreat.dislodgedFrom}`);
-      lines.push(`  Can retreat to: ${retreat.retreatOptions.join(', ') || 'MUST DISBAND'}`);
+      const unitStr = `${retreat.unit.type === 'ARMY' ? 'A' : 'F'} ${retreat.unit.province}`;
+      const opts = retreat.retreatOptions.length > 0 ? retreat.retreatOptions.join(', ') : 'MUST DISBAND';
+      lines.push(`${unitStr} from ${retreat.dislodgedFrom} -> ${opts}`);
     }
   }
 
   // Build count
   if (view.buildCount !== undefined) {
     if (view.buildCount > 0) {
-      lines.push(`\n### Builds Available: ${view.buildCount}`);
+      lines.push(`Builds: ${view.buildCount}`);
       if (view.availableBuildLocations) {
-        lines.push(`Can build in: ${view.availableBuildLocations.join(', ')}`);
+        lines.push(`Locs: ${view.availableBuildLocations.join(',')}`);
       }
     } else if (view.buildCount < 0) {
-      lines.push(`\n### Must Disband: ${Math.abs(view.buildCount)} unit(s)`);
+      lines.push(`Must disband: ${Math.abs(view.buildCount)}`);
     }
   }
 
   // Last order results
   if (view.lastOrderResults && view.lastOrderResults.length > 0) {
-    lines.push(`\n### Last Turn Results`);
+    lines.push(`Results:`);
     for (const result of view.lastOrderResults) {
       const status = result.success ? '✓' : '✗';
       const reason = result.reason ? ` (${result.reason})` : '';
