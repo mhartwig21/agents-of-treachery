@@ -21,3 +21,4 @@ secrets/.keys/
 # Experiment runtime data
 experiments/*/
 experiments/*.log
+experiments/*.json
