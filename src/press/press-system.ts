@@ -200,6 +200,7 @@ export class PressSystem {
       timestamp: new Date(),
       replyTo: request.replyTo,
       metadata,
+      phase: { ...this.context },
     };
 
     // Store the message

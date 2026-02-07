@@ -53,6 +53,8 @@ export interface Message {
   timestamp: Date;
   replyTo?: MessageId; // For threading
   metadata?: MessageMetadata;
+  /** Game phase context when this message was sent */
+  phase?: PressContext;
 }
 
 /**

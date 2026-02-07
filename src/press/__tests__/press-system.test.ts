@@ -377,6 +377,60 @@ describe('AgentPressAPI', () => {
     expect(inbox.recentMessages.length).toBeGreaterThan(0);
   });
 
+  it('sorts inbox messages chronologically (oldest-first)', () => {
+    englandAPI.sendTo('FRANCE', 'First message');
+    englandAPI.sendTo('FRANCE', 'Second message');
+    englandAPI.sendTo('FRANCE', 'Third message');
+
+    const inbox = franceAPI.getInbox();
+    expect(inbox.recentMessages).toHaveLength(3);
+    expect(inbox.recentMessages[0].content).toBe('First message');
+    expect(inbox.recentMessages[1].content).toBe('Second message');
+    expect(inbox.recentMessages[2].content).toBe('Third message');
+  });
+
+  it('deduplicates messages in inbox', () => {
+    englandAPI.sendTo('FRANCE', 'Hello!');
+
+    const inbox = franceAPI.getInbox();
+    const ids = inbox.recentMessages.map((m) => m.id);
+    const uniqueIds = new Set(ids);
+    expect(ids.length).toBe(uniqueIds.size);
+  });
+
+  it('filters inbox messages to current phase', () => {
+    // Send a message in SPRING DIPLOMACY
+    englandAPI.sendTo('FRANCE', 'Spring diplomacy message');
+
+    // Change phase to FALL
+    press.updateContext({
+      gameId: 'test-game',
+      year: 1901,
+      season: 'FALL',
+      phase: 'DIPLOMACY',
+    });
+
+    // Send a message in FALL DIPLOMACY
+    englandAPI.sendTo('FRANCE', 'Fall diplomacy message');
+
+    const inbox = franceAPI.getInbox();
+    // Only the FALL message should appear (current phase)
+    const contents = inbox.recentMessages.map((m) => m.content);
+    expect(contents).toContain('Fall diplomacy message');
+    expect(contents).not.toContain('Spring diplomacy message');
+  });
+
+  it('stores phase context on sent messages', () => {
+    const result = englandAPI.sendTo('FRANCE', 'Test message');
+    expect(result.success).toBe(true);
+    expect(result.data?.phase).toEqual({
+      gameId: 'test-game',
+      year: 1901,
+      season: 'SPRING',
+      phase: 'DIPLOMACY',
+    });
+  });
+
   it('gets conversation with specific power', () => {
     englandAPI.sendTo('FRANCE', 'Message 1');
     franceAPI.sendTo('ENGLAND', 'Message 2');
