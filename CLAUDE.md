@@ -289,3 +289,8 @@ Waiting for mayor to create beads. 7 tasks:
   - Fragile bilateral channel parsing in negotiation-metrics (filed aot-imyfz P2)
   - Consolidation silent LLM error handling (no logging)
   - Context compression returns empty strings on early levels (confusing API)
+- **Full integration gap audit** (all components): Found 13 disconnected components, mailed to mayor for overseer review
+  - CRITICAL dead code: GameStore (event sourcing), AuditLog (450 LOC), Tournament/ELO/Leaderboard (~800 LOC), ReplayExporter (540 LOC)
+  - HIGH: RelationshipGraphPanel renders empty (hook exists but not called), GameLogger at 40% utilization, snapshot persistence in-memory only, analysis modules invisible to spectators, orchestrator enforcement toothless
+  - Pattern: polecats build modules in isolation, modules get exported/tested, but nobody wires them into runtime
+  - Proposed 4 epics: Core Integration Wiring (P0), Architectural Direction Decisions (P0), Server Hardening (P1), Game Lifecycle Completeness (P2)
