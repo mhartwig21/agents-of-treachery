@@ -252,6 +252,7 @@ function parseArgs(): {
   openaiModel: string;
   maxTurns: number;
   maxYears: number;
+  pressPeriod: number;
   outputFile?: string
 } {
   const args = process.argv.slice(2);
@@ -262,6 +263,7 @@ function parseArgs(): {
   let openaiModel = 'gpt-4o-mini';
   let maxTurns = 0; // 0 means unlimited
   let maxYears = 0; // 0 means unlimited
+  let pressPeriod = -1; // -1 means use default (1 min for real, 0 for mock)
   let outputFile: string | undefined;
 
   for (let i = 0; i < args.length; i++) {
@@ -281,13 +283,22 @@ function parseArgs(): {
       maxYears = parseInt(args[i + 1], 10);
       i++;
     }
+    if (args[i] === '--press-period' && args[i + 1]) {
+      pressPeriod = parseFloat(args[i + 1]);
+      i++;
+    }
     if (args[i] === '--output' && args[i + 1]) {
       outputFile = args[i + 1];
       i++;
     }
   }
 
-  return { useMock, useOllama, useOpenAI, ollamaModel, openaiModel, maxTurns, maxYears, outputFile };
+  // Default press period: 0 for mock (instant), 1 for real LLMs
+  if (pressPeriod < 0) {
+    pressPeriod = useMock ? 0 : 1;
+  }
+
+  return { useMock, useOllama, useOpenAI, ollamaModel, openaiModel, maxTurns, maxYears, pressPeriod, outputFile };
 }
 
 // Game state snapshots for export
@@ -304,7 +315,7 @@ interface GameSnapshot {
 async function main() {
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
   const openaiKey = process.env.OPENAI_API_KEY;
-  const { useMock, useOllama, useOpenAI, ollamaModel, openaiModel, maxTurns, maxYears, outputFile } = parseArgs();
+  const { useMock, useOllama, useOpenAI, ollamaModel, openaiModel, maxTurns, maxYears, pressPeriod, outputFile } = parseArgs();
 
   if (!anthropicKey && !openaiKey && !useMock && !useOllama && !useOpenAI) {
     console.error('Error: API key required.');
@@ -316,6 +327,7 @@ async function main() {
     console.error('  --model NAME    Specify model name');
     console.error('  --turns N       Limit to N turns (phases)');
     console.error('  --years N       Limit to N game years');
+    console.error('  --press-period M  Press period in minutes (0=instant, default: 0 for mock, 1 for real)');
     console.error('  --output FILE   Save game state to JSON file');
     process.exit(1);
   }
@@ -384,6 +396,8 @@ async function main() {
     turnTimeout: 120000,
     persistMemory: false,
     verbose: true,
+    pressPeriodMinutes: pressPeriod,
+    pressPollIntervalSeconds: pressPeriod === 0 ? 0.001 : 5,
   };
 
   const runtime = new AgentRuntime(config, llmProvider);
