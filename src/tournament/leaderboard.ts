@@ -19,7 +19,6 @@ import type {
   RatingSnapshot,
   RatingChange,
 } from './types';
-import type { Power } from '../engine/types';
 import { calculatePlacements } from './elo';
 
 /**
@@ -299,13 +298,12 @@ export class Leaderboard {
   }
 
   private updateStreaks(result: GameResult): void {
-    const placements = calculatePlacements(result);
+    // const placements = calculatePlacements(result); // TODO: use for placement-based streaks
 
     for (const [power, participantId] of result.participants) {
       const streak = this.streaks.get(participantId);
       if (!streak) continue;
 
-      const placement = placements.get(power) ?? 7;
       const isWinner = result.winner === power && !result.isDraw;
       const inDraw = result.isDraw && result.drawParticipants?.includes(power);
       const wasEliminated = result.eliminatedPowers.includes(power);

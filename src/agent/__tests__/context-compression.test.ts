@@ -16,7 +16,7 @@ import {
   getMaxRecentMessages,
 } from '../context-compression';
 import { buildSystemPrompt, buildTurnPrompt, getPromptContextStats } from '../prompts';
-import type { AgentPersonality, AgentMemory, AgentGameView, YearSummary, DiaryEntry } from '../types';
+import type { AgentMemory, AgentGameView, YearSummary, DiaryEntry } from '../types';
 import { DEFAULT_PERSONALITY } from '../types';
 import type { Power, Phase } from '../../engine/types';
 

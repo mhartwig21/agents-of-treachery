@@ -236,13 +236,6 @@ export class ActionRelationshipEngine {
   }
 
   /**
-   * Gets the power that owns a unit at a province.
-   */
-  private getUnitOwner(province: string): Power | undefined {
-    return this.unitOwners.get(province);
-  }
-
-  /**
    * Records an action event between two powers.
    */
   private recordAction(
@@ -352,12 +345,12 @@ export class ActionRelationshipEngine {
    * Processes a turn's orders and results to extract relationship signals.
    */
   processTurn(
-    orders: Order[],
+    _orders: Order[],
     results: MovementResolvedEvent,
     captures: SupplyCentersCapturedEvent | null,
     unitsByProvince: Map<string, Power>
   ): void {
-    const { year, season, results: resolutions, dislodged } = results.payload;
+    const { year, season, results: resolutions } = results.payload;
 
     // Update turn tracking
     if (year !== this.currentTurn.year || season !== this.currentTurn.season) {
@@ -508,7 +501,7 @@ export class ActionRelationshipEngine {
     }
 
     // Find moves that targeted supporting units and cut the support
-    for (const { order, success: moveSuccess } of results) {
+    for (const { order } of results) {
       if (order.type !== 'MOVE') continue;
 
       const moveOrder = order as MoveOrder;
@@ -839,7 +832,7 @@ export class ActionRelationshipEngine {
       events: ActionEvent[];
     }> = [];
 
-    for (const [key, state] of this.relationships) {
+    for (const [, state] of this.relationships) {
       if (!state.betrayalDetected || !state.betrayalTurn) continue;
 
       // Find the betrayal event to determine who betrayed whom

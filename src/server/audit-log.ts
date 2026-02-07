@@ -13,9 +13,6 @@ import {
   appendFileSync,
   readFileSync,
   writeFileSync,
-  readdirSync,
-  unlinkSync,
-  statSync,
 } from 'fs';
 import { join, dirname } from 'path';
 

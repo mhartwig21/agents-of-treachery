@@ -871,7 +871,7 @@ export class AgentRuntime {
    */
   private async runSingleAgentTurn(
     power: Power,
-    turnType: 'diplomacy' | 'movement' | 'retreat' | 'build'
+    _turnType: 'diplomacy' | 'movement' | 'retreat' | 'build'
   ): Promise<AgentTurnResult> {
     const session = this.sessionManager.getSession(power);
     if (!session) {

@@ -536,7 +536,7 @@ export class TournamentManager {
       // Get aggregate results across all games in match
       const participantScores = new Map<ParticipantId, number>();
 
-      for (const gameId of match.games) {
+      for (const _gameId of match.games) {
         // In a full implementation, we'd look up the game result
         // For now, use leaderboard data
         for (const id of match.participants) {

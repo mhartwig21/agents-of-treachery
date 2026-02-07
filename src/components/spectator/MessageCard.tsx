@@ -23,6 +23,8 @@ interface MessageCardProps {
 
 const intentColors: Record<MessageIntent, string> = {
   PROPOSAL: 'bg-blue-900/50 text-blue-300',
+  COUNTER_PROPOSAL: 'bg-blue-800/50 text-blue-200',
+  CONDITIONAL: 'bg-indigo-900/50 text-indigo-300',
   ACCEPTANCE: 'bg-green-900/50 text-green-300',
   REJECTION: 'bg-red-900/50 text-red-300',
   THREAT: 'bg-orange-900/50 text-orange-300',
@@ -34,6 +36,8 @@ const intentColors: Record<MessageIntent, string> = {
 
 const intentLabels: Record<MessageIntent, string> = {
   PROPOSAL: 'Proposal',
+  COUNTER_PROPOSAL: 'Counter',
+  CONDITIONAL: 'Conditional',
   ACCEPTANCE: 'Accept',
   REJECTION: 'Reject',
   THREAT: 'Threat',

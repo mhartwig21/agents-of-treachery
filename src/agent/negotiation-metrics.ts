@@ -8,10 +8,10 @@
  * Designed for post-game analysis and real-time agent context enrichment.
  */
 
-import type { Power, Season, Order } from '../engine/types';
+import type { Power, Season } from '../engine/types';
 import { POWERS } from '../engine/types';
 import type { Message } from '../press/types';
-import type { AgentMemory, MessageAnalysis } from './types';
+import type { MessageAnalysis } from './types';
 import type { ExtractedPromise, PromiseReconciliation } from '../analysis/promise-tracker';
 
 /**

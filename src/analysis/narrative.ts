@@ -10,7 +10,6 @@ import type { Power } from '../engine/types';
 import { POWERS } from '../engine/types';
 import {
   readGameLogs,
-  filterLogsByType,
   type GameLogEntry,
   type DeceptionType,
 } from '../server/game-logger';
@@ -295,7 +294,7 @@ export function extractNarrativeContext(gameId: string, logsDir?: string): Narra
  * Generates a narrative report without LLM (pure analysis).
  */
 export function generateBasicNarrative(context: NarrativeContext): NarrativeReport {
-  const { gameId, gameName, winner, isDraw, finalYear, events, finalStandings, stats } = context;
+  const { gameId, events, finalStandings } = context;
 
   // Generate title
   const title = generateTitle(context);
@@ -669,7 +668,7 @@ function generateOpening(context: NarrativeContext): string {
   return opening;
 }
 
-function narrateEvents(events: NarrativeEvent[], era: 'early' | 'mid' | 'late'): string {
+function narrateEvents(events: NarrativeEvent[], _era: 'early' | 'mid' | 'late'): string {
   if (events.length === 0) return '';
 
   const lines: string[] = [];

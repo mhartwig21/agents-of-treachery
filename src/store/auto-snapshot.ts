@@ -99,11 +99,8 @@ function syncStoreWithEvent(
     case 'ORDERS_RESOLVED':
       // Phase was resolved - store is already updated via session
       // We just need to record the phase transition
-      if ('year' in event && 'season' in event) {
-        const e = event as { year: number; season: 'SPRING' | 'FALL'; phase?: string };
-        // Note: The orchestrator emits ORDERS_RESOLVED after resolution
-        // We'll capture state via snapshot rather than trying to replay
-      }
+      // Note: The orchestrator emits ORDERS_RESOLVED after resolution
+      // We'll capture state via snapshot rather than trying to replay
       break;
 
     case 'PHASE_STARTED':
@@ -257,7 +254,6 @@ export async function restoreSession(
   const store = await manager.restoreFromSnapshot(gameId, snapshotId);
 
   // Create a new session with the restored state
-  const { GameSessionSnapshot } = await import('../orchestration/types');
   const { GameSession } = await import('../orchestration/session');
 
   // Build session snapshot from store snapshot

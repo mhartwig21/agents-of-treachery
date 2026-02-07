@@ -340,7 +340,7 @@ export function findNearestOpportunities(
  */
 export function findConvoyRoutes(
   army: Unit,
-  state: GameState,
+  _state: GameState,
   myFleets: Unit[],
   maxRoutes: number = 3
 ): ConvoyRoute[] {

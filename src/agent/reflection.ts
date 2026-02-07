@@ -51,10 +51,10 @@ function getRelevantMessages(
   reflectingPower: Power,
   otherPower: Power
 ): Message[] {
+  // Messages are in channels with participants; filter by sender
+  // (bilateral channels mean either power sent to the other)
   return messages.filter(m =>
-    (m.sender === reflectingPower && m.recipients?.includes(otherPower)) ||
-    (m.sender === otherPower && m.recipients?.includes(reflectingPower)) ||
-    (m.sender === otherPower && (!m.recipients || m.recipients.length === 0))
+    m.sender === reflectingPower || m.sender === otherPower
   );
 }
 

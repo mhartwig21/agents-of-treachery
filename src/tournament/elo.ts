@@ -10,7 +10,6 @@ import type {
   Rating,
   GameResult,
   RatingChange,
-  TournamentConfig,
 } from './types';
 import type { Power } from '../engine/types';
 import { POWERS } from '../engine/types';
