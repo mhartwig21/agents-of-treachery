@@ -105,7 +105,7 @@ npm run test:watch        # Watch mode
 npm run test:coverage     # With coverage report
 ```
 
-**Current Coverage**: 1317 unit tests passing (48 test files)
+**Current Coverage**: 1488 unit tests passing (50 test files)
 
 **Test Files**: `src/**/*.test.ts`
 - `src/engine/engine.test.ts` - Core game engine logic
@@ -118,16 +118,21 @@ npm run test:coverage     # With coverage report
 - `src/agent/__tests__/memory.test.ts` - Trust, memory, relationships (58 tests)
 - `src/agent/__tests__/game-view.test.ts` - Agent perception of game state (60 tests)
 - `src/agent/__tests__/personalities.test.ts` - Power personality config (15 tests)
+- `src/agent/__tests__/session.test.ts` - Agent session management (29 tests)
+- `src/agent/__tests__/runtime.test.ts` - Agent runtime coordinator (30 tests)
 - `src/agent/__tests__/pathfinding.test.ts` - BFS pathfinding
 - `src/agent/__tests__/diary.test.ts` - Diary/memory consolidation
 - `src/agent/__tests__/negotiation.test.ts` - Negotiation analysis
 - `src/agent/__tests__/reflection.test.ts` - Post-turn reflection/betrayal detection
 - `src/press/__tests__/press-system.test.ts` - Press/messaging
 - `src/server/__tests__/game-server.test.ts` - Game server
+- `src/server/__tests__/game-logger.test.ts` - Structured game logging (38 tests)
 - `src/store/__tests__/game-store.test.ts` - State management (extended with retreat/build/snapshot tests)
 - `src/analysis/__tests__/deception.test.ts` - Lie detection
 - `src/analysis/__tests__/promise-tracker.test.ts` - Promise tracking
 - `src/analysis/__tests__/relationships.test.ts` - Relationship analysis
+- `src/orchestration/__tests__/orchestrator.test.ts` - Phase management, deadlines, agents (32 tests)
+- `src/orchestration/__tests__/session.test.ts` - Game session lifecycle (42 tests)
 - `src/orchestration/__tests__/orchestration.test.ts` - Game orchestration (extended with retreat/build/outcome tests)
 - `src/__tests__/smoke.test.ts` - Basic smoke tests
 - `src/secrets/__tests__/vault.test.ts` - Secrets vault
