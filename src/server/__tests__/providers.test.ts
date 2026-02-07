@@ -7,10 +7,12 @@ import {
   createOpenRouterProvider,
   createAnthropicProvider,
   createOpenAIProvider,
+  createOpenAICompatibleProvider,
   createOllamaProvider,
   createProviderFromConfig,
   createMultiModelProvider,
   createUsageTrackingProvider,
+  fetchWithRetry,
   type ProviderConfig,
 } from '../providers';
 import type { LLMProvider } from '../../agent/types';
@@ -309,6 +311,191 @@ describe('Provider Factory Functions', () => {
       });
       expect(result3.content).toBe('Default response');
       expect(defaultProvider.complete).toHaveBeenCalled();
+    });
+  });
+
+  describe('fetchWithRetry', () => {
+    let consoleSpy: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(() => {
+      consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+      consoleSpy.mockRestore();
+    });
+
+    it('should return response on success', async () => {
+      const okResponse = { ok: true, status: 200 };
+      mockFetch.mockResolvedValueOnce(okResponse);
+
+      const result = await fetchWithRetry('https://api.example.com', { method: 'POST' }, 3, 1);
+      expect(result).toBe(okResponse);
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('should retry on 429 rate limit and succeed', async () => {
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: false, status: 429,
+          headers: new Headers(), text: async () => 'Rate limited',
+        })
+        .mockResolvedValueOnce({ ok: true, status: 200 });
+
+      const result = await fetchWithRetry('https://api.example.com', { method: 'POST' }, 3, 1);
+      expect(result.ok).toBe(true);
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+    });
+
+    it('should retry on 500 server error and succeed', async () => {
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: false, status: 500,
+          headers: new Headers(), text: async () => 'Internal Server Error',
+        })
+        .mockResolvedValueOnce({ ok: true, status: 200 });
+
+      const result = await fetchWithRetry('https://api.example.com', { method: 'POST' }, 3, 1);
+      expect(result.ok).toBe(true);
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+    });
+
+    it('should respect Retry-After header', async () => {
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: false, status: 429,
+          headers: new Headers({ 'retry-after': '1' }),
+          text: async () => 'Rate limited',
+        })
+        .mockResolvedValueOnce({ ok: true, status: 200 });
+
+      const result = await fetchWithRetry('https://api.example.com', { method: 'POST' }, 3, 1);
+      expect(result.ok).toBe(true);
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+    });
+
+    it('should throw after exhausting retries on 429', async () => {
+      for (let i = 0; i <= 2; i++) {
+        mockFetch.mockResolvedValueOnce({
+          ok: false, status: 429,
+          headers: new Headers(), text: async () => 'Rate limited',
+        });
+      }
+
+      await expect(
+        fetchWithRetry('https://api.example.com', { method: 'POST' }, 2, 1)
+      ).rejects.toThrow('API error (429) after 2 retries');
+    });
+
+    it('should not retry on 400 client errors', async () => {
+      const badRequest = { ok: false, status: 400, text: async () => 'Bad Request' };
+      mockFetch.mockResolvedValueOnce(badRequest);
+
+      const result = await fetchWithRetry('https://api.example.com', { method: 'POST' }, 3, 1);
+      expect(result.status).toBe(400);
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('should retry on network errors', async () => {
+      mockFetch
+        .mockRejectedValueOnce(new Error('ECONNRESET'))
+        .mockResolvedValueOnce({ ok: true, status: 200 });
+
+      const result = await fetchWithRetry('https://api.example.com', { method: 'POST' }, 3, 1);
+      expect(result.ok).toBe(true);
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+    });
+
+    it('should throw after exhausting retries on network errors', async () => {
+      mockFetch
+        .mockRejectedValueOnce(new Error('ECONNRESET'))
+        .mockRejectedValueOnce(new Error('ECONNRESET'));
+
+      await expect(
+        fetchWithRetry('https://api.example.com', { method: 'POST' }, 1, 1)
+      ).rejects.toThrow('Network error after 1 retries');
+    });
+  });
+
+  describe('retry integration with providers', () => {
+    let consoleSpy: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(() => {
+      consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+      consoleSpy.mockRestore();
+    });
+
+    it('OpenRouter should retry on rate limit then succeed', async () => {
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: false, status: 429,
+          headers: new Headers(), text: async () => 'Rate limited',
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            choices: [{ message: { content: 'Retried OK' }, finish_reason: 'stop' }],
+            usage: { prompt_tokens: 10, completion_tokens: 20 },
+          }),
+        });
+
+      const provider = createOpenRouterProvider('test-key', 'model', { maxRetries: 3, baseDelay: 1 });
+      const result = await provider.complete({
+        messages: [{ role: 'user', content: 'Hello', timestamp: new Date() }],
+      });
+
+      expect(result.content).toBe('Retried OK');
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+    });
+
+    it('Anthropic should retry on rate limit then succeed', async () => {
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: false, status: 429,
+          headers: new Headers(), text: async () => 'Rate limited',
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            content: [{ text: 'Retried OK' }],
+            usage: { input_tokens: 10, output_tokens: 20 },
+            stop_reason: 'end_turn',
+          }),
+        });
+
+      const provider = createAnthropicProvider('test-key', undefined, { maxRetries: 3, baseDelay: 1 });
+      const result = await provider.complete({
+        messages: [{ role: 'user', content: 'Hello', timestamp: new Date() }],
+      });
+
+      expect(result.content).toBe('Retried OK');
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+    });
+
+    it('OpenAI should retry on rate limit then succeed', async () => {
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: false, status: 429,
+          headers: new Headers(), text: async () => 'Rate limited',
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            choices: [{ message: { content: 'Retried OK' }, finish_reason: 'stop' }],
+            usage: { prompt_tokens: 10, completion_tokens: 20 },
+          }),
+        });
+
+      const provider = createOpenAICompatibleProvider('https://api.openai.com', 'test-key', 'gpt-4o-mini', 3, 1);
+      const result = await provider.complete({
+        messages: [{ role: 'user', content: 'Hello', timestamp: new Date() }],
+      });
+
+      expect(result.content).toBe('Retried OK');
+      expect(mockFetch).toHaveBeenCalledTimes(2);
     });
   });
 

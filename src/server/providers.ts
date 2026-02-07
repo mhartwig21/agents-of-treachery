@@ -12,6 +12,63 @@
 
 import type { LLMProvider, LLMCompletionParams } from '../agent/types';
 
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+/**
+ * Performs a fetch with exponential backoff retry for rate limits (429)
+ * and server errors (5xx). Respects Retry-After headers when present.
+ */
+export async function fetchWithRetry(
+  url: string,
+  init: RequestInit,
+  maxRetries: number = 8,
+  baseDelay: number = 10000
+): Promise<Response> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    let response: Response;
+    try {
+      response = await fetch(url, init);
+    } catch (networkError) {
+      if (attempt === maxRetries) {
+        throw new Error(`Network error after ${maxRetries} retries: ${networkError}`);
+      }
+      const waitTime = baseDelay * Math.pow(2, attempt);
+      console.log(`  ⏳ Network error. Waiting ${Math.round(waitTime / 1000)}s before retry ${attempt + 1}/${maxRetries}...`);
+      await sleep(waitTime);
+      continue;
+    }
+
+    if (response.ok) {
+      return response;
+    }
+
+    if (response.status === 429 || (response.status >= 500 && response.status < 600)) {
+      if (attempt === maxRetries) {
+        const error = await response.text();
+        throw new Error(`API error (${response.status}) after ${maxRetries} retries: ${error}`);
+      }
+
+      const retryAfter = response.headers.get('retry-after');
+      let waitTime: number;
+      if (retryAfter) {
+        waitTime = parseInt(retryAfter, 10) * 1000;
+      } else {
+        waitTime = baseDelay * Math.pow(2, attempt);
+      }
+
+      const errorType = response.status === 429 ? 'Rate limited' : `Server error (${response.status})`;
+      console.log(`  ⏳ ${errorType}. Waiting ${Math.round(waitTime / 1000)}s before retry ${attempt + 1}/${maxRetries}...`);
+      await sleep(waitTime);
+      continue;
+    }
+
+    // Non-retryable errors
+    return response;
+  }
+
+  throw new Error('Unexpected end of retry loop');
+}
+
 /**
  * Supported LLM provider types.
  */
@@ -71,7 +128,7 @@ export interface ModelConfig {
 export function createOpenRouterProvider(
   apiKey: string,
   defaultModel: string = 'anthropic/claude-3-haiku',
-  options?: { siteUrl?: string; siteName?: string }
+  options?: { siteUrl?: string; siteName?: string; maxRetries?: number; baseDelay?: number }
 ): LLMProvider {
   const baseUrl = 'https://openrouter.ai/api/v1';
 
@@ -86,7 +143,7 @@ export function createOpenRouterProvider(
         'X-Title': options?.siteName || 'Agents of Treachery',
       };
 
-      const response = await fetch(`${baseUrl}/chat/completions`, {
+      const response = await fetchWithRetry(`${baseUrl}/chat/completions`, {
         method: 'POST',
         headers,
         body: JSON.stringify({
@@ -99,7 +156,7 @@ export function createOpenRouterProvider(
           })),
           stop: params.stopSequences,
         }),
-      });
+      }, options?.maxRetries, options?.baseDelay);
 
       if (!response.ok) {
         const error = await response.text();
@@ -126,10 +183,14 @@ export function createOpenRouterProvider(
 /**
  * Creates an Anthropic LLM provider for direct Claude API access.
  */
-export function createAnthropicProvider(apiKey: string, defaultModel: string = 'claude-3-haiku-20240307'): LLMProvider {
+export function createAnthropicProvider(
+  apiKey: string,
+  defaultModel: string = 'claude-3-haiku-20240307',
+  options?: { maxRetries?: number; baseDelay?: number }
+): LLMProvider {
   return {
     async complete(params: LLMCompletionParams) {
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
+      const response = await fetchWithRetry('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -148,7 +209,7 @@ export function createAnthropicProvider(apiKey: string, defaultModel: string = '
             })),
           system: params.messages.find((m) => m.role === 'system')?.content,
         }),
-      });
+      }, options?.maxRetries, options?.baseDelay);
 
       if (!response.ok) {
         const error = await response.text();
@@ -181,8 +242,6 @@ export function createOpenAICompatibleProvider(
   maxRetries: number = 8,
   baseDelay: number = 10000
 ): LLMProvider {
-  const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
   return {
     async complete(params: LLMCompletionParams) {
       // Map model names - allow Claude-style names to be passed through
@@ -198,79 +257,39 @@ export function createOpenAICompatibleProvider(
         headers['Authorization'] = `Bearer ${apiKey}`;
       }
 
-      const body = JSON.stringify({
-        model,
-        max_tokens: params.maxTokens || 1024,
-        temperature: params.temperature ?? 0.7,
-        messages: params.messages.map((m) => ({
-          role: m.role,
-          content: m.content,
-        })),
-        stop: params.stopSequences,
-      });
+      const response = await fetchWithRetry(`${baseUrl}/v1/chat/completions`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          model,
+          max_tokens: params.maxTokens || 1024,
+          temperature: params.temperature ?? 0.7,
+          messages: params.messages.map((m) => ({
+            role: m.role,
+            content: m.content,
+          })),
+          stop: params.stopSequences,
+        }),
+      }, maxRetries, baseDelay);
 
-      // Retry loop with exponential backoff for rate limits and server errors
-      for (let attempt = 0; attempt <= maxRetries; attempt++) {
-        let response: Response;
-        try {
-          response = await fetch(`${baseUrl}/v1/chat/completions`, {
-            method: 'POST',
-            headers,
-            body,
-          });
-        } catch (networkError) {
-          if (attempt === maxRetries) {
-            throw new Error(`Network error after ${maxRetries} retries: ${networkError}`);
-          }
-          const waitTime = baseDelay * Math.pow(2, attempt);
-          console.log(`  ⏳ Network error. Waiting ${Math.round(waitTime / 1000)}s before retry ${attempt + 1}/${maxRetries}...`);
-          await sleep(waitTime);
-          continue;
-        }
-
-        if (response.ok) {
-          const data = await response.json();
-          const content = data.choices?.[0]?.message?.content || '';
-          const finishReason = data.choices?.[0]?.finish_reason;
-
-          return {
-            content,
-            usage: {
-              inputTokens: data.usage?.prompt_tokens || 0,
-              outputTokens: data.usage?.completion_tokens || 0,
-            },
-            stopReason: finishReason === 'stop' ? 'end_turn' :
-                        finishReason === 'length' ? 'max_tokens' : 'end_turn',
-          };
-        }
-
-        // Handle rate limits (429) and server errors (5xx) with exponential backoff
-        if (response.status === 429 || (response.status >= 500 && response.status < 600)) {
-          if (attempt === maxRetries) {
-            const error = await response.text();
-            throw new Error(`API error (${response.status}) after ${maxRetries} retries: ${error}`);
-          }
-
-          const retryAfter = response.headers.get('retry-after');
-          let waitTime: number;
-          if (retryAfter) {
-            waitTime = parseInt(retryAfter, 10) * 1000;
-          } else {
-            waitTime = baseDelay * Math.pow(2, attempt);
-          }
-
-          const errorType = response.status === 429 ? 'Rate limited' : `Server error (${response.status})`;
-          console.log(`  ⏳ ${errorType}. Waiting ${Math.round(waitTime / 1000)}s before retry ${attempt + 1}/${maxRetries}...`);
-          await sleep(waitTime);
-          continue;
-        }
-
-        // Other errors (4xx except 429) are not retried
+      if (!response.ok) {
         const error = await response.text();
         throw new Error(`LLM API error: ${response.status} - ${error}`);
       }
 
-      throw new Error('Unexpected end of retry loop');
+      const data = await response.json();
+      const content = data.choices?.[0]?.message?.content || '';
+      const finishReason = data.choices?.[0]?.finish_reason;
+
+      return {
+        content,
+        usage: {
+          inputTokens: data.usage?.prompt_tokens || 0,
+          outputTokens: data.usage?.completion_tokens || 0,
+        },
+        stopReason: finishReason === 'stop' ? 'end_turn' :
+                    finishReason === 'length' ? 'max_tokens' : 'end_turn',
+      };
     },
   };
 }
