@@ -365,6 +365,365 @@ describe('generatePowerStrategicContext', () => {
     expect(context.expansionScore).toBeGreaterThanOrEqual(0);
     expect(context.reachableTargets).toBeDefined();
   });
+
+  // --- Reachable supply centers at correct distances ---
+
+  it('finds reachable SCs at distance 1 from adjacent units', () => {
+    // Army in BUR is adjacent to MUN (German SC, distance 1)
+    const units: Unit[] = [
+      { power: 'FRANCE', type: 'ARMY', province: 'BUR' },
+    ];
+    const state = createTestGameState(units);
+    const context = generatePowerStrategicContext('FRANCE', state);
+
+    const mun = context.reachableTargets.find(t => t.province === 'MUN');
+    expect(mun).toBeDefined();
+    expect(mun!.distance).toBe(1);
+    expect(mun!.owner).toBe('GERMANY');
+  });
+
+  it('finds reachable SCs at distance 2', () => {
+    // Army in PAR: PAR -> BUR -> MUN = distance 2
+    const units: Unit[] = [
+      { power: 'FRANCE', type: 'ARMY', province: 'PAR' },
+    ];
+    const state = createTestGameState(units);
+    const context = generatePowerStrategicContext('FRANCE', state);
+
+    const mun = context.reachableTargets.find(t => t.province === 'MUN');
+    expect(mun).toBeDefined();
+    expect(mun!.distance).toBe(2);
+    expect(mun!.path[0]).toBe('PAR');
+    expect(mun!.path[mun!.path.length - 1]).toBe('MUN');
+  });
+
+  it('does not include own SCs as reachable targets', () => {
+    const units: Unit[] = [
+      { power: 'FRANCE', type: 'ARMY', province: 'PAR' },
+    ];
+    const state = createTestGameState(units);
+    const context = generatePowerStrategicContext('FRANCE', state);
+
+    const frenchTargets = context.reachableTargets.filter(t => t.owner === 'FRANCE');
+    expect(frenchTargets).toHaveLength(0);
+  });
+
+  it('picks shortest distance when multiple units can reach same SC', () => {
+    // BUR is distance 1 from MUN, PAR is distance 2 from MUN
+    const units: Unit[] = [
+      { power: 'FRANCE', type: 'ARMY', province: 'PAR' },
+      { power: 'FRANCE', type: 'ARMY', province: 'BUR' },
+    ];
+    const state = createTestGameState(units);
+    const context = generatePowerStrategicContext('FRANCE', state);
+
+    const mun = context.reachableTargets.find(t => t.province === 'MUN');
+    expect(mun).toBeDefined();
+    // Should use the closer unit (BUR, distance 1) not PAR (distance 2)
+    expect(mun!.distance).toBe(1);
+  });
+
+  it('identifies neutral SCs as having no owner', () => {
+    // Set up state with some neutral SCs
+    const units: Unit[] = [
+      { power: 'FRANCE', type: 'ARMY', province: 'BUR' },
+    ];
+    const supplyCenters = new Map<string, Power>([
+      ['PAR', 'FRANCE'],
+      ['MAR', 'FRANCE'],
+      ['BRE', 'FRANCE'],
+      // BEL is a SC but not in the map → neutral
+    ]);
+    const state = createTestGameState(units, supplyCenters);
+
+    const context = generatePowerStrategicContext('FRANCE', state);
+
+    // BEL is adjacent to BUR and is a neutral SC
+    const bel = context.reachableTargets.find(t => t.province === 'BEL');
+    expect(bel).toBeDefined();
+    expect(bel!.owner).toBeUndefined();
+    expect(bel!.distance).toBe(1);
+  });
+
+  // --- Threat assessment matches actual board position ---
+
+  it('threat level is LOW with no enemy units nearby', () => {
+    const units: Unit[] = [
+      { power: 'FRANCE', type: 'ARMY', province: 'PAR' },
+      { power: 'FRANCE', type: 'FLEET', province: 'BRE' },
+    ];
+    const state = createTestGameState(units);
+    const context = generatePowerStrategicContext('FRANCE', state);
+
+    expect(context.threatLevel).toBe('LOW');
+  });
+
+  it('threat level escalates when enemies are adjacent to SCs', () => {
+    // German armies adjacent to French SCs
+    const units: Unit[] = [
+      { power: 'FRANCE', type: 'ARMY', province: 'PAR' },
+      { power: 'GERMANY', type: 'ARMY', province: 'PIC' },  // adjacent to PAR & BRE
+      { power: 'GERMANY', type: 'ARMY', province: 'GAS' },  // adjacent to PAR, BRE, MAR
+    ];
+    const state = createTestGameState(units);
+    const context = generatePowerStrategicContext('FRANCE', state);
+
+    // Two enemies adjacent to French SCs → should be HIGH or CRITICAL
+    expect(['HIGH', 'CRITICAL']).toContain(context.threatLevel);
+  });
+
+  it('immediateThreatPowers lists powers with units near our SCs', () => {
+    const units: Unit[] = [
+      { power: 'FRANCE', type: 'ARMY', province: 'PAR' },
+      { power: 'GERMANY', type: 'ARMY', province: 'BUR' },  // 1 move from PAR
+    ];
+    const state = createTestGameState(units);
+    const context = generatePowerStrategicContext('FRANCE', state);
+
+    expect(context.immediateThreatPowers).toContain('GERMANY');
+  });
+
+  it('immediateThreatPowers excludes distant powers', () => {
+    const units: Unit[] = [
+      { power: 'FRANCE', type: 'ARMY', province: 'PAR' },
+      { power: 'TURKEY', type: 'ARMY', province: 'SMY' },  // very far from France
+    ];
+    const state = createTestGameState(units);
+    const context = generatePowerStrategicContext('FRANCE', state);
+
+    expect(context.immediateThreatPowers).not.toContain('TURKEY');
+  });
+
+  // --- Unit analysis shows correct adjacent provinces ---
+
+  it('unit contexts show correct adjacent provinces for army', () => {
+    // PAR is adjacent to BRE, PIC, BUR, GAS
+    const units: Unit[] = [
+      { power: 'FRANCE', type: 'ARMY', province: 'PAR' },
+    ];
+    const state = createTestGameState(units);
+    const context = generatePowerStrategicContext('FRANCE', state);
+
+    const parCtx = context.unitContexts.find(c => c.unit.province === 'PAR');
+    expect(parCtx).toBeDefined();
+
+    const adjProvinces = parCtx!.adjacentStatus.map(a => a.province);
+    // PAR adj: BRE, PIC, BUR, GAS — all LAND/COASTAL, so army can reach all
+    expect(adjProvinces).toContain('BRE');
+    expect(adjProvinces).toContain('PIC');
+    expect(adjProvinces).toContain('BUR');
+    expect(adjProvinces).toContain('GAS');
+  });
+
+  it('unit contexts show correct adjacent provinces for fleet', () => {
+    // LON is adjacent to YOR, WAL, NTH, ENG; fleet can reach all (all COASTAL/SEA)
+    const units: Unit[] = [
+      { power: 'ENGLAND', type: 'FLEET', province: 'LON' },
+    ];
+    const supplyCenters = new Map<string, Power>([
+      ['LON', 'ENGLAND'],
+      ['LVP', 'ENGLAND'],
+      ['EDI', 'ENGLAND'],
+    ]);
+    const state = createTestGameState(units, supplyCenters);
+    const context = generatePowerStrategicContext('ENGLAND', state);
+
+    const lonCtx = context.unitContexts.find(c => c.unit.province === 'LON');
+    expect(lonCtx).toBeDefined();
+
+    const adjProvinces = lonCtx!.adjacentStatus.map(a => a.province);
+    expect(adjProvinces).toContain('YOR');
+    expect(adjProvinces).toContain('WAL');
+    expect(adjProvinces).toContain('NTH');
+    expect(adjProvinces).toContain('ENG');
+  });
+
+  it('unit contexts correctly mark occupied adjacent provinces', () => {
+    const units: Unit[] = [
+      { power: 'FRANCE', type: 'ARMY', province: 'PAR' },
+      { power: 'GERMANY', type: 'ARMY', province: 'BUR' },
+    ];
+    const state = createTestGameState(units);
+    const context = generatePowerStrategicContext('FRANCE', state);
+
+    const parCtx = context.unitContexts.find(c => c.unit.province === 'PAR');
+    expect(parCtx).toBeDefined();
+
+    const burAdj = parCtx!.adjacentStatus.find(a => a.province === 'BUR');
+    expect(burAdj).toBeDefined();
+    expect(burAdj!.occupant).toBeDefined();
+    expect(burAdj!.occupant!.power).toBe('GERMANY');
+    expect(burAdj!.occupant!.type).toBe('ARMY');
+  });
+
+  it('unit contexts mark adjacent supply centers correctly', () => {
+    // BUR is adjacent to MUN (SC), BEL (SC), MAR (SC), PAR (SC)
+    const units: Unit[] = [
+      { power: 'FRANCE', type: 'ARMY', province: 'BUR' },
+    ];
+    const state = createTestGameState(units);
+    const context = generatePowerStrategicContext('FRANCE', state);
+
+    const burCtx = context.unitContexts.find(c => c.unit.province === 'BUR');
+    expect(burCtx).toBeDefined();
+
+    const munAdj = burCtx!.adjacentStatus.find(a => a.province === 'MUN');
+    expect(munAdj).toBeDefined();
+    expect(munAdj!.supplyCenter).toBe(true);
+    expect(munAdj!.scOwner).toBe('GERMANY');
+
+    const belAdj = burCtx!.adjacentStatus.find(a => a.province === 'BEL');
+    // BEL is a COASTAL province adjacent to BUR; army can reach COASTAL
+    if (belAdj) {
+      expect(belAdj.supplyCenter).toBe(true);
+    }
+  });
+
+  // --- Contested territories identified correctly ---
+
+  it('marks reachable targets as contested when enemy unit is present', () => {
+    const units: Unit[] = [
+      { power: 'FRANCE', type: 'ARMY', province: 'BUR' },
+      { power: 'GERMANY', type: 'ARMY', province: 'MUN' },
+    ];
+    const state = createTestGameState(units);
+    const context = generatePowerStrategicContext('FRANCE', state);
+
+    const mun = context.reachableTargets.find(t => t.province === 'MUN');
+    expect(mun).toBeDefined();
+    expect(mun!.contested).toBe(true);
+  });
+
+  it('marks reachable targets as uncontested when no enemy unit present', () => {
+    const units: Unit[] = [
+      { power: 'FRANCE', type: 'ARMY', province: 'BUR' },
+    ];
+    const state = createTestGameState(units);
+    const context = generatePowerStrategicContext('FRANCE', state);
+
+    // MUN is a German SC but no unit there
+    const mun = context.reachableTargets.find(t => t.province === 'MUN');
+    expect(mun).toBeDefined();
+    expect(mun!.contested).toBe(false);
+  });
+
+  // --- Expansion score ---
+
+  it('expansion score increases with more reachable targets', () => {
+    // Single unit in corner: fewer targets
+    const unitsCorner: Unit[] = [
+      { power: 'ENGLAND', type: 'FLEET', province: 'LON' },
+    ];
+    const scsCorner = new Map<string, Power>([['LON', 'ENGLAND']]);
+    const stateCorner = createTestGameState(unitsCorner, scsCorner);
+    const contextCorner = generatePowerStrategicContext('ENGLAND', stateCorner);
+
+    // Multiple units in central positions: more targets
+    const unitsCentral: Unit[] = [
+      { power: 'FRANCE', type: 'ARMY', province: 'BUR' },
+      { power: 'FRANCE', type: 'ARMY', province: 'MAR' },
+    ];
+    const scsCentral = new Map<string, Power>([['PAR', 'FRANCE'], ['MAR', 'FRANCE']]);
+    const stateCentral = createTestGameState(unitsCentral, scsCentral);
+    const contextCentral = generatePowerStrategicContext('FRANCE', stateCentral);
+
+    expect(contextCentral.expansionScore).toBeGreaterThan(contextCorner.expansionScore);
+  });
+
+  // --- Full board scenario: standard opening positions ---
+
+  it('produces correct context for standard opening positions', () => {
+    const units: Unit[] = [
+      // England
+      { power: 'ENGLAND', type: 'FLEET', province: 'LON' },
+      { power: 'ENGLAND', type: 'ARMY', province: 'LVP' },
+      { power: 'ENGLAND', type: 'FLEET', province: 'EDI' },
+      // France
+      { power: 'FRANCE', type: 'ARMY', province: 'PAR' },
+      { power: 'FRANCE', type: 'FLEET', province: 'BRE' },
+      { power: 'FRANCE', type: 'ARMY', province: 'MAR' },
+      // Germany
+      { power: 'GERMANY', type: 'ARMY', province: 'BER' },
+      { power: 'GERMANY', type: 'ARMY', province: 'MUN' },
+      { power: 'GERMANY', type: 'FLEET', province: 'KIE' },
+    ];
+
+    const supplyCenters = new Map<string, Power>([
+      ['LON', 'ENGLAND'], ['LVP', 'ENGLAND'], ['EDI', 'ENGLAND'],
+      ['PAR', 'FRANCE'], ['BRE', 'FRANCE'], ['MAR', 'FRANCE'],
+      ['BER', 'GERMANY'], ['MUN', 'GERMANY'], ['KIE', 'GERMANY'],
+    ]);
+
+    const state = createTestGameState(units, supplyCenters);
+
+    // Test France context
+    const franceCtx = generatePowerStrategicContext('FRANCE', state);
+    expect(franceCtx.unitContexts).toHaveLength(3);
+
+    // France should see neutral SCs as reachable (SPA, BEL, POR, etc.)
+    const reachableProvinces = franceCtx.reachableTargets.map(t => t.province);
+    // SPA is adjacent to MAR (distance 1) and reachable from GAS via PAR (distance 2)
+    expect(reachableProvinces).toContain('SPA');
+
+    // France in standard opening should see Germany as an immediate threat
+    // (MUN -> BUR -> PAR is 2 moves to a French SC)
+    expect(franceCtx.immediateThreatPowers).toContain('GERMANY');
+
+    // Test Germany context
+    const germanyCtx = generatePowerStrategicContext('GERMANY', state);
+    expect(germanyCtx.unitContexts).toHaveLength(3);
+
+    // Germany should see neutral SCs like HOL, DEN, BEL
+    const germanyReachable = germanyCtx.reachableTargets.map(t => t.province);
+    expect(germanyReachable).toContain('HOL');  // KIE adj to HOL (dist 1)
+    expect(germanyReachable).toContain('DEN');  // KIE adj to DEN via HEL or direct
+  });
+
+  // --- Per-unit threat detection ---
+
+  it('unit contexts identify nearest threats with correct distances', () => {
+    const units: Unit[] = [
+      { power: 'FRANCE', type: 'ARMY', province: 'PAR' },
+      { power: 'GERMANY', type: 'ARMY', province: 'BUR' },  // distance 1 from PAR
+      { power: 'GERMANY', type: 'ARMY', province: 'MUN' },  // distance 2 from PAR (MUN->BUR->PAR)
+    ];
+    const state = createTestGameState(units);
+    const context = generatePowerStrategicContext('FRANCE', state);
+
+    const parCtx = context.unitContexts.find(c => c.unit.province === 'PAR');
+    expect(parCtx).toBeDefined();
+    expect(parCtx!.nearestThreats.length).toBeGreaterThanOrEqual(2);
+
+    // Threats should be sorted by distance
+    expect(parCtx!.nearestThreats[0].distance)
+      .toBeLessThanOrEqual(parCtx!.nearestThreats[1].distance);
+
+    // Closest threat should be BUR at distance 1
+    expect(parCtx!.nearestThreats[0].unit.province).toBe('BUR');
+    expect(parCtx!.nearestThreats[0].distance).toBe(1);
+    expect(parCtx!.nearestThreats[0].power).toBe('GERMANY');
+  });
+
+  it('unit contexts identify nearest opportunities with correct distances', () => {
+    // MAR is adjacent to SPA (neutral SC, distance 1)
+    const units: Unit[] = [
+      { power: 'FRANCE', type: 'ARMY', province: 'MAR' },
+    ];
+    const supplyCenters = new Map<string, Power>([
+      ['PAR', 'FRANCE'], ['MAR', 'FRANCE'], ['BRE', 'FRANCE'],
+    ]);
+    const state = createTestGameState(units, supplyCenters);
+    const context = generatePowerStrategicContext('FRANCE', state);
+
+    const marCtx = context.unitContexts.find(c => c.unit.province === 'MAR');
+    expect(marCtx).toBeDefined();
+
+    const spaOpp = marCtx!.nearestOpportunities.find(o => o.province === 'SPA');
+    expect(spaOpp).toBeDefined();
+    expect(spaOpp!.distance).toBe(1);
+    // SPA is neutral (not in supplyCenters map)
+    expect(spaOpp!.owner).toBeUndefined();
+  });
 });
 
 describe('formatStrategicContextXML', () => {
