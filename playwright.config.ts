@@ -43,8 +43,13 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'] },
     },
     {
+      name: 'websocket-spectator',
+      testMatch: /websocket-spectator\.spec\.ts/,
+      use: { ...devices['Desktop Chrome'] },
+    },
+    {
       name: 'chromium',
-      testIgnore: /(live|game-simulation)\.spec\.ts/,
+      testIgnore: /(live|game-simulation|websocket-spectator)\.spec\.ts/,
       use: { ...devices['Desktop Chrome'] },
     },
   ],
