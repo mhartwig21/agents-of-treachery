@@ -272,6 +272,24 @@ export type {
   NegotiationMetricsReport,
 } from './negotiation-metrics';
 
+// Model registry
+export {
+  ModelRegistry,
+  createOpenAIFreeTierRegistry,
+  createDiverseOpenAIRegistry,
+  createUniformOpenAIRegistry,
+  BUILTIN_MODELS,
+  OPENAI_FREE_TIER_BUDGETS,
+} from './model-registry';
+
+export type {
+  ModelDefinition,
+  ModelTier,
+  TierBudgetConfig,
+  TierBudget,
+  PowerModelConfig,
+} from './model-registry';
+
 // Runtime
 export {
   AgentRuntime,
