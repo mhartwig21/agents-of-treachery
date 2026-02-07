@@ -39,7 +39,8 @@ import {
   recordOrders as recordDiaryOrders,
   recordReflection as recordDiaryReflection,
 } from './diary';
-import { buildSystemPrompt, buildTurnPrompt } from './prompts';
+import { buildSystemPrompt, buildTurnPrompt, getPromptContextStats } from './prompts';
+import { getCompressionLevel } from './context-compression';
 import { createAgentGameView, createStrategicSummary } from './game-view';
 import { parseAgentResponse, validateOrders, fillDefaultOrders } from './order-parser';
 import { GameLogger, getGameLogger, getInvalidOrderStats, formatModelStatsReport } from '../server/game-logger';
@@ -886,6 +887,9 @@ export class AgentRuntime {
     // Build the game view for this agent
     const gameView = createAgentGameView(this.gameState, power);
 
+    // Refresh system prompt with compression at milestone turns
+    this.refreshSystemPromptIfNeeded(power, session);
+
     // Get recent messages from press - filter for INCOMING only (messages from other powers)
     const pressAPI = this.pressAPIs.get(power)!;
     const inbox = pressAPI.getInbox();
@@ -898,13 +902,14 @@ export class AgentRuntime {
       ? [`--- INCOMING MESSAGES (you should respond to these!) ---`, ...incomingMessages]
       : [];
 
-    // Build the turn prompt with strategic context
+    // Build the turn prompt with progressive compression
     const turnPrompt = buildTurnPrompt(
       gameView,
       session.memory,
       recentMessages,
       this.gameState.phase,
-      this.gameState
+      this.gameState,
+      this.turnNumber
     );
 
     // Add strategic summary
@@ -942,9 +947,21 @@ export class AgentRuntime {
       content: fullPrompt,
     });
 
+    // Log context stats
+    const systemMsg = session.conversationHistory.find(m => m.role === 'system');
+    const contextStats = getPromptContextStats(
+      systemMsg?.content ?? '',
+      fullPrompt,
+      this.turnNumber
+    );
+    if (this.config.verbose) {
+      console.log(`[${power}] Context: ${contextStats.compressionLevel} compression, ` +
+        `~${contextStats.totalTokens} tokens (ratio: ${contextStats.compressionRatio.toFixed(2)})`);
+    }
+
     // Call the LLM
     const llm = this.sessionManager.getLLMProvider();
-    console.log(`[${power}] Calling LLM (${session.conversationHistory.length} messages, ~${fullPrompt.length} chars)...`);
+    console.log(`[${power}] Calling LLM (${session.conversationHistory.length} msgs, ~${fullPrompt.length} chars, turn ${this.turnNumber}, ${contextStats.compressionLevel})...`);
     const startTime = Date.now();
     let response;
     try {
@@ -1129,6 +1146,46 @@ export class AgentRuntime {
     });
 
     return result;
+  }
+
+  /**
+   * Refresh the system prompt with compression when crossing compression level boundaries.
+   * This replaces the system message in conversation history with a compressed version.
+   */
+  private refreshSystemPromptIfNeeded(power: Power, session: import('./types').AgentSession): void {
+    const currentLevel = getCompressionLevel(this.turnNumber);
+    const previousLevel = getCompressionLevel(Math.max(0, this.turnNumber - 1));
+
+    // Only refresh when crossing a compression level boundary
+    if (currentLevel === previousLevel && this.turnNumber > 0) {
+      return;
+    }
+
+    // Don't refresh on turn 0 (initial setup handles this)
+    if (this.turnNumber === 0) {
+      return;
+    }
+
+    const compressedPrompt = buildSystemPrompt(
+      power,
+      session.config.personality!,
+      undefined,
+      this.turnNumber
+    );
+
+    // Replace the system message in conversation history
+    const systemIdx = session.conversationHistory.findIndex(m => m.role === 'system');
+    if (systemIdx >= 0) {
+      const oldLength = session.conversationHistory[systemIdx].content.length;
+      session.conversationHistory[systemIdx] = {
+        role: 'system',
+        content: compressedPrompt,
+        timestamp: new Date(),
+      };
+      if (this.config.verbose) {
+        console.log(`[${power}] System prompt compressed: ${oldLength} → ${compressedPrompt.length} chars (${currentLevel})`);
+      }
+    }
   }
 
   /**

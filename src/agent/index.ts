@@ -119,7 +119,32 @@ export {
   buildMemoryUpdatePrompt,
   buildStrategicContext,
   formatStrategicContext,
+  getPromptContextStats,
 } from './prompts';
+
+// Context compression
+export {
+  estimateTokens,
+  getCompressionLevel,
+  compressRules,
+  compressStrategy,
+  compressPowerStrategy,
+  compressOrderFormat,
+  compressGuidelines,
+  compressGameState,
+  compressDiaryContext,
+  getRelevantPowers,
+  getMaxRecentEvents,
+  getMaxDiaryEntries,
+  getMaxYearSummaries,
+  getMaxRecentMessages,
+} from './context-compression';
+
+export type {
+  CompressionLevel,
+  TokenBudget,
+  ContextStats,
+} from './context-compression';
 
 // Prompt loader for external prompt files
 export {
