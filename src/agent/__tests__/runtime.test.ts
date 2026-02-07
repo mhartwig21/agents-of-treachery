@@ -466,6 +466,43 @@ describe('AgentRuntime', () => {
       );
       expect(runtime).toBeDefined();
     });
+
+    it('should run diplomacy agents sequentially even with parallelExecution: true', async () => {
+      runtime = new AgentRuntime(
+        makeConfig({
+          parallelExecution: true,
+          pressPeriodMinutes: 0.001,
+          pressPollIntervalSeconds: 0.001,
+        }),
+        mockLLM,
+        new InMemoryStore()
+      );
+      await runtime.initialize();
+
+      // Track agent turn events to verify sequential execution
+      const turnEvents: RuntimeEvent[] = [];
+      runtime.onEvent((e) => {
+        if (e.type === 'agent_turn_started' || e.type === 'agent_turn_completed') {
+          turnEvents.push(e);
+        }
+      });
+
+      // Run diplomacy phase - should be sequential despite parallelExecution: true
+      await runtime.runPhase();
+
+      // Filter to just the first round of agent turns (7 powers)
+      // With sequential execution, events must alternate: started, completed, started, completed...
+      // With parallel execution, we'd see: started, started, started, ..., completed, completed, ...
+      const firstRoundEvents = turnEvents.slice(0, 14); // 7 powers x 2 events each
+      expect(firstRoundEvents.length).toBe(14);
+
+      for (let i = 0; i < 14; i += 2) {
+        expect(firstRoundEvents[i].type).toBe('agent_turn_started');
+        expect(firstRoundEvents[i + 1].type).toBe('agent_turn_completed');
+        // Each pair should be the same power
+        expect(firstRoundEvents[i].data.power).toBe(firstRoundEvents[i + 1].data.power);
+      }
+    }, 30_000);
   });
 
   describe('per-agent error handling (aot-nkbkn)', () => {

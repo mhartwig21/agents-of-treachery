@@ -456,10 +456,11 @@ export class AgentRuntime {
     const llm = this.sessionManager.getLLMProvider();
     console.log(`\n🔍 Analyzing incoming diplomatic messages...`);
 
-    // Analyze messages for each power in parallel - only NEW (unanalyzed) messages
-    const analysisPromises = POWERS.map(async (power) => {
+    // Analyze messages for each power sequentially to avoid TPM rate limit crashes.
+    // Each analysis makes an LLM call; parallel execution would burst the token budget.
+    for (const power of POWERS) {
       const session = this.sessionManager.getSession(power);
-      if (!session) return;
+      if (!session) continue;
 
       // Get messages from all channels this power participates in
       const pressAPI = this.pressAPIs.get(power)!;
@@ -468,7 +469,7 @@ export class AgentRuntime {
         .filter(m => m.sender !== power && !this.analyzedMessageIds.has(m.id));
 
       if (incomingMessages.length === 0) {
-        return;
+        continue;
       }
 
       try {
@@ -511,9 +512,7 @@ export class AgentRuntime {
       } catch (error) {
         console.warn(`  [${power}] Message analysis failed:`, error);
       }
-    });
-
-    await Promise.all(analysisPromises);
+    }
   }
 
   /**
@@ -778,10 +777,10 @@ export class AgentRuntime {
     // Clear previous reflections
     this.pendingReflections.clear();
 
-    // Generate reflections for each power in parallel
-    const reflectionPromises = POWERS.map(async (power) => {
+    // Generate reflections for each power sequentially to avoid TPM rate limit crashes.
+    for (const power of POWERS) {
       const session = this.sessionManager.getSession(power);
-      if (!session) return;
+      if (!session) continue;
 
       try {
         const reflection = await generatePhaseReflection(
@@ -820,9 +819,7 @@ export class AgentRuntime {
       } catch (error) {
         console.warn(`  [${power}] Reflection failed:`, error);
       }
-    });
-
-    await Promise.all(reflectionPromises);
+    }
 
     // Log summary
     const totalBetrayals = Array.from(this.pendingReflections.values())
@@ -1023,7 +1020,12 @@ export class AgentRuntime {
     const results = new Map<Power, AgentTurnResult>();
     const powersToAct = activePowers ?? new Set(POWERS);
 
-    if (this.config.parallelExecution) {
+    // Diplomacy always runs sequentially to avoid TPM rate limit crashes.
+    // 7 parallel agents x ~35K tokens = 245K tokens/batch, which exceeds
+    // typical TPM limits (e.g. OpenAI free tier 200K TPM).
+    const useParallel = this.config.parallelExecution && turnType !== 'diplomacy';
+
+    if (useParallel) {
       // Run all agents in parallel - individual failures produce HOLD orders
       const promises = Array.from(powersToAct).map(async power => {
         try {
