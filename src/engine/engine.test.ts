@@ -317,20 +317,22 @@ describe('Support mechanics', () => {
   });
 
   // BUG: aot-eoid5 - Multi-destination support not working with 3+ moves
-  it.skip('three units competing for same destination - strongest wins', () => {
+  // Root cause: original test used PAR -> BEL, but PAR is not adjacent to BEL.
+  // Fixed to use PIC -> BEL (adjacent) supported by BUR (adjacent to BEL).
+  it('three units competing for same destination - strongest wins', () => {
     const units: Unit[] = [
-      makeUnit('FRANCE', 'ARMY', 'PAR'),
       makeUnit('FRANCE', 'ARMY', 'PIC'),
+      makeUnit('FRANCE', 'ARMY', 'BUR'),
       makeUnit('GERMANY', 'ARMY', 'RUH'),
       makeUnit('ENGLAND', 'ARMY', 'HOL'),
     ];
     const orders = new Map<Power, Order[]>();
-    // France: A PAR -> BEL (supported by PIC), A PIC S PAR -> BEL
+    // France: A PIC -> BEL (supported by BUR), A BUR S PIC -> BEL
     // Germany: A RUH -> BEL
     // England: A HOL -> BEL
     orders.set('FRANCE', [
-      { type: 'MOVE', unit: 'PAR', destination: 'BEL' } as MoveOrder,
-      { type: 'SUPPORT', unit: 'PIC', supportedUnit: 'PAR', destination: 'BEL' } as SupportOrder,
+      { type: 'MOVE', unit: 'PIC', destination: 'BEL' } as MoveOrder,
+      { type: 'SUPPORT', unit: 'BUR', supportedUnit: 'PIC', destination: 'BEL' } as SupportOrder,
     ]);
     orders.set('GERMANY', [
       { type: 'MOVE', unit: 'RUH', destination: 'BEL' } as MoveOrder,
@@ -342,7 +344,7 @@ describe('Support mechanics', () => {
     const results = adjudicate({ units, orders });
 
     // France has strength 2, Germany and England have strength 1
-    expect(results.get('PAR')?.success).toBe(true);
+    expect(results.get('PIC')?.success).toBe(true);
     expect(results.get('RUH')?.success).toBe(false);
     expect(results.get('HOL')?.success).toBe(false);
   });
