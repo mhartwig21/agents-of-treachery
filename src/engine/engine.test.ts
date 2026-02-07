@@ -1131,8 +1131,7 @@ describe('Order validation', () => {
 // DEFENDER MOVING AWAY
 // ============================================================================
 describe('Defender moving away', () => {
-  // BUG: aot-nsu74 - Attacker can't move into vacated province
-  it.skip('attacker takes empty province when defender moves out', () => {
+  it('attacker takes empty province when defender moves out', () => {
     const units: Unit[] = [
       makeUnit('FRANCE', 'ARMY', 'PAR'),
       makeUnit('GERMANY', 'ARMY', 'BUR'),
@@ -1152,5 +1151,34 @@ describe('Defender moving away', () => {
     // Both moves should succeed - BUR is vacated by Germany
     expect(results.get('BUR')?.success).toBe(true); // Germany moves out
     expect(results.get('PAR')?.success).toBe(true); // France moves in
+  });
+
+  it('defender is dislodged when their move fails but attacker succeeds', () => {
+    const units: Unit[] = [
+      makeUnit('FRANCE', 'ARMY', 'PAR'),
+      makeUnit('GERMANY', 'ARMY', 'BUR'),
+      makeUnit('RUSSIA', 'ARMY', 'MUN'),
+    ];
+    const orders = new Map<Power, Order[]>();
+    // France: A PAR -> BUR
+    // Germany: A BUR -> MUN (bounces off Russia)
+    // Russia: A MUN HOLD
+    orders.set('FRANCE', [
+      { type: 'MOVE', unit: 'PAR', destination: 'BUR' } as MoveOrder,
+    ]);
+    orders.set('GERMANY', [
+      { type: 'MOVE', unit: 'BUR', destination: 'MUN' } as MoveOrder,
+    ]);
+    orders.set('RUSSIA', [
+      { type: 'HOLD', unit: 'MUN' } as HoldOrder,
+    ]);
+
+    const results = adjudicate({ units, orders });
+
+    // France moves into BUR, Germany bounces off MUN and is dislodged
+    expect(results.get('PAR')?.success).toBe(true);
+    expect(results.get('BUR')?.success).toBe(false); // Germany's move fails
+    expect(results.get('BUR')?.dislodged).toBe(true); // But gets dislodged by France
+    expect(results.get('MUN')?.success).toBe(true); // Russia holds
   });
 });
