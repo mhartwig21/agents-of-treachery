@@ -337,7 +337,10 @@ export function extractRetreatsSection(response: string): string | null {
 export function extractBuildsSection(response: string): string | null {
   const buildsMatch = response.match(/BUILDS:\s*([\s\S]*?)(?=(?:ORDERS:|RETREATS:|REASONING:|DIPLOMACY:|$))/i);
   if (buildsMatch) {
-    return buildsMatch[1].trim();
+    let content = buildsMatch[1].trim();
+    // Remove fenced code block markers
+    content = content.replace(/```\w*\n?/g, '').replace(/```\s*$/g, '');
+    return content.trim();
   }
   return null;
 }
@@ -871,6 +874,16 @@ export function parseAgentResponse(response: string): ParseResult {
       if (order) {
         result.orders.push(order);
       } else if (error) {
+        // Fallback: try parsing as a build/disband line (some models put BUILD
+        // orders under ORDERS: instead of BUILDS:)
+        const trimmed = line.trim().toUpperCase();
+        if (trimmed.startsWith('BUILD') || trimmed.startsWith('DISBAND')) {
+          const { order: buildOrder } = parseBuildLine(line);
+          if (buildOrder) {
+            result.buildOrders.push(buildOrder);
+            continue;
+          }
+        }
         result.errors.push(error);
       }
     }
