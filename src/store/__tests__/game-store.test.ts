@@ -4,7 +4,7 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { GameStore } from '../game-store';
-import type { Unit, Order, Power } from '../../engine/types';
+import type { Unit, Order, Power, RetreatOrder, BuildOrder } from '../../engine/types';
 
 describe('GameStore', () => {
   let store: GameStore;
@@ -255,6 +255,143 @@ describe('GameStore', () => {
       expect(state1).not.toBe(state2);
       expect(state1.state).not.toBe(state2.state);
       expect(state1.state.units).not.toBe(state2.state.units);
+    });
+  });
+
+  describe('retreat submission', () => {
+    it('should record retreat orders submitted', () => {
+      const retreats: RetreatOrder[] = [
+        { unit: 'PAR', destination: 'BRE' },
+      ];
+
+      const event = store.submitRetreats('FRANCE', retreats, 1901, 'SPRING');
+      expect(event.type).toBe('RETREATS_SUBMITTED');
+      expect(event.payload.power).toBe('FRANCE');
+      expect(event.payload.retreats).toHaveLength(1);
+    });
+
+    it('should create RETREATS_SUBMITTED event', () => {
+      store.submitRetreats('FRANCE', [{ unit: 'PAR', destination: 'BRE' }], 1901, 'SPRING');
+
+      const events = store.getEvents();
+      const retreatEvents = events.filter(e => e.type === 'RETREATS_SUBMITTED');
+      expect(retreatEvents).toHaveLength(1);
+    });
+
+    it('should handle disband retreat (no destination)', () => {
+      const retreats: RetreatOrder[] = [
+        { unit: 'PAR' }, // No destination = disband
+      ];
+
+      const event = store.submitRetreats('FRANCE', retreats, 1901, 'SPRING');
+      expect(event.payload.retreats[0].destination).toBeUndefined();
+    });
+  });
+
+  describe('retreat resolution', () => {
+    it('should process successful retreat', () => {
+      // Set up dislodged unit first
+      store.resolveMovement(1901, 'SPRING', [], [], [{
+        unit: { type: 'ARMY', power: 'FRANCE', province: 'PAR' },
+        dislodgedFrom: 'BUR',
+        retreatOptions: ['BRE', 'GAS'],
+      }]);
+
+      const event = store.resolveRetreats(1901, 'SPRING', [{
+        unit: { type: 'ARMY', power: 'FRANCE', province: 'PAR' },
+        destination: 'BRE',
+        success: true,
+      }]);
+
+      expect(event.type).toBe('RETREATS_RESOLVED');
+      expect(event.payload.retreatResults).toHaveLength(1);
+      expect(event.payload.retreatResults[0].success).toBe(true);
+    });
+
+    it('should process failed retreat (disband)', () => {
+      store.resolveMovement(1901, 'SPRING', [], [], [{
+        unit: { type: 'ARMY', power: 'FRANCE', province: 'PAR' },
+        dislodgedFrom: 'BUR',
+        retreatOptions: [],
+      }]);
+
+      const event = store.resolveRetreats(1901, 'SPRING', [{
+        unit: { type: 'ARMY', power: 'FRANCE', province: 'PAR' },
+        destination: null,
+        success: false,
+      }]);
+
+      expect(event.payload.retreatResults[0].success).toBe(false);
+      expect(event.payload.retreatResults[0].destination).toBeNull();
+    });
+
+    it('should create RETREATS_RESOLVED event', () => {
+      store.resolveRetreats(1901, 'SPRING', []);
+
+      const events = store.getEvents();
+      const retreatResolved = events.filter(e => e.type === 'RETREATS_RESOLVED');
+      expect(retreatResolved).toHaveLength(1);
+    });
+  });
+
+  describe('build submission', () => {
+    it('should record build orders submitted', () => {
+      const builds: BuildOrder[] = [
+        { type: 'BUILD', province: 'LON', unitType: 'FLEET' },
+      ];
+
+      const event = store.submitBuilds('ENGLAND', builds, 1901);
+      expect(event.type).toBe('BUILDS_SUBMITTED');
+      expect(event.payload.power).toBe('ENGLAND');
+      expect(event.payload.builds).toHaveLength(1);
+    });
+
+    it('should create BUILDS_SUBMITTED event', () => {
+      store.submitBuilds('FRANCE', [{ type: 'BUILD', province: 'PAR', unitType: 'ARMY' }], 1901);
+
+      const events = store.getEvents();
+      const buildEvents = events.filter(e => e.type === 'BUILDS_SUBMITTED');
+      expect(buildEvents).toHaveLength(1);
+    });
+
+    it('should handle disband orders', () => {
+      const builds: BuildOrder[] = [
+        { type: 'DISBAND', province: 'LON' },
+      ];
+
+      const event = store.submitBuilds('ENGLAND', builds, 1901);
+      expect(event.payload.builds[0].type).toBe('DISBAND');
+    });
+
+    it('should handle multiple builds for same power', () => {
+      const builds: BuildOrder[] = [
+        { type: 'BUILD', province: 'LON', unitType: 'FLEET' },
+        { type: 'BUILD', province: 'EDI', unitType: 'FLEET' },
+      ];
+
+      const event = store.submitBuilds('ENGLAND', builds, 1901);
+      expect(event.payload.builds).toHaveLength(2);
+    });
+  });
+
+  describe('snapshot', () => {
+    it('should return complete snapshot', () => {
+      const snapshot = store.getSnapshot();
+      expect(snapshot.gameId).toBe('test-game');
+      expect(snapshot.state).toBeDefined();
+      expect(snapshot.events).toBeDefined();
+      expect(snapshot.state.units).toHaveLength(5);
+    });
+
+    it('should include version in snapshot', () => {
+      const snapshot = store.getSnapshot();
+      expect(snapshot.version).toBeGreaterThan(0);
+    });
+
+    it('should reflect state changes in snapshot', () => {
+      store.advancePhase(1901, 'SPRING', 'DIPLOMACY', 1901, 'FALL', 'DIPLOMACY');
+      const snapshot = store.getSnapshot();
+      expect(snapshot.state.season).toBe('FALL');
     });
   });
 
