@@ -17,6 +17,7 @@ import type {
   TurnSummary,
   DiaryEntry,
   YearSummary,
+  ConsolidatedBlock,
 } from './types';
 
 /**
@@ -55,6 +56,7 @@ export function createInitialMemory(power: Power, gameId: string): AgentMemory {
     currentAllies: [],
     currentEnemies: [],
     turnSummaries: [],
+    consolidatedBlocks: [],
     fullPrivateDiary: [],
     yearSummaries: [],
     currentYearDiary: [],
@@ -221,13 +223,17 @@ export function cleanupExpiredCommitments(
 
 /**
  * Add a turn summary to memory.
+ *
+ * Turn summaries accumulate until consolidation is triggered.
+ * Consolidation is handled by the consolidation module (consolidateTurnSummaries)
+ * which should be called periodically by the runtime. This function only appends.
  */
 export function addTurnSummary(memory: AgentMemory, summary: TurnSummary): void {
   memory.turnSummaries.push(summary);
 
-  // Keep only the last 10 turn summaries to manage memory size
-  if (memory.turnSummaries.length > 10) {
-    memory.turnSummaries = memory.turnSummaries.slice(-10);
+  // Initialize consolidatedBlocks if missing (backward compatibility)
+  if (!memory.consolidatedBlocks) {
+    memory.consolidatedBlocks = [];
   }
 }
 
@@ -310,6 +316,10 @@ export function serializeMemory(memory: AgentMemory): string {
       ...s,
       consolidatedAt: s.consolidatedAt.toISOString(),
     })),
+    consolidatedBlocks: (memory.consolidatedBlocks || []).map(b => ({
+      ...b,
+      consolidatedAt: b.consolidatedAt.toISOString(),
+    })),
     currentYearDiary: memory.currentYearDiary.map(e => ({
       ...e,
       timestamp: e.timestamp.toISOString(),
@@ -336,6 +346,12 @@ export function deserializeMemory(json: string): AgentMemory {
     consolidatedAt: new Date(s.consolidatedAt),
   });
 
+  // Helper to deserialize consolidated blocks with Date objects
+  const deserializeConsolidatedBlock = (b: any): ConsolidatedBlock => ({
+    ...b,
+    consolidatedAt: new Date(b.consolidatedAt),
+  });
+
   return {
     ...parsed,
     trustLevels: new Map(Object.entries(parsed.trustLevels)),
@@ -344,6 +360,7 @@ export function deserializeMemory(json: string): AgentMemory {
     fullPrivateDiary: (parsed.fullPrivateDiary || []).map(deserializeDiaryEntry),
     yearSummaries: (parsed.yearSummaries || []).map(deserializeYearSummary),
     currentYearDiary: (parsed.currentYearDiary || []).map(deserializeDiaryEntry),
+    consolidatedBlocks: (parsed.consolidatedBlocks || []).map(deserializeConsolidatedBlock),
   };
 }
 
