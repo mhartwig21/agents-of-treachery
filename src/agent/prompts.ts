@@ -31,6 +31,7 @@ import {
   type ModelFamily,
   type PromptVariables
 } from './prompt-loader';
+import { formatPowerGuideMarkdown, getOpeningAdvice } from './power-guides';
 
 /**
  * Try to load a prompt from external files, falling back to inline content.
@@ -319,6 +320,8 @@ export function buildSystemPrompt(
   const orderFormat = tryLoadPrompt(loader, 'orders.md', ORDER_FORMAT);
   const guidelines = tryLoadPrompt(loader, 'guidelines.md', RESPONSE_GUIDELINES);
 
+  const powerGuide = formatPowerGuideMarkdown(power);
+
   return `You are an AI playing as ${power} in a game of Diplomacy.
 
 ${rules}
@@ -326,6 +329,8 @@ ${rules}
 ${strategy}
 
 ${powerStrategy}
+
+${powerGuide}
 
 ## Your Personality
 
@@ -415,6 +420,12 @@ export function buildTurnPrompt(
       gameState
     );
     sections.push(formatStrategicContextMarkdown(strategicContext));
+  }
+
+  // Opening-phase advice (years 1901-1902)
+  const openingAdvice = getOpeningAdvice(gameView.viewingPower, gameView.year);
+  if (openingAdvice) {
+    sections.push(openingAdvice);
   }
 
   // Relationships and trust

@@ -143,6 +143,19 @@ export {
   getPowerPersonalityPrompt,
 } from './personalities';
 
+// Power-specific strategic guides
+export {
+  POWER_GUIDES,
+  getPowerGuide,
+  formatPowerGuideMarkdown,
+  getOpeningAdvice,
+} from './power-guides';
+
+export type {
+  PowerGuide,
+  OpeningVariation,
+} from './power-guides';
+
 // Game view
 export {
   createAgentGameView,
