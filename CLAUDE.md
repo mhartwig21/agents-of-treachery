@@ -105,7 +105,7 @@ npm run test:watch        # Watch mode
 npm run test:coverage     # With coverage report
 ```
 
-**Current Coverage**: 1488 unit tests passing (50 test files)
+**Current Coverage**: 1500 unit tests passing (51 test files)
 
 **Test Files**: `src/**/*.test.ts`
 - `src/engine/engine.test.ts` - Core game engine logic
