@@ -454,8 +454,8 @@ export function getInvalidOrderStats(gameId: string, logsDir?: string): ModelSta
       data.totalOrders += event.orders.length;
     }
 
-    // Track invalid orders
-    if (event.type === 'invalid_order') {
+    // Track invalid orders (skip DIPLOMACY phase — those are parse artifacts, not real invalid orders)
+    if (event.type === 'invalid_order' && event.phase !== 'DIPLOMACY') {
       const model = event.model || 'unknown';
       if (!modelData.has(model)) {
         modelData.set(model, {

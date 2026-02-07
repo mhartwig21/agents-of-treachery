@@ -1234,7 +1234,13 @@ export class AgentRuntime {
     );
 
     // Log invalid orders with model info for statistics tracking
-    if (errors.length > 0) {
+    // Only log for phases where orders are expected (MOVEMENT, RETREAT, BUILD).
+    // During DIPLOMACY, LLM responses contain diplomatic content (ANALYSIS:,
+    // INTENTIONS:, SEND POWER:, reasoning) that doesn't parse as orders —
+    // logging these as invalid_order would inflate the error rate.
+    const isOrderPhase = this.gameState.phase !== 'DIPLOMACY';
+
+    if (errors.length > 0 && isOrderPhase) {
       console.warn(`[${power}] Order validation errors:`, errors);
 
       // Find invalid orders (orders that didn't make it to valid list)
@@ -1258,8 +1264,8 @@ export class AgentRuntime {
       }
     }
 
-    // Also log parse errors as invalid orders
-    if (parsed.errors.length > 0) {
+    // Also log parse errors as invalid orders (only for order phases)
+    if (parsed.errors.length > 0 && isOrderPhase) {
       for (const error of parsed.errors) {
         this.logger.invalidOrder(
           power,

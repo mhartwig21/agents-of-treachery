@@ -388,6 +388,29 @@ describe('getInvalidOrderStats', () => {
     expect(gpt4Stats).toBeDefined();
     expect(gpt4Stats!.invalidOrders).toBe(2);
   });
+
+  it('should exclude DIPLOMACY-phase invalid orders from stats', () => {
+    const logger = new GameLogger('diplo-stats', TEST_LOGS_DIR);
+
+    // Simulate submitted orders in MOVEMENT phase
+    logger.ordersSubmitted('ENGLAND', ['LON HOLD'], true);
+
+    // MOVEMENT-phase invalid order — should be counted
+    logger.invalidOrder('ENGLAND', 'gpt-4', 'LON -> PAR', 'Not adjacent', 1901, 'SPRING', 'MOVEMENT');
+
+    // DIPLOMACY-phase invalid orders — should be excluded (these are parse artifacts)
+    logger.invalidOrder('ENGLAND', 'gpt-4', 'ANALYSIS:', 'Could not parse order', 1901, 'SPRING', 'DIPLOMACY');
+    logger.invalidOrder('ENGLAND', 'gpt-4', 'INTENTIONS:', 'Could not parse order', 1901, 'SPRING', 'DIPLOMACY');
+    logger.invalidOrder('ENGLAND', 'gpt-4', 'SEND POWER:', 'Could not parse order', 1901, 'SPRING', 'DIPLOMACY');
+
+    const report = getInvalidOrderStats('diplo-stats', TEST_LOGS_DIR);
+    // Only the MOVEMENT-phase invalid order should count
+    expect(report.totalInvalidOrders).toBe(1);
+
+    const gpt4Stats = report.byModel.find(m => m.model === 'gpt-4');
+    expect(gpt4Stats).toBeDefined();
+    expect(gpt4Stats!.invalidOrders).toBe(1);
+  });
 });
 
 describe('formatModelStatsReport', () => {
