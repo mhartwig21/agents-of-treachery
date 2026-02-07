@@ -440,7 +440,7 @@ describe('addTurnSummary', () => {
     expect(memory.turnSummaries).toHaveLength(1);
   });
 
-  it('should keep only last 10 turn summaries', () => {
+  it('should accumulate all turn summaries (consolidation handles trimming)', () => {
     const memory = createInitialMemory('FRANCE', 'game-1');
 
     for (let i = 0; i < 15; i++) {
@@ -458,7 +458,8 @@ describe('addTurnSummary', () => {
       });
     }
 
-    expect(memory.turnSummaries).toHaveLength(10);
+    // No longer caps at 10 - consolidation module handles trimming
+    expect(memory.turnSummaries).toHaveLength(15);
   });
 });
 

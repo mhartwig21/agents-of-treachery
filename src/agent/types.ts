@@ -110,8 +110,11 @@ export interface AgentMemory {
   /** Powers the agent considers enemies */
   currentEnemies: Power[];
 
-  /** Summary of previous turns for context */
+  /** Summary of previous turns for context (recent, unconsolidated) */
   turnSummaries: TurnSummary[];
+
+  /** Consolidated blocks of older turn summaries */
+  consolidatedBlocks: ConsolidatedBlock[];
 
   /**
    * Full private diary - permanent, unabridged record of all entries.
@@ -146,6 +149,40 @@ export interface TurnSummary {
   unitsBuilt: number;
   unitsLost: number;
   diplomaticHighlights: string[];
+}
+
+/**
+ * A consolidated block of turn summaries.
+ * Groups multiple turns into a single summary to prevent memory overflow.
+ */
+export interface ConsolidatedBlock {
+  /** Range of turns covered (inclusive) */
+  fromYear: number;
+  fromSeason: Season;
+  toYear: number;
+  toSeason: Season;
+  /** LLM-generated summary of the block */
+  summary: string;
+  /** Trust-affecting events preserved with full detail */
+  trustEvents: TrustAffectingEvent[];
+  /** Net SC changes over the block period */
+  netSCsGained: string[];
+  netSCsLost: string[];
+  /** When consolidation was performed */
+  consolidatedAt: Date;
+}
+
+/**
+ * A trust-affecting event preserved through consolidation.
+ * These are never discarded - they survive all consolidation rounds.
+ */
+export interface TrustAffectingEvent {
+  year: number;
+  season: Season;
+  type: 'BETRAYAL' | 'PROMISE_BROKEN' | 'PROMISE_KEPT' | 'ALLIANCE_BROKEN' | 'ALLIANCE_FORMED';
+  powers: Power[];
+  description: string;
+  trustImpact: number;
 }
 
 /**

@@ -16,6 +16,8 @@ export type {
   PowerRelationship,
   AgentMemory,
   TurnSummary,
+  ConsolidatedBlock,
+  TrustAffectingEvent,
   DiaryEntry,
   DiaryEntryType,
   YearSummary,
@@ -101,6 +103,24 @@ export {
 } from './diary';
 
 export type { YearlyGameContext } from './diary';
+
+// Memory consolidation
+export {
+  shouldConsolidateTurns,
+  extractTrustEvents,
+  buildTurnConsolidationPrompt,
+  parseConsolidationResponse as parseTurnConsolidationResponse,
+  createFallbackConsolidation,
+  consolidateTurnSummaries,
+  mergeOldestBlocks,
+  mergeStrategicNotes,
+  getAllTrustEvents,
+  formatConsolidatedMemory,
+  consolidateMemory,
+  RECENT_TURNS_TO_KEEP,
+  CONSOLIDATION_THRESHOLD,
+  MAX_CONSOLIDATED_BLOCKS,
+} from './consolidation';
 
 // Session management
 export {
