@@ -187,7 +187,9 @@ export async function analyzeIncomingMessage(
       temperature: 0.3, // Lower temperature for more consistent analysis
     });
 
-    return parseAnalysisResponse(response.content, message.id, message.sender, receiver);
+    const analysis = parseAnalysisResponse(response.content, message.id, message.sender, receiver);
+    analysis.messageContent = message.content;
+    return analysis;
   } catch (error) {
     console.warn(`Message analysis failed for ${receiver}:`, error);
     // Return a cautious default analysis
@@ -216,6 +218,7 @@ function createFallbackAnalysis(
     reasoning: 'Analysis unavailable. Proceeding with caution based on trust history.',
     redFlags: trustLevel < -0.3 ? ['Low trust history'] : [],
     extractedCommitments: [],
+    messageContent: message.content,
     timestamp: new Date(),
   };
 }
@@ -241,7 +244,12 @@ export function formatAnalysisForDiary(analysis: MessageAnalysis): string {
     ? `Red flags: ${analysis.redFlags.join(', ')}.`
     : '';
 
-  return `Analyzed message from ${analysis.sender}: ` +
+  // Include a brief content summary so diary captures what was actually said
+  const contentSummary = analysis.messageContent
+    ? `"${analysis.messageContent.length > 120 ? analysis.messageContent.slice(0, 120) + '...' : analysis.messageContent}" `
+    : '';
+
+  return `${analysis.sender} said: ${contentSummary}` +
     `Intent=${analysis.senderIntent}, ` +
     `Credibility=${analysis.credibilityScore.toFixed(2)}, ` +
     `Value=${analysis.strategicValue}. ` +

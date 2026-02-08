@@ -238,6 +238,7 @@ REASONING: Strong proposal with clear benefits.`,
         reasoning: 'Good proposal but needs better terms.',
         redFlags: ['Vague on specifics'],
         extractedCommitments: ['Support into Munich'],
+        messageContent: 'Let us form an alliance against Germany. I will support you into Munich.',
         timestamp: new Date(),
       };
 
@@ -248,6 +249,7 @@ REASONING: Strong proposal with clear benefits.`,
       expect(formatted).toContain('0.75');
       expect(formatted).toContain('counter');
       expect(formatted).toContain('Vague on specifics');
+      expect(formatted).toContain('Let us form an alliance against Germany');
     });
   });
 

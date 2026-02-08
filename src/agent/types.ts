@@ -593,6 +593,8 @@ export interface MessageAnalysis {
   redFlags: string[];
   /** Specific commitments or proposals extracted from the message */
   extractedCommitments: string[];
+  /** Original message content for diary summaries */
+  messageContent?: string;
   /** When this analysis was created */
   timestamp: Date;
 }
