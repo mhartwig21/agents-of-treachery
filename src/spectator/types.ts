@@ -121,6 +121,17 @@ export interface GameHistory {
 }
 
 /**
+ * Accumulator for live data during a phase (before snapshot is created).
+ * Holds messages and orders as they arrive in real-time.
+ */
+export interface LiveAccumulator {
+  /** Messages received during current phase */
+  messages: Message[];
+  /** Orders submitted by power during current phase */
+  orders: Record<string, UIOrder[]>;
+}
+
+/**
  * Current state of the spectator interface.
  */
 export interface SpectatorState {
@@ -138,6 +149,8 @@ export interface SpectatorState {
   gameViewTab: 'map' | 'orders' | 'press' | 'relationships';
   /** Whether mobile layout is active */
   isMobile: boolean;
+  /** Live accumulator for real-time data (keyed by gameId) */
+  liveAccumulators: Map<string, LiveAccumulator>;
 }
 
 /**
@@ -170,7 +183,10 @@ export type SpectatorAction =
   | { type: 'SET_PRESS_FILTERS'; filters: Partial<PressFilters> }
   | { type: 'CLEAR_PRESS_FILTERS' }
   | { type: 'SET_GAME_VIEW_TAB'; tab: 'map' | 'orders' | 'press' | 'relationships' }
-  | { type: 'SET_MOBILE'; isMobile: boolean };
+  | { type: 'SET_MOBILE'; isMobile: boolean }
+  | { type: 'ACCUMULATE_MESSAGES'; gameId: string; messages: Message[] }
+  | { type: 'ACCUMULATE_ORDERS'; gameId: string; orders: Record<string, UIOrder[]> }
+  | { type: 'CLEAR_LIVE_ACCUMULATOR'; gameId: string };
 
 /**
  * Initial state for the spectator.
@@ -188,7 +204,23 @@ export const initialSpectatorState: SpectatorState = {
   },
   gameViewTab: 'map',
   isMobile: false,
+  liveAccumulators: new Map(),
 };
+
+/**
+ * Creates an empty live accumulator.
+ */
+export function createEmptyAccumulator(): LiveAccumulator {
+  return { messages: [], orders: {} };
+}
+
+/**
+ * Gets the live accumulator for the active game.
+ */
+export function getLiveAccumulator(state: SpectatorState): LiveAccumulator | null {
+  if (!state.activeGameId) return null;
+  return state.liveAccumulators.get(state.activeGameId) ?? null;
+}
 
 /**
  * Gets the current snapshot being viewed.

@@ -11,11 +11,16 @@ import {
   type GameHistory,
   type GameSnapshot,
   type PressFilters,
+  type LiveAccumulator,
   initialSpectatorState,
   getCurrentSnapshot,
   getActiveGame,
   isViewingLive,
+  getLiveAccumulator,
+  createEmptyAccumulator,
 } from './types';
+import type { Message } from '../press/types';
+import type { Order as UIOrder } from '../types/game';
 
 /**
  * Reducer for spectator state.
@@ -93,7 +98,44 @@ function spectatorReducer(state: SpectatorState, action: SpectatorAction): Spect
         snapshots: [...existing.snapshots, action.snapshot],
         updatedAt: new Date(),
       });
-      return { ...state, games };
+      // Clear the live accumulator when a snapshot is added (data is now in snapshot)
+      const liveAccumulators = new Map(state.liveAccumulators);
+      liveAccumulators.delete(action.gameId);
+      return { ...state, games, liveAccumulators };
+    }
+
+    case 'ACCUMULATE_MESSAGES': {
+      const liveAccumulators = new Map(state.liveAccumulators);
+      const existing = liveAccumulators.get(action.gameId) ?? createEmptyAccumulator();
+      // Deduplicate by message id (if available) to avoid duplicates
+      const existingIds = new Set(existing.messages.map(m => m.id));
+      const newMessages = action.messages.filter(m => !existingIds.has(m.id));
+      liveAccumulators.set(action.gameId, {
+        ...existing,
+        messages: [...existing.messages, ...newMessages],
+      });
+      return { ...state, liveAccumulators };
+    }
+
+    case 'ACCUMULATE_ORDERS': {
+      const liveAccumulators = new Map(state.liveAccumulators);
+      const existing = liveAccumulators.get(action.gameId) ?? createEmptyAccumulator();
+      // Merge orders by power (replace existing orders for a power)
+      const mergedOrders = { ...existing.orders };
+      for (const [power, orders] of Object.entries(action.orders)) {
+        mergedOrders[power] = orders;
+      }
+      liveAccumulators.set(action.gameId, {
+        ...existing,
+        orders: mergedOrders,
+      });
+      return { ...state, liveAccumulators };
+    }
+
+    case 'CLEAR_LIVE_ACCUMULATOR': {
+      const liveAccumulators = new Map(state.liveAccumulators);
+      liveAccumulators.delete(action.gameId);
+      return { ...state, liveAccumulators };
     }
 
     case 'SET_PRESS_FILTERS': {
@@ -139,6 +181,7 @@ interface SpectatorContextValue {
   currentSnapshot: GameSnapshot | null;
   activeGame: GameHistory | null;
   isLive: boolean;
+  liveAccumulator: LiveAccumulator | null;
 
   // Action helpers
   selectGame: (gameId: string | null) => void;
@@ -157,6 +200,11 @@ interface SpectatorContextValue {
   updateGame: (gameId: string, updates: Partial<GameHistory>) => void;
   removeGame: (gameId: string) => void;
   addSnapshot: (gameId: string, snapshot: GameSnapshot) => void;
+
+  // Live accumulator management
+  accumulateMessages: (gameId: string, messages: Message[]) => void;
+  accumulateOrders: (gameId: string, orders: Record<string, UIOrder[]>) => void;
+  clearLiveAccumulator: (gameId: string) => void;
 }
 
 const SpectatorContext = createContext<SpectatorContextValue | null>(null);
@@ -192,6 +240,7 @@ export function SpectatorProvider({ children, initialGames = [] }: SpectatorProv
   const currentSnapshot = getCurrentSnapshot(state);
   const activeGame = getActiveGame(state);
   const isLive = isViewingLive(state);
+  const liveAccumulator = getLiveAccumulator(state);
 
   // Action helpers
   const selectGame = useCallback((gameId: string | null) => {
@@ -260,12 +309,25 @@ export function SpectatorProvider({ children, initialGames = [] }: SpectatorProv
     dispatch({ type: 'ADD_SNAPSHOT', gameId, snapshot });
   }, []);
 
+  const accumulateMessages = useCallback((gameId: string, messages: Message[]) => {
+    dispatch({ type: 'ACCUMULATE_MESSAGES', gameId, messages });
+  }, []);
+
+  const accumulateOrders = useCallback((gameId: string, orders: Record<string, UIOrder[]>) => {
+    dispatch({ type: 'ACCUMULATE_ORDERS', gameId, orders });
+  }, []);
+
+  const clearLiveAccumulator = useCallback((gameId: string) => {
+    dispatch({ type: 'CLEAR_LIVE_ACCUMULATOR', gameId });
+  }, []);
+
   const value: SpectatorContextValue = {
     state,
     dispatch,
     currentSnapshot,
     activeGame,
     isLive,
+    liveAccumulator,
     selectGame,
     setViewMode,
     seekToPosition,
@@ -280,6 +342,9 @@ export function SpectatorProvider({ children, initialGames = [] }: SpectatorProv
     updateGame,
     removeGame,
     addSnapshot,
+    accumulateMessages,
+    accumulateOrders,
+    clearLiveAccumulator,
   };
 
   return (
