@@ -40,7 +40,8 @@ import {
   recordReflection as recordDiaryReflection,
 } from './diary';
 import { buildSystemPrompt, buildTurnPrompt, getPromptContextStats } from './prompts';
-import { getCompressionLevel } from './context-compression';
+import { getEffectiveCompressionLevel } from './context-compression';
+import type { ModelRegistry, ModelTier } from './model-registry';
 import { consolidateMemory } from './consolidation';
 import {
   createNegotiationMetricsTracker,
@@ -134,12 +135,17 @@ export class AgentRuntime {
   private pendingReflections: Map<Power, PhaseReflection> = new Map();
   /** Track SC ownership at start of year for yearly summary calculation */
   private yearStartSCs: Map<Power, string[]> = new Map();
+  /** Optional model registry for budget-aware context compression */
+  private modelRegistry?: ModelRegistry;
+  /** Tier to monitor for budget-based compression (defaults to 'premium') */
+  private budgetTier: ModelTier = 'premium';
 
   constructor(
     config: AgentRuntimeConfig,
     llmProvider: LLMProvider,
     memoryStore?: MemoryStore,
-    logger?: GameLogger
+    logger?: GameLogger,
+    modelRegistry?: ModelRegistry,
   ) {
     this.config = { ...DEFAULT_RUNTIME_CONFIG, ...config } as AgentRuntimeConfig;
 
@@ -181,6 +187,19 @@ export class AgentRuntime {
 
     // Initialize negotiation metrics tracker
     this.metricsTracker = createNegotiationMetricsTracker(this.config.gameId);
+
+    // Store model registry for budget-aware compression
+    this.modelRegistry = modelRegistry;
+  }
+
+  /**
+   * Get the current budget usage percentage for the monitored tier (0-1).
+   * Returns undefined if no model registry is configured.
+   */
+  getBudgetUsagePercent(): number | undefined {
+    if (!this.modelRegistry) return undefined;
+    const usage = this.modelRegistry.getTierUsagePercent(this.budgetTier);
+    return usage > 0 ? usage : undefined;
   }
 
   /**
@@ -1109,14 +1128,16 @@ export class AgentRuntime {
     const inbox = pressAPI.getInbox();
     const recentMessages = this.formatRoundAwareMessages(power, inbox.recentMessages, inbox.unreadCount);
 
-    // Build the turn prompt with progressive compression
+    // Build the turn prompt with progressive compression (budget-aware)
+    const budgetUsage = this.getBudgetUsagePercent();
     const turnPrompt = buildTurnPrompt(
       gameView,
       session.memory,
       recentMessages,
       this.gameState.phase,
       this.gameState,
-      this.turnNumber
+      this.turnNumber,
+      budgetUsage,
     );
 
     // Add strategic summary
@@ -1159,7 +1180,8 @@ export class AgentRuntime {
     const contextStats = getPromptContextStats(
       systemMsg?.content ?? '',
       fullPrompt,
-      this.turnNumber
+      this.turnNumber,
+      budgetUsage,
     );
     if (this.config.verbose) {
       console.log(`[${power}] Context: ${contextStats.compressionLevel} compression, ` +
@@ -1389,8 +1411,9 @@ export class AgentRuntime {
    * This replaces the system message in conversation history with a compressed version.
    */
   private refreshSystemPromptIfNeeded(power: Power, session: import('./types').AgentSession): void {
-    const currentLevel = getCompressionLevel(this.turnNumber);
-    const previousLevel = getCompressionLevel(Math.max(0, this.turnNumber - 1));
+    const budgetUsage = this.getBudgetUsagePercent();
+    const currentLevel = getEffectiveCompressionLevel(this.turnNumber, budgetUsage);
+    const previousLevel = getEffectiveCompressionLevel(Math.max(0, this.turnNumber - 1), budgetUsage);
 
     // Only refresh when crossing a compression level boundary
     if (currentLevel === previousLevel && this.turnNumber > 0) {
@@ -1406,7 +1429,8 @@ export class AgentRuntime {
       power,
       session.config.personality!,
       undefined,
-      this.turnNumber
+      this.turnNumber,
+      budgetUsage,
     );
 
     // Replace the system message in conversation history

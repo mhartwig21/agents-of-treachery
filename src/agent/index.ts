@@ -146,6 +146,8 @@ export {
 export {
   estimateTokens,
   getCompressionLevel,
+  getBudgetCompressionLevel,
+  getEffectiveCompressionLevel,
   compressRules,
   compressStrategy,
   compressPowerStrategy,

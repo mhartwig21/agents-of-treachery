@@ -32,7 +32,7 @@ import {
   type PromptVariables
 } from './prompt-loader';
 import {
-  getCompressionLevel,
+  getEffectiveCompressionLevel,
   compressRules,
   compressStrategy,
   compressPowerStrategy,
@@ -328,13 +328,14 @@ export function buildSystemPrompt(
   power: Power,
   personality: AgentPersonality,
   modelFamily?: ModelFamily,
-  turnNumber: number = 0
+  turnNumber: number = 0,
+  budgetUsagePercent?: number,
 ): string {
   const loader = modelFamily
     ? getPromptLoader().withModelFamily(modelFamily)
     : getPromptLoader();
 
-  const level = getCompressionLevel(turnNumber);
+  const level = getEffectiveCompressionLevel(turnNumber, budgetUsagePercent);
   const personalityDesc = describePersonality(personality);
 
   // Load prompts from external files with inline fallbacks
@@ -452,10 +453,11 @@ export function buildTurnPrompt(
   recentMessages: string[],
   phase: Phase,
   gameState?: GameState,
-  turnNumber: number = 0
+  turnNumber: number = 0,
+  budgetUsagePercent?: number,
 ): string {
   const sections: string[] = [];
-  const level = getCompressionLevel(turnNumber);
+  const level = getEffectiveCompressionLevel(turnNumber, budgetUsagePercent);
 
   // Current game state (compressed based on level)
   const relevantPowers = level !== 'none'
@@ -539,7 +541,8 @@ export function buildTurnPrompt(
 export function getPromptContextStats(
   systemPrompt: string,
   turnPrompt: string,
-  turnNumber: number
+  turnNumber: number,
+  budgetUsagePercent?: number,
 ): ContextStats {
   const systemTokens = estimateTokens(systemPrompt);
   const turnTokens = estimateTokens(turnPrompt);
@@ -553,7 +556,7 @@ export function getPromptContextStats(
 
   return {
     turnNumber,
-    compressionLevel: getCompressionLevel(turnNumber),
+    compressionLevel: getEffectiveCompressionLevel(turnNumber, budgetUsagePercent),
     systemPromptTokens: systemTokens,
     turnPromptTokens: turnTokens,
     totalTokens,

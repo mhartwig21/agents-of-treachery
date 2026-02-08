@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import {
   estimateTokens,
   getCompressionLevel,
+  getBudgetCompressionLevel,
+  getEffectiveCompressionLevel,
   compressRules,
   compressStrategy,
   compressPowerStrategy,
@@ -177,6 +179,67 @@ describe('getCompressionLevel', () => {
     expect(getCompressionLevel(9)).toBe('aggressive');
     expect(getCompressionLevel(15)).toBe('aggressive');
     expect(getCompressionLevel(30)).toBe('aggressive');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getBudgetCompressionLevel
+// ---------------------------------------------------------------------------
+describe('getBudgetCompressionLevel', () => {
+  it('should return none below 80% usage', () => {
+    expect(getBudgetCompressionLevel(0)).toBe('none');
+    expect(getBudgetCompressionLevel(0.5)).toBe('none');
+    expect(getBudgetCompressionLevel(0.79)).toBe('none');
+  });
+
+  it('should return moderate at 80-95% usage', () => {
+    expect(getBudgetCompressionLevel(0.80)).toBe('moderate');
+    expect(getBudgetCompressionLevel(0.85)).toBe('moderate');
+    expect(getBudgetCompressionLevel(0.94)).toBe('moderate');
+  });
+
+  it('should return aggressive at 95%+ usage', () => {
+    expect(getBudgetCompressionLevel(0.95)).toBe('aggressive');
+    expect(getBudgetCompressionLevel(0.99)).toBe('aggressive');
+    expect(getBudgetCompressionLevel(1.0)).toBe('aggressive');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getEffectiveCompressionLevel
+// ---------------------------------------------------------------------------
+describe('getEffectiveCompressionLevel', () => {
+  it('should match getCompressionLevel when no budget provided', () => {
+    expect(getEffectiveCompressionLevel(0)).toBe('none');
+    expect(getEffectiveCompressionLevel(5)).toBe('moderate');
+    expect(getEffectiveCompressionLevel(10)).toBe('aggressive');
+    expect(getEffectiveCompressionLevel(3, undefined)).toBe('none');
+  });
+
+  it('should escalate to moderate when budget hits 80% even on early turns', () => {
+    // Turn 1 would be 'none', but budget at 85% forces 'moderate'
+    expect(getEffectiveCompressionLevel(1, 0.85)).toBe('moderate');
+  });
+
+  it('should escalate to aggressive when budget hits 95% even on early turns', () => {
+    // Turn 1 would be 'none', but budget at 96% forces 'aggressive'
+    expect(getEffectiveCompressionLevel(1, 0.96)).toBe('aggressive');
+  });
+
+  it('should not downgrade turn-based compression when budget is low', () => {
+    // Turn 10 is aggressive, budget at 50% is none — should stay aggressive
+    expect(getEffectiveCompressionLevel(10, 0.5)).toBe('aggressive');
+    // Turn 5 is moderate, budget at 10% is none — should stay moderate
+    expect(getEffectiveCompressionLevel(5, 0.1)).toBe('moderate');
+  });
+
+  it('should take the max of both sources', () => {
+    // Turn moderate + budget aggressive → aggressive
+    expect(getEffectiveCompressionLevel(5, 0.97)).toBe('aggressive');
+    // Turn none + budget moderate → moderate
+    expect(getEffectiveCompressionLevel(1, 0.80)).toBe('moderate');
+    // Turn aggressive + budget none → aggressive
+    expect(getEffectiveCompressionLevel(10, 0.0)).toBe('aggressive');
   });
 });
 
@@ -584,5 +647,54 @@ describe('compression targets', () => {
 
     // Aggressive should be less than 50% of full
     expect(aggressive.length / full.length).toBeLessThan(0.5);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Budget-aware prompt integration
+// ---------------------------------------------------------------------------
+describe('budget-aware prompt building', () => {
+  it('should compress system prompt when budget is high even at turn 0', () => {
+    const full = buildSystemPrompt('FRANCE', DEFAULT_PERSONALITY, undefined, 0);
+    const budgetCompressed = buildSystemPrompt('FRANCE', DEFAULT_PERSONALITY, undefined, 0, 0.90);
+
+    // Budget at 90% should trigger moderate compression, making prompt shorter
+    expect(budgetCompressed.length).toBeLessThan(full.length);
+  });
+
+  it('should compress aggressively when budget near exhaustion at turn 0', () => {
+    const full = buildSystemPrompt('FRANCE', DEFAULT_PERSONALITY, undefined, 0);
+    const budgetAggressive = buildSystemPrompt('FRANCE', DEFAULT_PERSONALITY, undefined, 0, 0.98);
+
+    // Budget at 98% should trigger aggressive compression
+    expect(budgetAggressive.length / full.length).toBeLessThan(0.5);
+  });
+
+  it('should compress turn prompt when budget is high', () => {
+    const view = makeGameView();
+    const memory = makeMemory({
+      yearSummaries: [makeYearSummary(1901), makeYearSummary(1902)],
+      currentYearDiary: Array.from({ length: 8 }, (_, i) =>
+        makeDiaryEntry(`[S1903M]`, 'orders', `Order details for turn ${i}`)
+      ),
+    });
+    const full = buildTurnPrompt(view, memory, [], 'MOVEMENT', undefined, 0);
+    const budgetCompressed = buildTurnPrompt(view, memory, [], 'MOVEMENT', undefined, 0, 0.90);
+
+    expect(budgetCompressed.length).toBeLessThan(full.length);
+  });
+
+  it('should report budget-aware compression level in context stats', () => {
+    // Turn 0 with no budget → none
+    const statsNoBudget = getPromptContextStats('sys', 'turn', 0);
+    expect(statsNoBudget.compressionLevel).toBe('none');
+
+    // Turn 0 with 90% budget → moderate
+    const statsBudget = getPromptContextStats('sys', 'turn', 0, 0.90);
+    expect(statsBudget.compressionLevel).toBe('moderate');
+
+    // Turn 0 with 96% budget → aggressive
+    const statsHighBudget = getPromptContextStats('sys', 'turn', 0, 0.96);
+    expect(statsHighBudget.compressionLevel).toBe('aggressive');
   });
 });

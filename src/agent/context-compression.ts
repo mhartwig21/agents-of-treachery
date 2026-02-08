@@ -96,6 +96,50 @@ export function getCompressionLevel(turnNumber: number): CompressionLevel {
   return 'aggressive';
 }
 
+/**
+ * Determine compression level based on token budget usage.
+ *
+ * - < 80% used: none (plenty of budget remaining)
+ * - 80-95% used: moderate (conserve tokens)
+ * - > 95% used: aggressive (near exhaustion, minimize context)
+ *
+ * @param usagePercent - Fraction of budget used (0-1)
+ */
+export function getBudgetCompressionLevel(usagePercent: number): CompressionLevel {
+  if (usagePercent >= 0.95) return 'aggressive';
+  if (usagePercent >= 0.80) return 'moderate';
+  return 'none';
+}
+
+/** Numeric ordering for CompressionLevel (higher = more compressed). */
+const COMPRESSION_RANK: Record<CompressionLevel, number> = {
+  none: 0,
+  moderate: 1,
+  aggressive: 2,
+};
+
+/** Map rank back to level. */
+const RANK_TO_LEVEL: CompressionLevel[] = ['none', 'moderate', 'aggressive'];
+
+/**
+ * Determine the effective compression level considering both turn number
+ * and token budget usage. Returns the more aggressive of the two.
+ *
+ * @param turnNumber - Current turn number
+ * @param budgetUsagePercent - Optional tier budget usage fraction (0-1)
+ */
+export function getEffectiveCompressionLevel(
+  turnNumber: number,
+  budgetUsagePercent?: number,
+): CompressionLevel {
+  const turnLevel = getCompressionLevel(turnNumber);
+  if (budgetUsagePercent == null) return turnLevel;
+
+  const budgetLevel = getBudgetCompressionLevel(budgetUsagePercent);
+  const maxRank = Math.max(COMPRESSION_RANK[turnLevel], COMPRESSION_RANK[budgetLevel]);
+  return RANK_TO_LEVEL[maxRank];
+}
+
 // ============================================================================
 // Rules & Strategy Compression
 // ============================================================================
