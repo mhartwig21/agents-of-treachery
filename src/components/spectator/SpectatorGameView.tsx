@@ -288,6 +288,7 @@ export function SpectatorGameView({ onBack }: SpectatorGameViewProps) {
             highlightedTerritories={selectedPower ? getTerritoriesForPower(currentSnapshot.gameState, selectedPower) : undefined}
             animationMode={isAnimationActive}
             animationState={animationState}
+            orders={accumulatedOrders}
           />
         </div>
 
@@ -510,7 +511,7 @@ function MobileGameView({
       />
 
       {/* Tab content */}
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 overflow-hidden relative">
         {gameViewTab === 'map' && (
           <DiplomacyMap
             gameState={currentSnapshot.gameState}
@@ -519,6 +520,7 @@ function MobileGameView({
             readOnly
             animationMode={isAnimationActive}
             animationState={animationState}
+            orders={accumulatedOrders}
           />
         )}
         {gameViewTab === 'orders' && (

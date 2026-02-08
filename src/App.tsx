@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { DiplomacyMap } from './components/DiplomacyMap'
 import { SpectatorProvider, useSpectator } from './spectator/SpectatorContext'
 import { SpectatorDashboard } from './components/spectator/SpectatorDashboard'
@@ -216,6 +216,42 @@ function AppContent() {
   const [mode, setMode] = useState<AppMode>('spectator')
   const [selectedTerritory, setSelectedTerritory] = useState<string | null>(null)
   const { activeGame, selectGame } = useSpectator()
+
+  // B19: Restore game selection from URL on initial load
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const gameId = params.get('game')
+    if (gameId && !activeGame) {
+      selectGame(gameId)
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // B15 + B19: Sync URL and history state with game selection
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const currentUrlGame = params.get('game')
+
+    if (activeGame) {
+      if (currentUrlGame !== activeGame.gameId) {
+        params.set('game', activeGame.gameId)
+        window.history.pushState({ gameId: activeGame.gameId }, '', `?${params.toString()}`)
+      }
+    } else if (currentUrlGame) {
+      params.delete('game')
+      const search = params.toString()
+      window.history.pushState({}, '', search ? `?${search}` : window.location.pathname)
+    }
+  }, [activeGame])
+
+  // B15: Handle browser back/forward button
+  useEffect(() => {
+    const handlePopState = (event: PopStateEvent) => {
+      const gameId = event.state?.gameId ?? null
+      selectGame(gameId)
+    }
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [selectGame])
 
   // Player mode (original view)
   if (mode === 'player') {

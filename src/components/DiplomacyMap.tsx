@@ -37,6 +37,8 @@ interface DiplomacyMapProps {
   animationState?: ResolutionAnimationState
   /** When true, shows animated components instead of static */
   animationMode?: boolean
+  /** Override orders to display (e.g., accumulated orders from live + snapshot) */
+  orders?: Order[]
 }
 
 const POWER_COLORS: Record<Power, string> = {
@@ -64,7 +66,10 @@ export function DiplomacyMap({
   highlightedTerritories,
   animationState,
   animationMode = false,
+  orders: ordersProp,
 }: DiplomacyMapProps) {
+  // Use provided orders or fall back to gameState.orders
+  const displayOrders = ordersProp ?? gameState.orders
   const svgRef = useRef<SVGSVGElement>(null)
   const [viewBox, setViewBox] = useState({ x: INITIAL_OFFSET.x, y: INITIAL_OFFSET.y, width: VIEWBOX.width, height: VIEWBOX.height })
   const [isPanning, setIsPanning] = useState(false)
@@ -178,21 +183,19 @@ export function DiplomacyMap({
   // Render unit icon
   const renderUnit = (unit: Unit, x: number, y: number) => {
     const color = POWER_COLORS[unit.power]
-    if (unit.type === 'army') {
-      return (
-        <g key={`unit-${unit.territory}`} transform={`translate(${x - 12}, ${y - 12})`}>
-          <circle cx="12" cy="12" r="11" fill={color} stroke="#000" strokeWidth="1.5" />
-          <text x="12" y="17" textAnchor="middle" fill="#fff" fontSize="14" fontWeight="bold">A</text>
-        </g>
-      )
-    } else {
-      return (
-        <g key={`unit-${unit.territory}`} transform={`translate(${x - 12}, ${y - 12})`}>
-          <circle cx="12" cy="12" r="11" fill={color} stroke="#000" strokeWidth="1.5" />
-          <text x="12" y="17" textAnchor="middle" fill="#fff" fontSize="14" fontWeight="bold">F</text>
-        </g>
-      )
-    }
+    const label = unit.type === 'army' ? 'A' : 'F'
+    const typeName = unit.type === 'army' ? 'Army' : 'Fleet'
+    const powerName = unit.power.charAt(0).toUpperCase() + unit.power.slice(1)
+    const territoryName = getTerritory(unit.territory.split('_')[0])?.name || unit.territory.toUpperCase()
+    const tooltip = `${powerName} ${typeName} - ${territoryName}`
+
+    return (
+      <g key={`unit-${unit.territory}`} transform={`translate(${x - 12}, ${y - 12})`}>
+        <title>{tooltip}</title>
+        <circle cx="12" cy="12" r="11" fill={color} stroke="#000" strokeWidth="1.5" />
+        <text x="12" y="17" textAnchor="middle" fill="#fff" fontSize="14" fontWeight="bold">{label}</text>
+      </g>
+    )
   }
 
   // Render supply center marker
@@ -520,7 +523,7 @@ export function DiplomacyMap({
         })}
 
         {/* Orders visualization */}
-        {gameState.orders.map((order, index) => {
+        {displayOrders.map((order, index) => {
           // In animation mode, use OrderArrow component
           if (animationMode && animationState) {
             const unit = getOrderUnit(order)
@@ -585,7 +588,7 @@ export function DiplomacyMap({
 
         {/* Failed order markers - only in animation mode */}
         {animationMode && animationState && Array.from(animationState.failedOrders.entries()).map(([orderIndex, reason]) => {
-          const order = gameState.orders[orderIndex]
+          const order = displayOrders[orderIndex]
           if (!order || !order.target) return null
 
           const targetBaseId = order.target.split('_')[0]
