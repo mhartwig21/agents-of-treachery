@@ -50,7 +50,7 @@ export function ConflictMarker({ x, y, contenders, resolved, scale = 1 }: Confli
   }, [x, y, contenders, scale]);
 
   return (
-    <g className="conflict-marker-group">
+    <g className="conflict-marker-group" role="graphics-symbol" aria-label={`Conflict: ${contenders.map(c => c.power).join(' vs ')}${resolved ? ' (resolved)' : ''}`}>
       {/* Glow filter definitions */}
       <defs>
         <filter id="conflict-winner-glow" x="-100%" y="-100%" width="300%" height="300%">

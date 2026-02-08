@@ -54,7 +54,7 @@ export function CollapsiblePanel({
       >
         <div className="flex items-center gap-2">
           <ChevronIcon collapsed={isCollapsed} />
-          <h3 className="font-semibold text-sm">{title}</h3>
+          <h2 className="font-semibold text-sm">{title}</h2>
         </div>
         {count !== undefined && (
           <span className="text-xs text-gray-500">{count}</span>

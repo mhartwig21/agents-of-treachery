@@ -106,10 +106,11 @@ export function PressTimeline({
           {/* Header */}
           <div className="px-4 py-3 border-b border-gray-700">
             <div className="flex items-center justify-between mb-2">
-              <h3 className="font-semibold text-sm">Press Timeline</h3>
+              <h2 className="font-semibold text-sm">Press Timeline</h2>
               {hasFilters && (
                 <button
                   onClick={clearFilters}
+                  aria-label="Clear all filters"
                   className="text-xs text-gray-400 hover:text-white"
                 >
                   Clear filters
@@ -139,6 +140,8 @@ export function PressTimeline({
                   <button
                     key={power}
                     onClick={() => togglePowerFilter(upperPower)}
+                    aria-label={`Filter by power: ${power.charAt(0).toUpperCase() + power.slice(1)}`}
+                    aria-pressed={isActive}
                     className={`
                       px-2 py-1 rounded text-xs flex items-center gap-1 transition-colors
                       ${isActive ? 'bg-gray-600 ring-1 ring-blue-500' : 'bg-gray-700 hover:bg-gray-650'}
@@ -158,6 +161,8 @@ export function PressTimeline({
                   <button
                     key={intent}
                     onClick={() => toggleIntentFilter(intent)}
+                    aria-label={`Filter by intent: ${intent.charAt(0) + intent.slice(1).toLowerCase()}`}
+                    aria-pressed={isActive}
                     className={`transition-opacity ${isActive ? '' : 'opacity-50 hover:opacity-75'}`}
                   >
                     <IntentBadge intent={intent} size="sm" />

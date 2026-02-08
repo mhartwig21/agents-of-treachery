@@ -335,7 +335,8 @@ export function DiplomacyMap({
             height: Math.max(300, prev.height * 0.8),
           }))}
           className="bg-gray-700 hover:bg-gray-600 text-white w-8 h-8 rounded flex items-center justify-center"
-          title="Zoom in"
+          aria-label="Zoom in"
+          tabIndex={-1}
         >
           +
         </button>
@@ -346,14 +347,16 @@ export function DiplomacyMap({
             height: Math.min(VIEWBOX.height * 2, prev.height * 1.25),
           }))}
           className="bg-gray-700 hover:bg-gray-600 text-white w-8 h-8 rounded flex items-center justify-center"
-          title="Zoom out"
+          aria-label="Zoom out"
+          tabIndex={-1}
         >
           −
         </button>
         <button
           onClick={resetZoom}
           className="bg-gray-700 hover:bg-gray-600 text-white w-8 h-8 rounded flex items-center justify-center text-xs"
-          title="Reset zoom"
+          aria-label="Reset zoom"
+          tabIndex={-1}
         >
           ⟲
         </button>
@@ -390,6 +393,8 @@ export function DiplomacyMap({
         ref={svgRef}
         viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`}
         className="w-full h-full"
+        role="img"
+        aria-label="Diplomacy game map showing territories, units, and orders"
         onWheel={handleWheel}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
@@ -433,6 +438,8 @@ export function DiplomacyMap({
                 stroke={isSelected ? '#ffd700' : isHighlighted ? '#60a5fa' : '#5c4a32'}
                 strokeWidth={isSelected ? 2.5 : isHighlighted ? 2 : 1}
                 opacity={isHovered ? 0.85 : highlightedTerritories && !isHighlighted ? 0.6 : 1}
+                role={readOnly ? 'graphics-symbol' : 'button'}
+                aria-label={`${getTerritory(territory.id)?.name || territory.id.toUpperCase()} territory${gameState.supplyCenters[territory.id] ? `, owned by ${gameState.supplyCenters[territory.id]}` : ''}`}
                 className={readOnly ? 'transition-opacity duration-150' : 'cursor-pointer transition-opacity duration-150'}
                 onClick={readOnly ? undefined : () => {
                   // Only select if we didn't drag (click vs pan)

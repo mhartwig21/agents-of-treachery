@@ -152,9 +152,9 @@ export function PressMessageModal({
             {/* References */}
             {message.metadata?.references && message.metadata.references.length > 0 && (
               <div>
-                <h4 className="text-xs text-gray-500 uppercase tracking-wide mb-2">
+                <h3 className="text-xs text-gray-500 uppercase tracking-wide mb-2">
                   References
-                </h4>
+                </h3>
                 <div className="flex flex-wrap gap-2">
                   {message.metadata.references.map((ref, i) => (
                     <span
@@ -171,18 +171,18 @@ export function PressMessageModal({
             {/* Sentiment */}
             {message.metadata?.sentiment !== undefined && (
               <div className="flex items-center gap-2">
-                <h4 className="text-xs text-gray-500 uppercase tracking-wide">
+                <h3 className="text-xs text-gray-500 uppercase tracking-wide">
                   Sentiment
-                </h4>
+                </h3>
                 <SentimentIndicator value={message.metadata.sentiment} />
               </div>
             )}
 
             {/* Channel details */}
             <div>
-              <h4 className="text-xs text-gray-500 uppercase tracking-wide mb-2">
+              <h3 className="text-xs text-gray-500 uppercase tracking-wide mb-2">
                 Channel
-              </h4>
+              </h3>
               <ChannelDetails channel={channelInfo} />
             </div>
           </div>
@@ -190,9 +190,9 @@ export function PressMessageModal({
           {/* Replies section */}
           {replies.length > 0 && (
             <div className="pt-4 border-t border-gray-700">
-              <h4 className="text-xs text-gray-500 uppercase tracking-wide mb-3">
+              <h3 className="text-xs text-gray-500 uppercase tracking-wide mb-3">
                 Replies ({replies.length})
-              </h4>
+              </h3>
               <div className="space-y-2">
                 {replies.map((reply) => (
                   <button

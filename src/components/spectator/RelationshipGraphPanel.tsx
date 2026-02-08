@@ -383,9 +383,11 @@ export function RelationshipGraphPanel({
           ref={svgRef}
           viewBox={`0 0 ${width} ${height}`}
           className="w-full max-w-[400px] mx-auto"
+          role="img"
+          aria-label="Relationship graph showing diplomatic connections between powers"
         >
           {/* Regular Edges (non-betrayal) */}
-          <g className="edges">
+          <g className="edges" role="group" aria-label="Relationship edges">
             {relationships.map((rel) => {
               const pos1 = nodePositions.get(rel.power1)!;
               const pos2 = nodePositions.get(rel.power2)!;
@@ -432,7 +434,7 @@ export function RelationshipGraphPanel({
 
           {/* Betrayal Edges */}
           {showBetrayals && (
-            <g className="betrayal-edges">
+            <g className="betrayal-edges" role="group" aria-label="Betrayal edges">
               {Array.from(betrayalsByPair.entries()).map(([key, betrayal]) => {
                 const [p1, p2] = key.split('-') as [LowercasePower, LowercasePower];
                 const pos1 = nodePositions.get(p1)!;
@@ -456,7 +458,7 @@ export function RelationshipGraphPanel({
           )}
 
           {/* Nodes */}
-          <g className="nodes">
+          <g className="nodes" role="group" aria-label="Power nodes">
             {UI_POWERS.map((power) => {
               const pos = nodePositions.get(power)!;
               const isActive = power === activePower;
@@ -468,7 +470,11 @@ export function RelationshipGraphPanel({
                 <g
                   key={power}
                   className="cursor-pointer"
+                  role="button"
+                  aria-label={`${POWER_NAMES[power]}: ${relationships.find(r => r.power1 === power || r.power2 === power)?.status || 'neutral'}`}
+                  tabIndex={0}
                   onClick={() => onPowerClick?.(power)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onPowerClick?.(power); } }}
                   onMouseEnter={() => setHoveredPower(power)}
                   onMouseLeave={() => setHoveredPower(null)}
                 >
