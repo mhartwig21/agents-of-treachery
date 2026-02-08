@@ -1,6 +1,7 @@
 .runtime/
 .claude/
 .beads/
+CLAUDE.md
 .logs/
 logs/
 node_modules/
