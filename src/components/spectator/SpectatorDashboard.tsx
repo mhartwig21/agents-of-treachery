@@ -338,7 +338,7 @@ interface ConnectionIndicatorProps {
 function ConnectionIndicator({ state, error, onReconnect }: ConnectionIndicatorProps) {
   const stateConfig: Record<ConnectionState, { color: string; label: string }> = {
     connected: { color: 'bg-green-500', label: 'Connected' },
-    connecting: { color: 'bg-yellow-500 animate-pulse', label: 'Connecting...' },
+    connecting: { color: 'bg-yellow-500 animate-pulse-finite', label: 'Connecting...' },
     disconnected: { color: 'bg-gray-500', label: 'Disconnected' },
     error: { color: 'bg-red-500', label: 'Connection Error' },
   };

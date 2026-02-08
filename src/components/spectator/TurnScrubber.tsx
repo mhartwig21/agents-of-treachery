@@ -127,8 +127,8 @@ export function TurnScrubber({ compact = false, className = '' }: TurnScrubberPr
               className={`
                 px-2 py-1 rounded transition-colors
                 ${playbackSpeed === speed
-                  ? 'bg-gray-600 text-white'
-                  : 'text-gray-400 hover:text-white'
+                  ? 'bg-blue-600 text-white font-bold'
+                  : 'bg-gray-700 text-gray-400 hover:text-white'
                 }
               `}
             >
@@ -150,7 +150,7 @@ export function TurnScrubber({ compact = false, className = '' }: TurnScrubberPr
         <div className="flex items-center gap-2">
           {isLive ? (
             <span className="flex items-center gap-2 text-green-400 text-sm">
-              <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+              <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse-finite" />
               LIVE
             </span>
           ) : (

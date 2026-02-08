@@ -105,6 +105,16 @@ body {
   }
 }
 
+/* Finite pulse for status indicators (3 iterations, not infinite) */
+@keyframes pulse-finite {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.animate-pulse-finite {
+  animation: pulse-finite 2s cubic-bezier(0.4, 0, 0.6, 1) 3;
+}
+
 @keyframes order-arrow-pulse {
   0%, 100% {
     opacity: 0.9;

@@ -267,7 +267,7 @@ export function SpectatorGameView({ onBack }: SpectatorGameViewProps) {
         <div className="flex items-center gap-4">
           {isLive ? (
             <span className="flex items-center gap-2 text-green-400 text-sm">
-              <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+              <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse-finite" />
               Live
             </span>
           ) : (
@@ -491,7 +491,7 @@ function MobileGameView({
         </div>
         <div className="flex items-center gap-2">
           {isLive && (
-            <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+            <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse-finite" />
           )}
           <PhaseIndicator
             year={currentSnapshot.year}
@@ -575,7 +575,7 @@ function MobileGameView({
       )}
 
       {/* Bottom tab bar */}
-      <nav className="bg-gray-800 border-t border-gray-700 flex" role="tablist" aria-label="Game view tabs">
+      <nav className="bg-gray-800 border-t border-gray-700 flex relative z-10" role="tablist" aria-label="Game view tabs">
         {(['map', 'orders', 'press', 'relationships'] as const).map((tab) => (
           <button
             key={tab}
