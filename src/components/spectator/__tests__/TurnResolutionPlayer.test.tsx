@@ -262,7 +262,7 @@ describe('TurnResolutionPlayer', () => {
         />
       );
 
-      const resetButton = screen.getByTitle('Reset');
+      const resetButton = screen.getByTitle('Nothing to reset');
       expect(resetButton).toBeDisabled();
     });
 
@@ -311,7 +311,7 @@ describe('TurnResolutionPlayer', () => {
         />
       );
 
-      const skipButton = screen.getByTitle('Skip to End');
+      const skipButton = screen.getByTitle('Already at end');
       expect(skipButton).toBeDisabled();
     });
 
@@ -815,7 +815,7 @@ describe('TurnResolutionPlayer', () => {
         />
       );
 
-      expect(screen.getByTitle('Reset')).toBeDisabled();
+      expect(screen.getByTitle('Nothing to reset')).toBeDisabled();
     });
   });
 

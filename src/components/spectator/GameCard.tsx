@@ -29,9 +29,13 @@ export function GameCard({ game, onClick, isSelected = false, currentAgent }: Ga
   return (
     <div
       onClick={onClick}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } }}
+      role="button"
+      tabIndex={0}
       className={`
         bg-gray-800 rounded-lg p-4 cursor-pointer transition-all
         hover:bg-gray-750 hover:ring-1 hover:ring-gray-600
+        focus:outline-none focus:ring-2 focus:ring-blue-500
         ${isSelected ? 'ring-2 ring-blue-500' : ''}
         ${isAgentActive ? 'ring-1 ring-green-500/50' : ''}
       `}
@@ -82,7 +86,7 @@ export function GameCard({ game, onClick, isSelected = false, currentAgent }: Ga
       </div>
 
       {/* Power stats grid */}
-      <div className="grid grid-cols-4 gap-2 text-xs mb-3">
+      <div className="grid grid-cols-3 sm:grid-cols-4 gap-2 text-xs mb-3">
         {UI_POWERS.filter(p => game.supplyCenterCounts[p] > 0 || game.unitCounts[p] > 0).map((power) => (
           <div key={power} className="flex items-center gap-1">
             <PowerBadge power={power} size="sm" />
@@ -139,9 +143,12 @@ export function GameCardCompact({ game, onClick, isSelected = false }: GameCardC
   return (
     <div
       onClick={onClick}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } }}
+      role="button"
+      tabIndex={0}
       className={`
         flex items-center justify-between p-3 rounded cursor-pointer transition-colors
-        hover:bg-gray-700
+        hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500
         ${isSelected ? 'bg-gray-700 ring-1 ring-blue-500' : 'bg-gray-800'}
       `}
     >

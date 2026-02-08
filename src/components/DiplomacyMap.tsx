@@ -360,11 +360,31 @@ export function DiplomacyMap({
       </div>
 
       {/* Hovered territory tooltip */}
-      {hoveredTerritory && (
-        <div className="absolute top-4 left-4 z-10 bg-gray-900/90 px-3 py-2 rounded text-sm">
-          {getTerritory(hoveredTerritory)?.name}
-        </div>
-      )}
+      {hoveredTerritory && (() => {
+        const territory = getTerritory(hoveredTerritory)
+        const baseId = hoveredTerritory.split('_')[0]
+        const owner = gameState.supplyCenters[baseId]
+        const unit = gameState.units.find(u => u.territory === hoveredTerritory || u.territory.split('_')[0] === baseId)
+        const isSC = territory?.supplyCenter
+        return (
+          <div className="absolute top-4 left-4 z-10 bg-gray-900/90 px-3 py-2 rounded text-sm space-y-1">
+            <div className="font-medium text-white">{territory?.name}</div>
+            {owner && (
+              <div className="text-gray-300">
+                Owner: <span className="capitalize" style={{ color: POWER_COLORS[owner] }}>{owner}</span>
+              </div>
+            )}
+            {unit && (
+              <div className="text-gray-300">
+                {unit.type === 'army' ? 'Army' : 'Fleet'} (<span className="capitalize" style={{ color: POWER_COLORS[unit.power] }}>{unit.power}</span>)
+              </div>
+            )}
+            {isSC && !owner && (
+              <div className="text-gray-400">Neutral supply center</div>
+            )}
+          </div>
+        )
+      })()}
 
       <svg
         ref={svgRef}

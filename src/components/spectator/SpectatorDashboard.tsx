@@ -125,11 +125,11 @@ export function SpectatorDashboard({
   const completedCount = gameSummaries.filter((g) => g.status === 'completed').length;
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white">
+    <div className="min-h-screen bg-gray-900 text-white overflow-x-hidden">
       {/* Header */}
       <header className="bg-gray-800 border-b border-gray-700 px-4 py-4">
         <div className="max-w-7xl mx-auto">
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
             <div>
               <h1 className="text-2xl font-bold">Spectator Dashboard</h1>
               <p className="text-gray-400 text-sm mt-1">
