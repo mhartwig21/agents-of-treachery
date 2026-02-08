@@ -122,7 +122,7 @@ export function TurnScrubber({ compact = false, className = '' }: TurnScrubberPr
             <button
               key={speed}
               onClick={() => setPlaybackSpeed(speed)}
-              aria-label={`Speed ${speed}x`}
+              aria-label={`Playback speed ${speed}x`}
               aria-pressed={playbackSpeed === speed}
               className={`
                 px-2 py-1 rounded transition-colors
