@@ -115,6 +115,14 @@ body {
   animation: pulse-finite 2s cubic-bezier(0.4, 0, 0.6, 1) 3;
 }
 
+/* Fix: Recharts Area style prop doesn't reliably apply to rendered SVG paths.
+   Apply pointer-events:none directly to area fill/curve paths so they don't
+   intercept clicks meant for elements beneath the chart overlay. (aot-yvn9w) */
+.recharts-area-area,
+.recharts-area-curve {
+  pointer-events: none;
+}
+
 @keyframes order-arrow-pulse {
   0%, 100% {
     opacity: 0.9;

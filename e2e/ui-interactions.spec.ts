@@ -357,17 +357,13 @@ test.describe('Supply Center Balance Chart (recharts)', () => {
   });
 
   test('recharts area chart pointer-events audit', async ({ page }) => {
-    // The SupplyCenterBalanceChart uses recharts AreaChart with
-    // style={{ pointerEvents: 'none' }} on <Area> components.
-    // KNOWN ISSUE: This style is NOT reliably applied to the rendered
-    // SVG <path> elements (.recharts-area-area), causing the chart overlay
-    // to intercept pointer events meant for elements beneath it.
-    // (Same root cause as navigation.spec.ts:124 territory click failure)
+    // CSS rule in index.css applies pointer-events:none to .recharts-area-area
+    // and .recharts-area-curve, fixing the bug where Recharts style prop didn't
+    // propagate to rendered SVG path elements. (aot-yvn9w)
     const chartAreas = page.locator('.recharts-area-area');
     const count = await chartAreas.count();
 
     if (count > 0) {
-      // Audit: check what pointer-events value is actually computed
       const pointerEventsValues: string[] = [];
       for (let i = 0; i < count; i++) {
         const pe = await chartAreas.nth(i).evaluate((el) => {
@@ -376,28 +372,10 @@ test.describe('Supply Center Balance Chart (recharts)', () => {
         pointerEventsValues.push(pe);
       }
 
-      // Document the finding: areas should have 'none' but may not
       const allNone = pointerEventsValues.every(v => v === 'none');
-      if (!allNone) {
-        // This confirms the known bug — log it for the report
-        console.warn(
-          `FINDING: ${count} recharts area paths found, pointer-events values: ` +
-          `[${pointerEventsValues.join(', ')}]. Expected 'none' but style is not applied to path elements.`
-        );
-      }
-
-      // Check the parent <g> element for the style
-      const areaWrappers = page.locator('.recharts-area');
-      for (let i = 0; i < await areaWrappers.count(); i++) {
-        const parentPE = await areaWrappers.nth(i).evaluate((el) => {
-          return window.getComputedStyle(el).pointerEvents;
-        });
-        // The style may be on the wrapper <g>, not the child path
-        pointerEventsValues.push(`wrapper:${parentPE}`);
-      }
+      expect(allNone).toBe(true);
 
       await screenshot(page, { name: 'sc-chart-pointer-events', subdir: 'ui-interactions' });
-      // Pass — this is an audit test, not an assertion
       expect(count).toBeGreaterThan(0);
     }
   });
