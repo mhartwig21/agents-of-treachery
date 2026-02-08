@@ -250,6 +250,7 @@ export function SpectatorGameView({ onBack }: SpectatorGameViewProps) {
           <button
             onClick={onBack}
             className="text-gray-400 hover:text-white transition-colors"
+            aria-label="Back to dashboard"
           >
             ← Back
           </button>
@@ -484,7 +485,7 @@ function MobileGameView({
       {/* Compact header */}
       <header className="bg-gray-800 px-3 py-2 flex items-center justify-between">
         <div className="flex items-center gap-2 min-w-0">
-          <button onClick={onBack} className="text-gray-400 flex-shrink-0">←</button>
+          <button onClick={onBack} className="text-gray-400 flex-shrink-0" aria-label="Back to dashboard">←</button>
           <span className="truncate font-medium">{activeGame.name}</span>
         </div>
         <div className="flex items-center gap-2">
@@ -572,11 +573,14 @@ function MobileGameView({
       )}
 
       {/* Bottom tab bar */}
-      <nav className="bg-gray-800 border-t border-gray-700 flex">
+      <nav className="bg-gray-800 border-t border-gray-700 flex" role="tablist" aria-label="Game view tabs">
         {(['map', 'orders', 'press', 'relationships'] as const).map((tab) => (
           <button
             key={tab}
             onClick={() => setGameViewTab(tab)}
+            role="tab"
+            aria-selected={gameViewTab === tab}
+            aria-label={tab === 'map' ? 'Map' : tab === 'orders' ? 'Orders' : tab === 'press' ? 'Press' : 'Graph'}
             className={`
               flex-1 py-3 text-sm font-medium transition-colors
               ${gameViewTab === tab

@@ -72,6 +72,8 @@ export function BetrayalEdge({
   return (
     <g
       className="betrayal-edge cursor-pointer"
+      role="button"
+      aria-label={`Betrayal: ${POWER_NAMES[betrayal.betrayer.toLowerCase() as LowercasePower]} betrayed ${POWER_NAMES[betrayal.victim.toLowerCase() as LowercasePower]}`}
       onClick={onClick}
       style={{ opacity: highlighted ? 1 : 0.3 }}
     >

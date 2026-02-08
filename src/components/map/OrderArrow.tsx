@@ -149,7 +149,7 @@ export function OrderArrow({
   }, [animate, strokeDasharray, totalLength])
 
   return (
-    <g className="order-arrow-group">
+    <g className="order-arrow-group" role="graphics-symbol" aria-label={`${type} order, ${status}`}>
       {/* Glow filter definitions */}
       <defs>
         <filter id="order-arrow-glow-success" x="-50%" y="-50%" width="200%" height="200%">

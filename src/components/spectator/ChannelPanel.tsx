@@ -134,6 +134,8 @@ export function ChannelPanel({
             <button
               key={filter}
               onClick={() => setChannelFilter(filter)}
+              aria-label={`Filter channels: ${filter === 'all' ? 'All' : filter.charAt(0).toUpperCase() + filter.slice(1)}`}
+              aria-pressed={channelFilter === filter}
               className={`
                 px-2 py-1 text-xs rounded transition-colors
                 ${channelFilter === filter
@@ -151,6 +153,8 @@ export function ChannelPanel({
         <div className="flex flex-wrap gap-1">
           <button
             onClick={() => setPowerFilter(null)}
+            aria-label="Filter by power: All Powers"
+            aria-pressed={!powerFilter}
             className={`
               px-2 py-1 text-xs rounded transition-colors
               ${!powerFilter ? 'bg-gray-600 text-white' : 'text-gray-400 hover:text-white'}
@@ -162,6 +166,8 @@ export function ChannelPanel({
             <button
               key={power}
               onClick={() => setPowerFilter(powerFilter === power ? null : power)}
+              aria-label={`Filter by power: ${power.charAt(0).toUpperCase() + power.slice(1)}`}
+              aria-pressed={powerFilter === power}
               className={`
                 px-2 py-1 text-xs rounded transition-colors flex items-center gap-1
                 ${powerFilter === power ? 'bg-gray-600' : 'hover:bg-gray-700'}
@@ -271,7 +277,7 @@ function ChannelMessages({
     <div className="flex flex-col h-full">
       {/* Header */}
       <div className="px-3 py-2 border-b border-gray-700 flex items-center gap-2">
-        <button onClick={onBack} className="text-gray-400 hover:text-white">
+        <button onClick={onBack} className="text-gray-400 hover:text-white" aria-label="Back to channel list">
           ←
         </button>
         <span className="font-medium text-sm truncate">{channelId}</span>

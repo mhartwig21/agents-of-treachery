@@ -49,6 +49,7 @@ export function TurnScrubber({ compact = false, className = '' }: TurnScrubberPr
           <button
             onClick={togglePlay}
             className="w-8 h-8 flex items-center justify-center rounded bg-gray-700 hover:bg-gray-600"
+            aria-label={isPlaying ? 'Pause' : 'Play'}
           >
             {isPlaying ? <PauseIcon /> : <PlayIcon />}
           </button>
@@ -89,7 +90,7 @@ export function TurnScrubber({ compact = false, className = '' }: TurnScrubberPr
             onClick={stepBackward}
             disabled={displayPosition === 0}
             className="w-8 h-8 flex items-center justify-center rounded hover:bg-gray-700 disabled:opacity-40"
-            title="Previous turn"
+            aria-label="Previous turn"
           >
             <StepBackIcon />
           </button>
@@ -97,7 +98,7 @@ export function TurnScrubber({ compact = false, className = '' }: TurnScrubberPr
           <button
             onClick={togglePlay}
             className="w-10 h-10 flex items-center justify-center rounded-full bg-gray-700 hover:bg-gray-600"
-            title={isPlaying ? 'Pause' : 'Play'}
+            aria-label={isPlaying ? 'Pause' : 'Play'}
           >
             {isPlaying ? <PauseIcon size={20} /> : <PlayIcon size={20} />}
           </button>
@@ -106,7 +107,7 @@ export function TurnScrubber({ compact = false, className = '' }: TurnScrubberPr
             onClick={stepForward}
             disabled={displayPosition >= totalSnapshots - 1}
             className="w-8 h-8 flex items-center justify-center rounded hover:bg-gray-700 disabled:opacity-40"
-            title="Next turn"
+            aria-label="Next turn"
           >
             <StepForwardIcon />
           </button>
@@ -119,6 +120,8 @@ export function TurnScrubber({ compact = false, className = '' }: TurnScrubberPr
             <button
               key={speed}
               onClick={() => setPlaybackSpeed(speed)}
+              aria-label={`Playback speed ${speed}x`}
+              aria-pressed={playbackSpeed === speed}
               className={`
                 px-2 py-1 rounded transition-colors
                 ${playbackSpeed === speed
