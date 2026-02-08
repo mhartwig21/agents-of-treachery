@@ -55,7 +55,7 @@ export function GameCard({ game, onClick, isSelected = false, currentAgent }: Ga
         <div className="flex items-center gap-2">
           {isAgentActive && (
             <span className="flex items-center gap-1 text-xs text-green-400">
-              <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+              <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse-finite" />
               <span className="capitalize">{currentAgent}</span>
             </span>
           )}

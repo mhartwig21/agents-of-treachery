@@ -137,8 +137,8 @@ export function ChannelPanel({
               className={`
                 px-2 py-1 text-xs rounded transition-colors
                 ${channelFilter === filter
-                  ? 'bg-gray-600 text-white'
-                  : 'text-gray-400 hover:text-white'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-gray-700 text-gray-400 hover:text-white hover:bg-gray-650'
                 }
               `}
             >
@@ -164,7 +164,7 @@ export function ChannelPanel({
               onClick={() => setPowerFilter(powerFilter === power ? null : power)}
               className={`
                 px-2 py-1 text-xs rounded transition-colors flex items-center gap-1
-                ${powerFilter === power ? 'bg-gray-600' : 'hover:bg-gray-700'}
+                ${powerFilter === power ? 'bg-gray-600 ring-1 ring-blue-500' : 'bg-gray-700 hover:bg-gray-650'}
               `}
             >
               <PowerBadge power={power} size="sm" />

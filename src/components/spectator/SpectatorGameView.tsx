@@ -266,7 +266,7 @@ export function SpectatorGameView({ onBack }: SpectatorGameViewProps) {
         <div className="flex items-center gap-4">
           {isLive ? (
             <span className="flex items-center gap-2 text-green-400 text-sm">
-              <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+              <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse-finite" />
               Live
             </span>
           ) : (
@@ -489,7 +489,7 @@ function MobileGameView({
         </div>
         <div className="flex items-center gap-2">
           {isLive && (
-            <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+            <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse-finite" />
           )}
           <PhaseIndicator
             year={currentSnapshot.year}
@@ -510,7 +510,7 @@ function MobileGameView({
       />
 
       {/* Tab content */}
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 overflow-hidden relative">
         {gameViewTab === 'map' && (
           <DiplomacyMap
             gameState={currentSnapshot.gameState}
@@ -572,7 +572,7 @@ function MobileGameView({
       )}
 
       {/* Bottom tab bar */}
-      <nav className="bg-gray-800 border-t border-gray-700 flex">
+      <nav className="bg-gray-800 border-t border-gray-700 flex relative z-10">
         {(['map', 'orders', 'press', 'relationships'] as const).map((tab) => (
           <button
             key={tab}
