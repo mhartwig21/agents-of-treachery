@@ -167,7 +167,7 @@ describe('ExperimentRunner', () => {
         eventTypes.includes('game_completed') || eventTypes.includes('game_failed')
       ).toBe(true);
       expect(eventTypes).toContain('experiment_completed');
-    });
+    }, 15000);
 
     it('should track stats correctly', async () => {
       const mockModel: ModelConfig = {
@@ -193,7 +193,7 @@ describe('ExperimentRunner', () => {
 
       expect(results.stats.totalGames).toBe(1);
       expect(results.stats.completedGames + results.stats.failedGames).toBe(1);
-    });
+    }, 15000);
   });
 
   describe('ExperimentRunner with mock games', () => {

@@ -336,12 +336,20 @@ export class AgentRuntime {
    * Agents can have back-and-forth conversations during the press window.
    */
   private async runDiplomacyPhase(): Promise<void> {
-    const pressPeriodMs = (this.config.pressPeriodMinutes ?? 1) * 60 * 1000;
+    const pressPeriodMinutes = this.config.pressPeriodMinutes ?? 1;
+
+    // Skip diplomacy entirely when press period is 0
+    if (pressPeriodMinutes === 0) {
+      console.log(`\n📬 Press period skipped (0 minute window)`);
+      return;
+    }
+
+    const pressPeriodMs = pressPeriodMinutes * 60 * 1000;
     const pollIntervalMs = (this.config.pressPollIntervalSeconds ?? 5) * 1000;
     const startTime = Date.now();
     const endTime = startTime + pressPeriodMs;
 
-    console.log(`\n📬 Press period started (${this.config.pressPeriodMinutes ?? 1} minute window)`);
+    console.log(`\n📬 Press period started (${pressPeriodMinutes} minute window)`);
 
     // Track which agents have sent at least one message this phase
     const agentsWhoActed = new Set<Power>();
