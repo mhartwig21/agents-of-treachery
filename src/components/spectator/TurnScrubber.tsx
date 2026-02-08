@@ -62,7 +62,7 @@ export function TurnScrubber({ compact = false, className = '' }: TurnScrubberPr
           </div>
 
           {/* Position indicator */}
-          <span className="text-xs text-gray-400 font-mono min-w-[4rem] text-right">
+          <span className="text-xs text-gray-400 font-mono shrink-0 text-right">
             {displayPosition + 1}/{totalSnapshots}
           </span>
 
@@ -88,8 +88,8 @@ export function TurnScrubber({ compact = false, className = '' }: TurnScrubberPr
           <button
             onClick={stepBackward}
             disabled={displayPosition === 0}
-            className="w-8 h-8 flex items-center justify-center rounded hover:bg-gray-700 disabled:opacity-40"
-            title="Previous turn"
+            className="w-8 h-8 flex items-center justify-center rounded hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed"
+            title={displayPosition === 0 ? 'Already at first turn' : 'Previous turn'}
           >
             <StepBackIcon />
           </button>
@@ -105,8 +105,8 @@ export function TurnScrubber({ compact = false, className = '' }: TurnScrubberPr
           <button
             onClick={stepForward}
             disabled={displayPosition >= totalSnapshots - 1}
-            className="w-8 h-8 flex items-center justify-center rounded hover:bg-gray-700 disabled:opacity-40"
-            title="Next turn"
+            className="w-8 h-8 flex items-center justify-center rounded hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed"
+            title={displayPosition >= totalSnapshots - 1 ? 'Already at latest turn' : 'Next turn'}
           >
             <StepForwardIcon />
           </button>

@@ -133,7 +133,7 @@ export function TurnResolutionPlayer({
           onClick={controls.reset}
           disabled={isIdle}
           className="w-6 h-6 rounded flex items-center justify-center text-gray-400 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          title="Reset"
+          title={isIdle ? 'Nothing to reset' : 'Reset'}
         >
           <ResetIcon className="w-4 h-4" />
         </button>
@@ -175,7 +175,7 @@ export function TurnResolutionPlayer({
             onClick={controls.reset}
             disabled={isIdle}
             className="w-8 h-8 rounded-full bg-gray-700 hover:bg-gray-600 flex items-center justify-center text-gray-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            title="Reset"
+            title={isIdle ? 'Nothing to reset' : 'Reset'}
           >
             <ResetIcon className="w-4 h-4" />
           </button>
@@ -185,7 +185,7 @@ export function TurnResolutionPlayer({
             onClick={controls.skip}
             disabled={isComplete}
             className="w-8 h-8 rounded-full bg-gray-700 hover:bg-gray-600 flex items-center justify-center text-gray-300 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            title="Skip to End"
+            title={isComplete ? 'Already at end' : 'Skip to End'}
           >
             <SkipIcon className="w-4 h-4" />
           </button>
