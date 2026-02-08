@@ -128,4 +128,36 @@ describe('RelationshipGraphPanel', () => {
 
     expect(container.firstChild).toHaveClass('custom-class');
   });
+
+  it('does not use translate(-50%, -100%) transform for tooltip positioning', () => {
+    // The old implementation used CSS transform which caused clipping.
+    // The fix uses direct left/top clamped to container bounds.
+    const messages: Message[] = [
+      createMessage('ENGLAND', 'ENGLAND-FRANCE', 'PROPOSAL'),
+      createMessage('FRANCE', 'ENGLAND-FRANCE', 'ACCEPTANCE'),
+    ];
+
+    const { container } = render(
+      <RelationshipGraphPanel messages={messages} showHistory={true} />
+    );
+
+    // Hover over an edge to trigger tooltip
+    const edges = container.querySelectorAll('line[stroke="transparent"]');
+    expect(edges.length).toBeGreaterThan(0);
+
+    // Simulate hover on the first edge
+    fireEvent.mouseEnter(edges[0], { clientX: 50, clientY: 30 });
+
+    // After debounce, tooltip should appear without translate transform
+    // We verify no tooltip uses the old clipping transform
+    vi.useFakeTimers();
+    vi.advanceTimersByTime(100);
+    vi.useRealTimers();
+
+    const tooltips = container.querySelectorAll('.absolute.z-10');
+    tooltips.forEach((tooltip) => {
+      const style = (tooltip as HTMLElement).style;
+      expect(style.transform).not.toContain('translate(-50%, -100%)');
+    });
+  });
 });

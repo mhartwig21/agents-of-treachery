@@ -631,14 +631,33 @@ export function RelationshipGraphPanel({
 
         if (!rel) return null;
 
+        // Clamp tooltip position to stay within container bounds
+        const TOOLTIP_W = 180;
+        const TOOLTIP_H = 140;
+        const containerW = containerRef.current?.clientWidth || width;
+        const containerH = containerRef.current?.clientHeight || height;
+
+        // Default: centered above cursor
+        let left = tooltipPosition.x - TOOLTIP_W / 2;
+        let top = tooltipPosition.y - 10 - TOOLTIP_H;
+
+        // Clamp horizontal
+        left = Math.max(0, Math.min(left, containerW - TOOLTIP_W));
+
+        // If clipping top, flip to below cursor
+        if (top < 0) {
+          top = tooltipPosition.y + 15;
+        }
+
+        // Clamp bottom
+        if (top + TOOLTIP_H > containerH) {
+          top = containerH - TOOLTIP_H;
+        }
+
         return (
           <div
             className="absolute z-10 pointer-events-none"
-            style={{
-              left: tooltipPosition.x,
-              top: tooltipPosition.y - 10,
-              transform: 'translate(-50%, -100%)',
-            }}
+            style={{ left, top }}
           >
             <SparklineTooltip
               timeline={history?.timeline || []}
