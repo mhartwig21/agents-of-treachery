@@ -161,19 +161,19 @@ describe('estimateTokens', () => {
 // getCompressionLevel
 // ---------------------------------------------------------------------------
 describe('getCompressionLevel', () => {
-  it('should return none for turns 0-3', () => {
+  it('should return none for turns 0-1', () => {
     expect(getCompressionLevel(0)).toBe('none');
     expect(getCompressionLevel(1)).toBe('none');
-    expect(getCompressionLevel(3)).toBe('none');
   });
 
-  it('should return moderate for turns 4-8', () => {
+  it('should return moderate for turns 2-4', () => {
+    expect(getCompressionLevel(2)).toBe('moderate');
+    expect(getCompressionLevel(3)).toBe('moderate');
     expect(getCompressionLevel(4)).toBe('moderate');
-    expect(getCompressionLevel(6)).toBe('moderate');
-    expect(getCompressionLevel(8)).toBe('moderate');
   });
 
-  it('should return aggressive for turns 9+', () => {
+  it('should return aggressive for turns 5+', () => {
+    expect(getCompressionLevel(5)).toBe('aggressive');
     expect(getCompressionLevel(9)).toBe('aggressive');
     expect(getCompressionLevel(15)).toBe('aggressive');
     expect(getCompressionLevel(30)).toBe('aggressive');
@@ -439,8 +439,8 @@ describe('compression limits', () => {
 describe('buildSystemPrompt with compression', () => {
   it('should produce shorter prompts at higher turn numbers', () => {
     const fullPrompt = buildSystemPrompt('FRANCE', DEFAULT_PERSONALITY, undefined, 0);
-    const moderatePrompt = buildSystemPrompt('FRANCE', DEFAULT_PERSONALITY, undefined, 5);
-    const aggressivePrompt = buildSystemPrompt('FRANCE', DEFAULT_PERSONALITY, undefined, 10);
+    const moderatePrompt = buildSystemPrompt('FRANCE', DEFAULT_PERSONALITY, undefined, 3);
+    const aggressivePrompt = buildSystemPrompt('FRANCE', DEFAULT_PERSONALITY, undefined, 6);
 
     expect(moderatePrompt.length).toBeLessThan(fullPrompt.length);
     expect(aggressivePrompt.length).toBeLessThan(moderatePrompt.length);
@@ -457,7 +457,7 @@ describe('buildSystemPrompt with compression', () => {
   });
 
   it('should omit power strategy in aggressive mode', () => {
-    const aggressive = buildSystemPrompt('FRANCE', DEFAULT_PERSONALITY, undefined, 10);
+    const aggressive = buildSystemPrompt('FRANCE', DEFAULT_PERSONALITY, undefined, 6);
     // Full power strategy section has "France Strategy" header
     expect(aggressive).not.toContain('France Strategy');
   });
@@ -484,8 +484,8 @@ describe('buildTurnPrompt with compression', () => {
       })),
     });
     const fullPrompt = buildTurnPrompt(view, memory, [], 'MOVEMENT', undefined, 0);
-    const moderatePrompt = buildTurnPrompt(view, memory, [], 'MOVEMENT', undefined, 5);
-    const aggressivePrompt = buildTurnPrompt(view, memory, [], 'MOVEMENT', undefined, 10);
+    const moderatePrompt = buildTurnPrompt(view, memory, [], 'MOVEMENT', undefined, 3);
+    const aggressivePrompt = buildTurnPrompt(view, memory, [], 'MOVEMENT', undefined, 6);
 
     expect(moderatePrompt.length).toBeLessThan(fullPrompt.length);
     expect(aggressivePrompt.length).toBeLessThan(moderatePrompt.length);
@@ -513,11 +513,28 @@ describe('buildTurnPrompt with compression', () => {
     for (let i = 0; i < 15; i++) {
       messages.push(`FROM ENGLAND: "Message ${i}"`);
     }
-    const prompt = buildTurnPrompt(view, memory, messages, 'DIPLOMACY', undefined, 10);
+    const prompt = buildTurnPrompt(view, memory, messages, 'DIPLOMACY', undefined, 6);
     // Should only include last 6 messages in aggressive mode
     expect(prompt).toContain('Message 14');
     expect(prompt).toContain('Message 9');
     expect(prompt).not.toContain('Message 0');
+  });
+
+  it('should compress diplomacy instructions after round 1', () => {
+    const view = makeGameView();
+    const memory = makeMemory();
+    const round1 = buildTurnPrompt(view, memory, [], 'DIPLOMACY', undefined, 0, 1);
+    const round2 = buildTurnPrompt(view, memory, [], 'DIPLOMACY', undefined, 0, 2);
+
+    // Round 1 has full instructions
+    expect(round1).toContain('FOCUS YOUR DIPLOMACY');
+    expect(round1).toContain('NEGOTIATION FLOW');
+
+    // Round 2 has compressed instructions
+    expect(round2).not.toContain('FOCUS YOUR DIPLOMACY');
+    expect(round2).toContain('Diplomacy Round 2');
+    expect(round2).toContain('RESPOND to incoming messages first');
+    expect(round2.length).toBeLessThan(round1.length);
   });
 });
 
@@ -526,9 +543,9 @@ describe('buildTurnPrompt with compression', () => {
 // ---------------------------------------------------------------------------
 describe('getPromptContextStats', () => {
   it('should return compression level based on turn number', () => {
-    const stats = getPromptContextStats('system prompt text', 'turn prompt text', 5);
+    const stats = getPromptContextStats('system prompt text', 'turn prompt text', 3);
     expect(stats.compressionLevel).toBe('moderate');
-    expect(stats.turnNumber).toBe(5);
+    expect(stats.turnNumber).toBe(3);
     expect(stats.systemPromptTokens).toBeGreaterThan(0);
     expect(stats.turnPromptTokens).toBeGreaterThan(0);
     expect(stats.totalTokens).toBe(stats.systemPromptTokens + stats.turnPromptTokens);
@@ -544,7 +561,7 @@ describe('getPromptContextStats', () => {
 // End-to-end: compression targets
 // ---------------------------------------------------------------------------
 describe('compression targets', () => {
-  it('should achieve significant compression at turn 10', () => {
+  it('should achieve significant compression at turn 6 (aggressive)', () => {
     const view = makeGameView();
     const memory = makeMemory({
       yearSummaries: [
@@ -569,8 +586,8 @@ describe('compression targets', () => {
     const fullTurn = buildTurnPrompt(view, memory, [], 'MOVEMENT', undefined, 0);
     const fullTotal = fullSystem.length + fullTurn.length;
 
-    const compressedSystem = buildSystemPrompt('FRANCE', DEFAULT_PERSONALITY, undefined, 10);
-    const compressedTurn = buildTurnPrompt(view, memory, [], 'MOVEMENT', undefined, 10);
+    const compressedSystem = buildSystemPrompt('FRANCE', DEFAULT_PERSONALITY, undefined, 6);
+    const compressedTurn = buildTurnPrompt(view, memory, [], 'MOVEMENT', undefined, 6);
     const compressedTotal = compressedSystem.length + compressedTurn.length;
 
     const ratio = compressedTotal / fullTotal;
@@ -580,7 +597,7 @@ describe('compression targets', () => {
 
   it('aggressive mode should produce substantially smaller system prompt', () => {
     const full = buildSystemPrompt('FRANCE', DEFAULT_PERSONALITY, undefined, 0);
-    const aggressive = buildSystemPrompt('FRANCE', DEFAULT_PERSONALITY, undefined, 10);
+    const aggressive = buildSystemPrompt('FRANCE', DEFAULT_PERSONALITY, undefined, 6);
 
     // Aggressive should be less than 50% of full
     expect(aggressive.length / full.length).toBeLessThan(0.5);

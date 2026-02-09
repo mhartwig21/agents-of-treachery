@@ -1102,13 +1102,17 @@ export class AgentRuntime {
     const recentMessages = this.formatRoundAwareMessages(power, inbox.recentMessages, inbox.unreadCount);
 
     // Build the turn prompt with progressive compression
+    const diplomacyRound = this.gameState.phase === 'DIPLOMACY'
+      ? this.pressSystem.getCurrentRound()
+      : 1;
     const turnPrompt = buildTurnPrompt(
       gameView,
       session.memory,
       recentMessages,
       this.gameState.phase,
       this.gameState,
-      this.turnNumber
+      this.turnNumber,
+      diplomacyRound
     );
 
     // Add strategic summary

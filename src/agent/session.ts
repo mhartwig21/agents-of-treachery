@@ -18,6 +18,98 @@ import { MemoryManager, MemoryStore, InMemoryStore } from './memory';
 import { getPowerPersonality } from './personalities';
 
 /**
+ * Prefix for summary messages so they can be identified in conversation history.
+ */
+const SUMMARY_PREFIX = '[CONVERSATION SUMMARY] ';
+
+/**
+ * Summarize evicted conversation messages into a compact context string.
+ * Extracts orders, diplomatic actions, and key decisions without an LLM call.
+ *
+ * @param evicted - Messages being dropped from the conversation window
+ * @param previousSummary - Content from any prior summary to merge with
+ * @returns A compact summary message prefixed with SUMMARY_PREFIX
+ */
+export function summarizeEvictedMessages(
+  evicted: ConversationMessage[],
+  previousSummary: string = ''
+): string {
+  const orders: string[] = [];
+  const diplomacy: string[] = [];
+  const keyDecisions: string[] = [];
+
+  for (const msg of evicted) {
+    const content = msg.content;
+
+    // Extract ORDERS sections from assistant responses
+    if (msg.role === 'assistant') {
+      const ordersMatch = content.match(/ORDERS:\s*([\s\S]*?)(?=(?:RETREATS:|BUILDS:|REASONING:|DIPLOMACY:|$))/i);
+      if (ordersMatch) {
+        const orderLines = ordersMatch[1].trim().split('\n')
+          .filter(l => l.trim() && !l.startsWith('#'))
+          .slice(0, 5); // Keep up to 5 order lines
+        if (orderLines.length > 0) {
+          orders.push(orderLines.join(', '));
+        }
+      }
+
+      // Extract DIPLOMACY sends
+      const sendMatches = content.match(/SEND\s+\w+:\s*"[^"]*"/gi);
+      if (sendMatches) {
+        for (const send of sendMatches.slice(0, 3)) {
+          // Extract just the recipient and first 60 chars
+          const truncated = send.length > 80 ? send.slice(0, 80) + '...' : send;
+          diplomacy.push(truncated);
+        }
+      }
+
+      // Extract key ANALYSIS/INTENTIONS lines
+      const analysisMatch = content.match(/ANALYSIS:\s*(.*?)(?:\n|$)/i);
+      if (analysisMatch && analysisMatch[1].trim()) {
+        const analysis = analysisMatch[1].trim();
+        if (analysis.length > 10) {
+          keyDecisions.push(analysis.slice(0, 120));
+        }
+      }
+    }
+
+    // Extract game state headers from user messages (year/season/phase)
+    if (msg.role === 'user') {
+      const stateMatch = content.match(/Y:(\d+)\s+S:(\w+)\s+P:(\w+)/);
+      if (stateMatch) {
+        keyDecisions.push(`Turn: ${stateMatch[1]} ${stateMatch[2]} ${stateMatch[3]}`);
+      }
+    }
+  }
+
+  const sections: string[] = [SUMMARY_PREFIX + 'Prior turns context:'];
+
+  if (previousSummary) {
+    sections.push(previousSummary);
+  }
+
+  if (orders.length > 0) {
+    // Keep only most recent 3 order sets
+    sections.push('Orders: ' + orders.slice(-3).join(' | '));
+  }
+  if (diplomacy.length > 0) {
+    sections.push('Diplomacy: ' + diplomacy.slice(-4).join(' | '));
+  }
+  if (keyDecisions.length > 0) {
+    // Keep only most recent 3 decisions/states
+    sections.push('Context: ' + keyDecisions.slice(-3).join(' | '));
+  }
+
+  // Cap total summary at ~500 tokens (~2000 chars)
+  let summary = sections.join('\n');
+  if (summary.length > 2000) {
+    summary = summary.slice(0, 1997) + '...';
+  }
+
+  return summary;
+}
+
+/**
  * Generate a unique session ID.
  */
 function generateSessionId(): AgentSessionId {
@@ -26,9 +118,10 @@ function generateSessionId(): AgentSessionId {
 
 /**
  * Default maximum conversation history size (sliding window).
- * Reduced to 20 to avoid context overflow on long games with models like gpt-4o-mini.
+ * Reduced to 10 to cut late-game token usage by 60-80%.
+ * Evicted messages are summarized and injected as a context message.
  */
-const DEFAULT_MAX_CONVERSATION_HISTORY = 20;
+const DEFAULT_MAX_CONVERSATION_HISTORY = 10;
 
 /**
  * Manages agent sessions for all powers in a game.
@@ -139,6 +232,8 @@ export class AgentSessionManager {
   /**
    * Apply sliding window to conversation history.
    * Preserves the system message (if any) and keeps only the most recent messages.
+   * Evicted messages are summarized into a compact context message to preserve
+   * strategic continuity without consuming the full token budget.
    */
   private applyConversationWindow(session: AgentSession): void {
     const history = session.conversationHistory;
@@ -149,21 +244,44 @@ export class AgentSessionManager {
     // Find system message (usually first)
     const systemMessage = history.find(m => m.role === 'system');
 
-    // Calculate how many non-system messages to keep
-    const maxNonSystem = systemMessage
-      ? this.maxConversationHistory - 1
-      : this.maxConversationHistory;
+    // Reserve slots: 1 system + 1 summary + recent messages
+    const reservedSlots = systemMessage ? 2 : 1; // system + summary (or just summary)
+    const maxNonSystem = this.maxConversationHistory - reservedSlots;
 
-    // Get non-system messages
-    const nonSystemMessages = history.filter(m => m.role !== 'system');
+    // Get non-system messages (excluding any existing summary)
+    const nonSystemMessages = history.filter(
+      m => m.role !== 'system' && !m.content.startsWith(SUMMARY_PREFIX)
+    );
 
-    // Keep only the most recent
+    // Find existing summary (if any)
+    const existingSummary = history.find(
+      m => m.content.startsWith(SUMMARY_PREFIX)
+    );
+
+    if (nonSystemMessages.length <= maxNonSystem) {
+      return;
+    }
+
+    // Split into evicted and kept
+    const evictedMessages = nonSystemMessages.slice(0, -maxNonSystem);
     const recentMessages = nonSystemMessages.slice(-maxNonSystem);
 
-    // Rebuild history with system message first (if present)
+    // Build summary from evicted messages (merge with existing summary)
+    const previousSummaryContent = existingSummary
+      ? existingSummary.content.slice(SUMMARY_PREFIX.length).trim()
+      : '';
+    const newSummary = summarizeEvictedMessages(evictedMessages, previousSummaryContent);
+
+    const summaryMessage: ConversationMessage = {
+      role: 'user',
+      content: newSummary,
+      timestamp: new Date(),
+    };
+
+    // Rebuild: system + summary + recent
     session.conversationHistory = systemMessage
-      ? [systemMessage, ...recentMessages]
-      : recentMessages;
+      ? [systemMessage, summaryMessage, ...recentMessages]
+      : [summaryMessage, ...recentMessages];
   }
 
   /**

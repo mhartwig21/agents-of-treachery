@@ -10,7 +10,9 @@ import {
   AgentSessionManager,
   createTestSessionManager,
   MockLLMProvider,
+  summarizeEvictedMessages,
 } from '../session';
+import type { ConversationMessage } from '../types';
 
 describe('AgentSessionManager', () => {
   let manager: AgentSessionManager;
@@ -129,7 +131,7 @@ describe('AgentSessionManager', () => {
     });
 
     it('should apply sliding window to bound history', async () => {
-      const mgr = createTestSessionManager('test', mockLLM, 5);
+      const mgr = createTestSessionManager('test', mockLLM, 6);
       await mgr.createSession({ power: 'ENGLAND' });
 
       // Add more messages than the window size
@@ -138,14 +140,14 @@ describe('AgentSessionManager', () => {
       }
 
       const session = mgr.getSession('ENGLAND')!;
-      expect(session.conversationHistory.length).toBeLessThanOrEqual(5);
+      expect(session.conversationHistory.length).toBeLessThanOrEqual(6);
       // Should keep the most recent messages
       const last = session.conversationHistory[session.conversationHistory.length - 1];
       expect(last.content).toBe('Message 9');
     });
 
     it('should preserve system message in sliding window', async () => {
-      const mgr = createTestSessionManager('test', mockLLM, 5);
+      const mgr = createTestSessionManager('test', mockLLM, 6);
       await mgr.createSession({ power: 'ENGLAND' });
 
       // Add system message first
@@ -161,7 +163,28 @@ describe('AgentSessionManager', () => {
       expect(session.conversationHistory[0].role).toBe('system');
       expect(session.conversationHistory[0].content).toBe('You are England');
       // Total should be within window
-      expect(session.conversationHistory.length).toBeLessThanOrEqual(5);
+      expect(session.conversationHistory.length).toBeLessThanOrEqual(6);
+    });
+
+    it('should inject summary message when evicting messages', async () => {
+      const mgr = createTestSessionManager('test', mockLLM, 6);
+      await mgr.createSession({ power: 'ENGLAND' });
+
+      mgr.addMessage('ENGLAND', { role: 'system', content: 'You are England' });
+
+      // Add messages with recognizable content
+      for (let i = 0; i < 10; i++) {
+        mgr.addMessage('ENGLAND', { role: 'user', content: `Y:1901 S:SPRING P:MOVEMENT turn ${i}` });
+        mgr.addMessage('ENGLAND', { role: 'assistant', content: `ORDERS:\nA PAR HOLD\nDIPLOMACY:\nSEND FRANCE: "Hello round ${i}"` });
+      }
+
+      const session = mgr.getSession('ENGLAND')!;
+      // Should have: system + summary + recent messages
+      expect(session.conversationHistory.length).toBeLessThanOrEqual(6);
+      expect(session.conversationHistory[0].role).toBe('system');
+      // Second message should be the summary
+      expect(session.conversationHistory[1].content).toContain('[CONVERSATION SUMMARY]');
+      expect(session.conversationHistory[1].content).toContain('Orders:');
     });
 
     it('should not affect non-existent sessions', () => {
@@ -316,5 +339,63 @@ describe('MockLLMProvider', () => {
     expect(result.usage).toBeDefined();
     expect(result.usage!.inputTokens).toBeGreaterThan(0);
     expect(result.usage!.outputTokens).toBeGreaterThan(0);
+  });
+});
+
+describe('summarizeEvictedMessages', () => {
+  function makeMsg(role: 'user' | 'assistant', content: string): ConversationMessage {
+    return { role, content, timestamp: new Date() };
+  }
+
+  it('should extract orders from assistant responses', () => {
+    const messages = [
+      makeMsg('user', 'Y:1901 S:SPRING P:MOVEMENT'),
+      makeMsg('assistant', 'ORDERS:\nA PAR -> BUR\nF BRE -> ENG\nA MAR HOLD'),
+    ];
+    const summary = summarizeEvictedMessages(messages);
+    expect(summary).toContain('[CONVERSATION SUMMARY]');
+    expect(summary).toContain('Orders:');
+    expect(summary).toContain('A PAR -> BUR');
+  });
+
+  it('should extract diplomacy sends', () => {
+    const messages = [
+      makeMsg('assistant', 'DIPLOMACY:\nSEND FRANCE: "Let us ally"\nSEND GERMANY: "Stay out of Belgium"'),
+    ];
+    const summary = summarizeEvictedMessages(messages);
+    expect(summary).toContain('Diplomacy:');
+    expect(summary).toContain('SEND FRANCE');
+  });
+
+  it('should extract game state context from user messages', () => {
+    const messages = [
+      makeMsg('user', 'Y:1902 S:FALL P:DIPLOMACY some context here'),
+    ];
+    const summary = summarizeEvictedMessages(messages);
+    expect(summary).toContain('Turn: 1902 FALL DIPLOMACY');
+  });
+
+  it('should merge with previous summary', () => {
+    const messages = [
+      makeMsg('assistant', 'ORDERS:\nA PAR HOLD'),
+    ];
+    const summary = summarizeEvictedMessages(messages, 'Earlier: gained Belgium in 1901');
+    expect(summary).toContain('Earlier: gained Belgium in 1901');
+    expect(summary).toContain('Orders:');
+  });
+
+  it('should cap summary length at ~2000 chars', () => {
+    const messages: ConversationMessage[] = [];
+    for (let i = 0; i < 50; i++) {
+      messages.push(makeMsg('user', `Y:${1901 + i} S:SPRING P:MOVEMENT long context ${'x'.repeat(100)}`));
+      messages.push(makeMsg('assistant', `ANALYSIS: Very detailed analysis ${'y'.repeat(200)}\nORDERS:\nA PAR -> BUR\nDIPLOMACY:\nSEND FRANCE: "Message ${i} with lots of detail ${'z'.repeat(100)}"`));
+    }
+    const summary = summarizeEvictedMessages(messages);
+    expect(summary.length).toBeLessThanOrEqual(2000);
+  });
+
+  it('should return summary prefix even with empty messages', () => {
+    const summary = summarizeEvictedMessages([]);
+    expect(summary).toContain('[CONVERSATION SUMMARY]');
   });
 });

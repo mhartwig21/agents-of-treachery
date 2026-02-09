@@ -445,6 +445,8 @@ function describePersonality(personality: AgentPersonality): string {
  * @param phase - Current game phase
  * @param gameState - Optional full game state for strategic analysis
  * @param turnNumber - Current turn number for progressive compression (0 = full)
+ * @param diplomacyRound - Current press round (1 = first). After round 1,
+ *   diplomacy instructions are compressed to a brief reminder.
  */
 export function buildTurnPrompt(
   gameView: AgentGameView,
@@ -452,7 +454,8 @@ export function buildTurnPrompt(
   recentMessages: string[],
   phase: Phase,
   gameState?: GameState,
-  turnNumber: number = 0
+  turnNumber: number = 0,
+  diplomacyRound: number = 1
 ): string {
   const sections: string[] = [];
   const level = getCompressionLevel(turnNumber);
@@ -527,8 +530,8 @@ export function buildTurnPrompt(
     sections.push(`## Recent Diplomatic Messages\n${limitedMessages.join('\n\n')}`);
   }
 
-  // Phase-specific instructions
-  sections.push(getPhaseInstructions(phase, gameView, gameState));
+  // Phase-specific instructions (compressed after diplomacy round 1)
+  sections.push(getPhaseInstructions(phase, gameView, gameState, diplomacyRound));
 
   return sections.join('\n\n');
 }
@@ -637,8 +640,12 @@ function buildGameStateSection(view: AgentGameView): string {
 
 /**
  * Get phase-specific instructions.
+ *
+ * @param diplomacyRound - Current press round (1 = first). After round 1,
+ *   diplomacy instructions are compressed to a brief reminder (~100 tokens
+ *   instead of ~1,500) since the agent has already seen the full format.
  */
-function getPhaseInstructions(phase: Phase, view: AgentGameView, gameState?: GameState): string {
+function getPhaseInstructions(phase: Phase, view: AgentGameView, gameState?: GameState, diplomacyRound: number = 1): string {
   switch (phase) {
     case 'DIPLOMACY': {
       // Generate strategic context for each power if game state available
@@ -657,6 +664,19 @@ function getPhaseInstructions(phase: Phase, view: AgentGameView, gameState?: Gam
         }
 
         diplomaticContextSection = contextLines.join('\n');
+      }
+
+      // After round 1, use compressed instructions (~100 tokens vs ~1,500)
+      if (diplomacyRound > 1) {
+        return `${diplomaticContextSection}## Diplomacy Round ${diplomacyRound}
+
+**RESPOND to incoming messages first.** Then send 1-2 targeted messages.
+Use stage tags: [OPENING], [COUNTER], [FINAL], [ACCEPT], [REJECT].
+Make SPECIFIC proposals (name provinces, units, deadlines).
+
+Format:
+DIPLOMACY:
+SEND POWER: "[TAG] Your message"`;
       }
 
       return `${diplomaticContextSection}## Your Task: Diplomacy Phase

@@ -86,13 +86,16 @@ export function estimateTokens(text: string): number {
 /**
  * Determine compression level based on turn number.
  *
- * - Turns 1-3: none (full context, agent is learning the game)
- * - Turns 4-8: moderate (compress static content, summarize distant powers)
- * - Turns 9+: aggressive (minimal rules, only relevant powers, tight diary)
+ * Earlier thresholds reduce token usage by ~10-15% for mid-game turns.
+ * After turn 1 the agent has seen full rules/strategy once — compress early.
+ *
+ * - Turn 0-1: none (full context, agent is learning the game)
+ * - Turns 2-4: moderate (compress static content, summarize distant powers)
+ * - Turns 5+: aggressive (minimal rules, only relevant powers, tight diary)
  */
 export function getCompressionLevel(turnNumber: number): CompressionLevel {
-  if (turnNumber <= 3) return 'none';
-  if (turnNumber <= 8) return 'moderate';
+  if (turnNumber <= 1) return 'none';
+  if (turnNumber <= 4) return 'moderate';
   return 'aggressive';
 }
 
