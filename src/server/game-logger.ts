@@ -32,6 +32,8 @@ export type GameLogEvent =
   | { type: 'message_sent'; from: string; to: string | string[]; preview: string }
   | { type: 'diary_entry'; power: string; model?: string; year: number; season: string; phase: string; intentions: string; reasoning: string; analysis: string }
   | { type: 'deception_detected'; power: string; model?: string; deceptionType: DeceptionType; targets: string[]; year: number; season: string; evidence: string; confidence: number }
+  | { type: 'budget_warning'; power: string; model?: string; costUsd: number; budgetUsd: number; status: 'WARNING' | 'EXCEEDED' }
+  | { type: 'token_usage'; power: string; model: string; phase: string; season: string; year: number; inputTokens: number; outputTokens: number; costUsd: number }
   | { type: 'error'; error: string; context?: string; stack?: string }
   | { type: 'warning'; message: string; context?: string }
   | { type: 'debug'; message: string; data?: unknown };
@@ -190,6 +192,23 @@ export class GameLogger {
       evidence,
       confidence,
     });
+  }
+
+  budgetWarning(power: string, model: string | undefined, costUsd: number, budgetUsd: number, status: 'WARNING' | 'EXCEEDED'): void {
+    this.log({ type: 'budget_warning', power, model, costUsd, budgetUsd, status });
+  }
+
+  tokenUsage(
+    power: string,
+    model: string,
+    phase: string,
+    season: string,
+    year: number,
+    inputTokens: number,
+    outputTokens: number,
+    costUsd: number
+  ): void {
+    this.log({ type: 'token_usage', power, model, phase, season, year, inputTokens, outputTokens, costUsd });
   }
 
   error(error: string, context?: string, stack?: string): void {

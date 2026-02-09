@@ -6,6 +6,7 @@
  */
 
 import type { Power, Order, RetreatOrder, BuildOrder, Season, Phase } from '../engine/types';
+import type { TokenBudgetConfig } from '../server/token-tracker';
 
 /**
  * Unique identifier for an agent session.
@@ -415,6 +416,9 @@ export interface AgentRuntimeConfig {
 
   /** Polling interval during press period in seconds. How often to check for agents with unread messages. Default: 5 */
   pressPollIntervalSeconds?: number;
+
+  /** Token budget configuration for cost tracking and enforcement. */
+  tokenBudget?: TokenBudgetConfig;
 }
 
 /**

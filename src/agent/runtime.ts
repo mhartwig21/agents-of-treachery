@@ -50,6 +50,7 @@ import {
 import { createAgentGameView, createStrategicSummary } from './game-view';
 import { parseAgentResponse, validateOrders, fillDefaultOrders } from './order-parser';
 import { GameLogger, getGameLogger, getInvalidOrderStats, formatModelStatsReport } from '../server/game-logger';
+import { TokenTracker, formatGameCostReport } from '../server/token-tracker';
 import {
   createDiaryEntry,
   analyzeDiaryForDeception,
@@ -133,6 +134,7 @@ export class AgentRuntime {
   private logger: GameLogger;
   private promiseTracker: PromiseTracker;
   private metricsTracker: NegotiationMetricsTracker;
+  private tokenTracker: TokenTracker;
   private pendingPromiseUpdates: PromiseMemoryUpdate[] = [];
   private pendingMessageAnalyses: Map<Power, MessageAnalysis[]> = new Map();
   private analyzedMessageIds: Set<string> = new Set();
@@ -195,6 +197,15 @@ export class AgentRuntime {
 
     // Store model registry for budget-aware compression
     this.modelRegistry = modelRegistry;
+
+    // Initialize token tracker for per-model cost analysis
+    this.tokenTracker = new TokenTracker(this.config.gameId, this.config.tokenBudget);
+    this.tokenTracker.onBudgetStatus((power, status, costUsd) => {
+      if (status === 'OK') return;
+      const budget = this.config.tokenBudget?.maxAgentCostUsd ?? 0;
+      this.logger.budgetWarning(power, undefined, costUsd, budget, status);
+      console.log(`  ${status === 'EXCEEDED' ? '🚫' : '⚠️'} Budget ${status}: ${power} at $${costUsd.toFixed(4)}/${budget > 0 ? '$' + budget.toFixed(4) : 'unlimited'}`);
+    });
   }
 
   /**
@@ -275,6 +286,10 @@ export class AgentRuntime {
 
     // Save all memories
     await this.sessionManager.saveAllMemories();
+
+    // Print token usage & cost report (always, since cost visibility is critical)
+    const costReport = this.tokenTracker.generateReport();
+    console.log(formatGameCostReport(costReport));
 
     // Print invalid order statistics by model
     if (this.config.verbose) {
@@ -1242,6 +1257,19 @@ export class AgentRuntime {
         `~${contextStats.totalTokens} tokens (ratio: ${contextStats.compressionRatio.toFixed(2)})`);
     }
 
+    // Check budget before calling LLM
+    const budgetCheck = this.tokenTracker.checkBudget(power);
+    if (!budgetCheck.allowed) {
+      console.log(`[${power}] 🚫 Budget exceeded, skipping LLM call: ${budgetCheck.message}`);
+      this.logger.budgetWarning(power, session.config.model, budgetCheck.agentCostUsd, budgetCheck.agentBudgetUsd, 'EXCEEDED');
+      // Return a minimal response indicating budget exceeded
+      return {
+        power,
+        orders: [],
+        reasoning: 'Budget exceeded - agent skipped this turn',
+      };
+    }
+
     // Call the LLM
     const llm = this.sessionManager.getLLMProvider();
     console.log(`[${power}] Calling LLM (${session.conversationHistory.length} msgs, ~${fullPrompt.length} chars, turn ${this.turnNumber}, ${contextStats.compressionLevel})...`);
@@ -1258,6 +1286,24 @@ export class AgentRuntime {
       const durationMs = Date.now() - startTime;
       this.logger.llmResponse(power, durationMs, session.config.model, response.usage, response.stopReason);
       console.log(`[${power}] LLM responded in ${(durationMs / 1000).toFixed(1)}s (${response.content.length} chars)`);
+
+      // Track token usage per agent per phase per model
+      if (response.usage) {
+        const model = session.config.model ?? 'default';
+        const record = this.tokenTracker.record(
+          power,
+          model,
+          this.gameState.phase,
+          this.gameState.season,
+          this.gameState.year,
+          response.usage.inputTokens,
+          response.usage.outputTokens
+        );
+        this.logger.tokenUsage(
+          power, model, this.gameState.phase, this.gameState.season, this.gameState.year,
+          response.usage.inputTokens, response.usage.outputTokens, record.costUsd
+        );
+      }
 
       // Verbose: log the full response
       if (this.config.verbose) {
@@ -1602,6 +1648,13 @@ export class AgentRuntime {
    */
   getMetricsTracker(): NegotiationMetricsTracker {
     return this.metricsTracker;
+  }
+
+  /**
+   * Get the token tracker for cost analysis.
+   */
+  getTokenTracker(): TokenTracker {
+    return this.tokenTracker;
   }
 }
 
