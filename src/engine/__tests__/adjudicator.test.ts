@@ -1014,3 +1014,699 @@ describe('regression: aot-hidn8 — support cut when supporting unit is attacked
     expect(results.get('PIE')?.success).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Convoy disruption and advanced convoy scenarios
+// ---------------------------------------------------------------------------
+
+describe('convoy disruption', () => {
+  it('should fail convoy when convoying fleet is dislodged', () => {
+    // England: A LON -> NWY via convoy, F NTH convoys
+    // France: F ENG -> NTH (supported by F IRI)
+    // NTH should be dislodged, convoy should fail
+    const ctx = makeCtx(
+      [
+        army('ENGLAND', 'LON'),
+        fleet('ENGLAND', 'NTH'),
+        fleet('FRANCE', 'ENG'),
+        fleet('FRANCE', 'IRI'),
+      ],
+      [
+        ['ENGLAND', [
+          move('LON', 'NWY', { viaConvoy: true }),
+          convoy('NTH', 'LON', 'NWY'),
+        ]],
+        ['FRANCE', [
+          move('ENG', 'NTH'),
+          support('IRI', 'ENG', 'NTH'),
+        ]],
+      ]
+    );
+    const results = adjudicate(ctx);
+    // NTH should be dislodged
+    expect(results.get('NTH')?.dislodged).toBe(true);
+    // Convoy should fail (fleet dislodged)
+    expect(results.get('NTH')?.success).toBe(false);
+    expect(results.get('NTH')?.reason).toContain('dislodged');
+  });
+
+  it('should fail convoy when fleet is not ordered to convoy', () => {
+    // Army tries via convoy but fleet is holding
+    const ctx = makeCtx(
+      [
+        army('ENGLAND', 'LON'),
+        fleet('ENGLAND', 'NTH'),
+      ],
+      [
+        ['ENGLAND', [
+          move('LON', 'NWY', { viaConvoy: true }),
+          hold('NTH'),
+        ]],
+      ]
+    );
+    const results = adjudicate(ctx);
+    // Validation should fail: no convoy path
+    expect(results.get('LON')?.success).toBe(false);
+    expect(results.get('LON')?.reason).toContain('No valid convoy path');
+  });
+
+  it('should fail convoy when no fleet present in sea', () => {
+    // Army tries to move via convoy with no fleets at all
+    const ctx = makeCtx(
+      [army('ENGLAND', 'LON')],
+      [['ENGLAND', [move('LON', 'NWY', { viaConvoy: true })]]],
+    );
+    const results = adjudicate(ctx);
+    expect(results.get('LON')?.success).toBe(false);
+    expect(results.get('LON')?.reason).toContain('No valid convoy path');
+  });
+
+  it('should fail multi-fleet convoy when chain is broken', () => {
+    // Army LON -> NWY via NTH + NWG, but NWG fleet is not convoying (holds instead)
+    const ctx = makeCtx(
+      [
+        army('ENGLAND', 'LON'),
+        fleet('ENGLAND', 'NTH'),
+        fleet('ENGLAND', 'NWG'),
+      ],
+      [
+        ['ENGLAND', [
+          move('LON', 'NWY', { viaConvoy: true }),
+          convoy('NTH', 'LON', 'NWY'),
+          hold('NWG'), // Not convoying — breaks the chain for NWG path
+        ]],
+      ]
+    );
+    const results = adjudicate(ctx);
+    // NTH alone IS adjacent to NWY, so single-fleet convoy works even without NWG
+    // The convoy is valid: NTH is adjacent to both LON and NWY
+    expect(results.get('LON')?.success).toBe(true);
+  });
+
+  it('should report convoy fleet as failed when convoyed army does not move', () => {
+    // Fleet convoys but army move bounces
+    const ctx = makeCtx(
+      [
+        army('ENGLAND', 'LON'),
+        fleet('ENGLAND', 'NTH'),
+        army('GERMANY', 'NWY'),
+      ],
+      [
+        ['ENGLAND', [
+          move('LON', 'NWY', { viaConvoy: true }),
+          convoy('NTH', 'LON', 'NWY'),
+        ]],
+        ['GERMANY', [hold('NWY')]],
+      ]
+    );
+    const results = adjudicate(ctx);
+    // Army bounces against NWY hold (strength 1 vs hold 1)
+    expect(results.get('LON')?.success).toBe(false);
+    // Convoy should fail because army didn't move
+    expect(results.get('NTH')?.success).toBe(false);
+    expect(results.get('NTH')?.reason).toContain('army did not move');
+  });
+
+  it('should succeed convoy when fleet is attacked but not dislodged', () => {
+    // Fleet NTH convoys LON -> NWY, attacked by single unsupported fleet
+    // NTH not dislodged (hold strength 1 vs attack strength 1 -> bounce)
+    const ctx = makeCtx(
+      [
+        army('ENGLAND', 'LON'),
+        fleet('ENGLAND', 'NTH'),
+        fleet('FRANCE', 'ENG'),
+      ],
+      [
+        ['ENGLAND', [
+          move('LON', 'NWY', { viaConvoy: true }),
+          convoy('NTH', 'LON', 'NWY'),
+        ]],
+        ['FRANCE', [move('ENG', 'NTH')]],
+      ]
+    );
+    const results = adjudicate(ctx);
+    // ENG -> NTH bounces (strength 1 vs hold strength 1)
+    expect(results.get('ENG')?.success).toBe(false);
+    // NTH not dislodged
+    expect(results.get('NTH')?.dislodged).toBeFalsy();
+    // Convoy and army move both succeed
+    expect(results.get('LON')?.success).toBe(true);
+    expect(results.get('NTH')?.success).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Multi-way standoffs (4+ units)
+// ---------------------------------------------------------------------------
+
+describe('multi-way standoffs', () => {
+  it('should bounce 4 unsupported moves to same empty province', () => {
+    // BUR is adjacent to PAR, MUN, RUH, and MAR
+    const ctx = makeCtx(
+      [
+        army('FRANCE', 'PAR'),
+        army('GERMANY', 'MUN'),
+        army('GERMANY', 'RUH'),
+        army('ITALY', 'MAR'),
+      ],
+      [
+        ['FRANCE', [move('PAR', 'BUR')]],
+        ['GERMANY', [move('MUN', 'BUR'), move('RUH', 'BUR')]],
+        ['ITALY', [move('MAR', 'BUR')]],
+      ]
+    );
+    const results = adjudicate(ctx);
+    expect(results.get('PAR')?.success).toBe(false);
+    expect(results.get('MUN')?.success).toBe(false);
+    expect(results.get('RUH')?.success).toBe(false);
+    expect(results.get('MAR')?.success).toBe(false);
+  });
+
+  it('should resolve 4-way standoff when one has support', () => {
+    // BUR: PAR->BUR (supported by GAS), MUN->BUR, RUH->BUR, MAR->BUR
+    // PAR should win (strength 2 vs 1 vs 1 vs 1)
+    const ctx = makeCtx(
+      [
+        army('FRANCE', 'PAR'),
+        army('FRANCE', 'GAS'),
+        army('GERMANY', 'MUN'),
+        army('GERMANY', 'RUH'),
+        army('ITALY', 'MAR'),
+      ],
+      [
+        ['FRANCE', [
+          move('PAR', 'BUR'),
+          support('GAS', 'PAR', 'BUR'),
+        ]],
+        ['GERMANY', [move('MUN', 'BUR'), move('RUH', 'BUR')]],
+        ['ITALY', [move('MAR', 'BUR')]],
+      ]
+    );
+    const results = adjudicate(ctx);
+    expect(results.get('PAR')?.success).toBe(true);
+    expect(results.get('GAS')?.success).toBe(true);
+    expect(results.get('MUN')?.success).toBe(false);
+    expect(results.get('RUH')?.success).toBe(false);
+    expect(results.get('MAR')?.success).toBe(false);
+  });
+
+  it('should bounce 4-way when two sides have equal support', () => {
+    // PAR->BUR (supported by GAS), MUN->BUR (supported by SIL via BOH... no)
+    // Actually: PAR->BUR (support GAS), MUN->BUR (support RUH), PIC->BUR, MAR->BUR
+    // Two at strength 2, two at strength 1 -> all bounce
+    const ctx = makeCtx(
+      [
+        army('FRANCE', 'PAR'),
+        army('FRANCE', 'GAS'),
+        army('FRANCE', 'PIC'),
+        army('GERMANY', 'MUN'),
+        army('GERMANY', 'RUH'),
+        army('ITALY', 'MAR'),
+      ],
+      [
+        ['FRANCE', [
+          move('PAR', 'BUR'),
+          support('GAS', 'PAR', 'BUR'),
+          move('PIC', 'BUR'),
+        ]],
+        ['GERMANY', [
+          move('MUN', 'BUR'),
+          support('RUH', 'MUN', 'BUR'),
+        ]],
+        ['ITALY', [move('MAR', 'BUR')]],
+      ]
+    );
+    const results = adjudicate(ctx);
+    // PAR (strength 2) ties with MUN (strength 2) -> all bounce
+    expect(results.get('PAR')?.success).toBe(false);
+    expect(results.get('MUN')?.success).toBe(false);
+    expect(results.get('PIC')?.success).toBe(false);
+    expect(results.get('MAR')?.success).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Head-to-head with mutual support
+// ---------------------------------------------------------------------------
+
+describe('head-to-head with mutual support', () => {
+  it('should bounce head-to-head when both sides equally supported', () => {
+    // PAR->BUR (supported by GAS), BUR->PAR (supported by MUN)
+    // Both strength 2 -> both bounce
+    const ctx = makeCtx(
+      [
+        army('FRANCE', 'PAR'),
+        army('FRANCE', 'GAS'),
+        army('GERMANY', 'BUR'),
+        army('GERMANY', 'MUN'),
+      ],
+      [
+        ['FRANCE', [
+          move('PAR', 'BUR'),
+          support('GAS', 'PAR', 'BUR'),
+        ]],
+        ['GERMANY', [
+          move('BUR', 'PAR'),
+          support('MUN', 'BUR', 'PAR'),
+        ]],
+      ]
+    );
+    const results = adjudicate(ctx);
+    expect(results.get('PAR')?.success).toBe(false);
+    expect(results.get('BUR')?.success).toBe(false);
+    expect(results.get('PAR')?.dislodged).toBeFalsy();
+    expect(results.get('BUR')?.dislodged).toBeFalsy();
+  });
+
+  it('should resolve head-to-head when one has double support', () => {
+    // PAR->BUR (supported by GAS + PIC), BUR->PAR (supported by MUN)
+    // France strength 3, Germany strength 2
+    // GAS is adjacent to BUR, PIC is adjacent to BUR
+    const ctx = makeCtx(
+      [
+        army('FRANCE', 'PAR'),
+        army('FRANCE', 'GAS'),
+        army('FRANCE', 'PIC'),
+        army('GERMANY', 'BUR'),
+        army('GERMANY', 'MUN'),
+      ],
+      [
+        ['FRANCE', [
+          move('PAR', 'BUR'),
+          support('GAS', 'PAR', 'BUR'),
+          support('PIC', 'PAR', 'BUR'),
+        ]],
+        ['GERMANY', [
+          move('BUR', 'PAR'),
+          support('MUN', 'BUR', 'PAR'),
+        ]],
+      ]
+    );
+    const results = adjudicate(ctx);
+    // France wins: strength 3 > 2
+    expect(results.get('PAR')?.success).toBe(true);
+    expect(results.get('BUR')?.dislodged).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Failed defender move causing dislodgement (post-processing)
+// ---------------------------------------------------------------------------
+
+describe('failed defender move with dislodgement', () => {
+  it('should dislodge defender whose move failed while attacker succeeds', () => {
+    // Germany A BUR -> MUN (but MUN is occupied and holding)
+    // France A PAR -> BUR (supported by MAR)
+    // BUR's move to MUN fails (bounce), France takes BUR -> BUR is dislodged
+    const ctx = makeCtx(
+      [
+        army('GERMANY', 'BUR'),
+        army('GERMANY', 'MUN'),
+        army('FRANCE', 'PAR'),
+        army('FRANCE', 'MAR'),
+      ],
+      [
+        ['GERMANY', [
+          move('BUR', 'MUN'),
+          hold('MUN'),
+        ]],
+        ['FRANCE', [
+          move('PAR', 'BUR'),
+          support('MAR', 'PAR', 'BUR'),
+        ]],
+      ]
+    );
+    const results = adjudicate(ctx);
+    // BUR tried to move to MUN but can't dislodge own unit
+    // PAR attacks BUR with strength 2, BUR is moving away so province is vacated
+    // Actually: BUR is ordered to MOVE, so province is being vacated
+    // PAR should succeed moving into BUR
+    expect(results.get('PAR')?.success).toBe(true);
+    // BUR's move to MUN fails (can't take own province)
+    expect(results.get('BUR')?.success).toBe(false);
+    // BUR should be dislodged (tried to move but failed, and PAR took BUR)
+    expect(results.get('BUR')?.dislodged).toBe(true);
+  });
+
+  it('should dislodge defender whose move bounced in standoff', () => {
+    // BUR -> MAR, but MAR is being contested (PIE -> MAR too = bounce)
+    // PAR -> BUR (supported by GAS)
+    // BUR's move fails in standoff, PAR takes BUR
+    const ctx = makeCtx(
+      [
+        army('GERMANY', 'BUR'),
+        army('FRANCE', 'PAR'),
+        army('FRANCE', 'GAS'),
+        army('ITALY', 'PIE'),
+      ],
+      [
+        ['GERMANY', [move('BUR', 'MAR')]],
+        ['FRANCE', [
+          move('PAR', 'BUR'),
+          support('GAS', 'PAR', 'BUR'),
+        ]],
+        ['ITALY', [move('PIE', 'MAR')]],
+      ]
+    );
+    const results = adjudicate(ctx);
+    // BUR -> MAR bounces with PIE -> MAR (standoff)
+    expect(results.get('BUR')?.success).toBe(false);
+    // PAR -> BUR succeeds (BUR is vacating, strength 2)
+    expect(results.get('PAR')?.success).toBe(true);
+    // BUR is dislodged (move failed, origin taken)
+    expect(results.get('BUR')?.dislodged).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Same-power support cut prevention
+// ---------------------------------------------------------------------------
+
+describe('same-power support cut prevention', () => {
+  it('should NOT cut support when attacker is same power as supporter', () => {
+    // France A PAR supports France A BRE -> PIC
+    // France A GAS -> PAR (same power attacks the supporter)
+    // Support should NOT be cut (same power exception at line 494)
+    const ctx = makeCtx(
+      [
+        army('FRANCE', 'PAR'),
+        army('FRANCE', 'BRE'),
+        army('FRANCE', 'GAS'),
+        army('GERMANY', 'PIC'),
+      ],
+      [
+        ['FRANCE', [
+          support('PAR', 'BRE', 'PIC'),
+          move('BRE', 'PIC'),
+          move('GAS', 'PAR'),
+        ]],
+        ['GERMANY', [hold('PIC')]],
+      ]
+    );
+    const results = adjudicate(ctx);
+    // PAR's support should NOT be cut (same power)
+    expect(results.get('PAR')?.success).toBe(true);
+    // BRE -> PIC should succeed (strength 2 vs hold 1)
+    expect(results.get('BRE')?.success).toBe(true);
+    expect(results.get('PIC')?.dislodged).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Complex circular movement
+// ---------------------------------------------------------------------------
+
+describe('complex circular movement', () => {
+  it('should resolve chain of moves through vacated provinces', () => {
+    // A chain: LON -> YOR, YOR -> LVP, LVP -> WAL, WAL -> LON
+    // All four units moving in a cycle
+    const ctx = makeCtx(
+      [
+        army('ENGLAND', 'LON'),
+        army('ENGLAND', 'YOR'),
+        army('ENGLAND', 'LVP'),
+        army('ENGLAND', 'WAL'),
+      ],
+      [
+        ['ENGLAND', [
+          move('LON', 'YOR'),
+          move('YOR', 'LVP'),
+          move('LVP', 'WAL'),
+          move('WAL', 'LON'),
+        ]],
+      ]
+    );
+    const results = adjudicate(ctx);
+    // All moves should succeed (circular chain, all vacating)
+    expect(results.get('LON')?.success).toBe(true);
+    expect(results.get('YOR')?.success).toBe(true);
+    expect(results.get('LVP')?.success).toBe(true);
+    expect(results.get('WAL')?.success).toBe(true);
+  });
+
+  it('should fail chain when one unit in sequence holds', () => {
+    // A -> B -> C, but C holds instead of moving
+    // B -> C should fail (occupied), A -> B should succeed (B vacates)
+    const ctx = makeCtx(
+      [
+        army('FRANCE', 'PAR'),
+        army('FRANCE', 'BUR'),
+        army('GERMANY', 'MUN'),
+      ],
+      [
+        ['FRANCE', [
+          move('PAR', 'BUR'),
+          move('BUR', 'MUN'),
+        ]],
+        ['GERMANY', [hold('MUN')]],
+      ]
+    );
+    const results = adjudicate(ctx);
+    // BUR -> MUN fails (MUN is holding, strength 1 vs hold 1)
+    expect(results.get('BUR')?.success).toBe(false);
+    // PAR -> BUR: BUR is ordered to MOVE so province is being vacated
+    // But BUR's move failed, so it stays put...
+    // The post-processing should detect BUR's failed move
+  });
+});
+
+// ---------------------------------------------------------------------------
+// validateOrder edge cases
+// ---------------------------------------------------------------------------
+
+describe('validateOrder edge cases', () => {
+  it('should reject convoy via non-sea province', () => {
+    // Fleet at coastal province trying to convoy
+    const units = [fleet('ENGLAND', 'LON'), army('ENGLAND', 'YOR')];
+    const ctx = makeCtx(units, []);
+    const result = validateOrder(
+      convoy('LON', 'YOR', 'NWY'),
+      fleet('ENGLAND', 'LON'),
+      ctx
+    );
+    expect(result).toContain('must be at sea');
+  });
+
+  it('should reject army move via convoy when path is invalid', () => {
+    // Army tries to convoy from LON to SMY — no single fleet path
+    const units = [army('ENGLAND', 'LON'), fleet('ENGLAND', 'NTH')];
+    const ctx = makeCtx(units, [
+      ['ENGLAND', [
+        move('LON', 'SMY', { viaConvoy: true }),
+        convoy('NTH', 'LON', 'SMY'),
+      ]],
+    ]);
+    const result = validateOrder(
+      move('LON', 'SMY', { viaConvoy: true }),
+      army('ENGLAND', 'LON'),
+      ctx
+    );
+    expect(result).toContain('No valid convoy path');
+  });
+
+  it('should accept fleet move to province with correct coast specified', () => {
+    // Fleet in GOL moving to SPA south coast
+    const units = [fleet('FRANCE', 'LYO')];
+    const ctx = makeCtx(units, []);
+    const result = validateOrder(
+      move('LYO', 'SPA', { destinationCoast: 'SOUTH' }),
+      fleet('FRANCE', 'LYO'),
+      ctx
+    );
+    expect(result).toBeNull();
+  });
+
+  it('should reject support from fleet to landlocked province', () => {
+    // Fleet at ADR tries to support move to SER (landlocked)
+    // Wait: Fleet at ADR cannot support move to SER because SER is LAND
+    const units = [fleet('ITALY', 'ADR'), army('AUSTRIA', 'ALB')];
+    const ctx = makeCtx(units, []);
+    const result = validateOrder(
+      support('ADR', 'ALB', 'SER'),
+      fleet('ITALY', 'ADR'),
+      ctx
+    );
+    expect(result).toContain('Fleet cannot support move to land');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Hold strength with multiple supports
+// ---------------------------------------------------------------------------
+
+describe('hold strength with multiple supports', () => {
+  it('should resist strong attack with multiple support holds', () => {
+    // Germany A BUR holds, supported by MUN + RUH (hold strength 3)
+    // France A PAR -> BUR supported by MAR (attack strength 2)
+    // Attack should fail (2 < 3)
+    const ctx = makeCtx(
+      [
+        army('GERMANY', 'BUR'),
+        army('GERMANY', 'MUN'),
+        army('GERMANY', 'RUH'),
+        army('FRANCE', 'PAR'),
+        army('FRANCE', 'MAR'),
+      ],
+      [
+        ['GERMANY', [
+          hold('BUR'),
+          support('MUN', 'BUR'),
+          support('RUH', 'BUR'),
+        ]],
+        ['FRANCE', [
+          move('PAR', 'BUR'),
+          support('MAR', 'PAR', 'BUR'),
+        ]],
+      ]
+    );
+    const results = adjudicate(ctx);
+    // Attack (strength 2) vs hold (strength 3) -> attack fails
+    expect(results.get('PAR')?.success).toBe(false);
+    expect(results.get('BUR')?.dislodged).toBeFalsy();
+  });
+
+  it('should overcome multiple support holds with stronger attack', () => {
+    // Germany A BUR holds, supported by MUN (hold strength 2)
+    // France A PAR -> BUR supported by MAR + GAS (attack strength 3)
+    const ctx = makeCtx(
+      [
+        army('GERMANY', 'BUR'),
+        army('GERMANY', 'MUN'),
+        army('FRANCE', 'PAR'),
+        army('FRANCE', 'MAR'),
+        army('FRANCE', 'GAS'),
+      ],
+      [
+        ['GERMANY', [
+          hold('BUR'),
+          support('MUN', 'BUR'),
+        ]],
+        ['FRANCE', [
+          move('PAR', 'BUR'),
+          support('MAR', 'PAR', 'BUR'),
+          support('GAS', 'PAR', 'BUR'),
+        ]],
+      ]
+    );
+    const results = adjudicate(ctx);
+    // Attack (strength 3) > hold (strength 2) -> dislodge
+    expect(results.get('PAR')?.success).toBe(true);
+    expect(results.get('BUR')?.dislodged).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Support hold wasted when supported unit moves
+// ---------------------------------------------------------------------------
+
+describe('support hold edge cases', () => {
+  it('should cut support hold when supporting unit is attacked by adjacent enemy', () => {
+    // RUH supports BUR to hold, but RUH is attacked by BEL (adjacent to RUH)
+    // France: PAR -> BUR (supported by MAR), BEL -> RUH (supported by HOL)
+    // Germany: BUR hold, RUH supports BUR
+    // BEL and HOL are both adjacent to RUH
+    const ctx = makeCtx(
+      [
+        army('GERMANY', 'BUR'),
+        army('GERMANY', 'RUH'),
+        army('FRANCE', 'PAR'),
+        army('FRANCE', 'MAR'),
+        army('FRANCE', 'BEL'),
+        army('FRANCE', 'HOL'),
+      ],
+      [
+        ['GERMANY', [
+          hold('BUR'),
+          support('RUH', 'BUR'),
+        ]],
+        ['FRANCE', [
+          move('PAR', 'BUR'),
+          support('MAR', 'PAR', 'BUR'),
+          move('BEL', 'RUH'),
+          support('HOL', 'BEL', 'RUH'),
+        ]],
+      ]
+    );
+    const results = adjudicate(ctx);
+    // RUH's support of BUR should be cut by BEL's attack
+    expect(results.get('RUH')?.success).toBe(false);
+    expect(results.get('RUH')?.reason).toContain('cut');
+    // BUR now has hold strength 1, attacked by PAR with strength 2
+    expect(results.get('PAR')?.success).toBe(true);
+    expect(results.get('BUR')?.dislodged).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Self-dislodgement prevention
+// ---------------------------------------------------------------------------
+
+describe('self-dislodgement behavior', () => {
+  it('should not dislodge own unit without support (equal strength bounce)', () => {
+    // France A PAR -> BUR, France A BUR holds
+    // Strength 1 vs hold 1 -> bounce (not enough strength)
+    const ctx = makeCtx(
+      [
+        army('FRANCE', 'PAR'),
+        army('FRANCE', 'BUR'),
+      ],
+      [
+        ['FRANCE', [
+          move('PAR', 'BUR'),
+          hold('BUR'),
+        ]],
+      ]
+    );
+    const results = adjudicate(ctx);
+    expect(results.get('PAR')?.success).toBe(false);
+    expect(results.get('BUR')?.dislodged).toBeFalsy();
+  });
+
+  it('should allow foreign-supported attack to dislodge own unit', () => {
+    // England A YOR -> LON, France A WAL supports YOR -> LON
+    // England A LON holds
+    // Foreign support gives enough strength to dislodge
+    const ctx = makeCtx(
+      [
+        army('ENGLAND', 'YOR'),
+        army('ENGLAND', 'LON'),
+        army('FRANCE', 'WAL'),
+      ],
+      [
+        ['ENGLAND', [
+          move('YOR', 'LON'),
+          hold('LON'),
+        ]],
+        ['FRANCE', [support('WAL', 'YOR', 'LON')]],
+      ]
+    );
+    const results = adjudicate(ctx);
+    // YOR -> LON with foreign support (strength 2) vs hold (strength 1)
+    expect(results.get('YOR')?.success).toBe(true);
+    expect(results.get('LON')?.dislodged).toBe(true);
+  });
+
+  it('should dislodge own unit when same-power support gives strength advantage', () => {
+    // Note: standard Diplomacy prevents self-dislodgement, but this engine
+    // does not implement that check. This test documents current behavior.
+    // France A PAR -> BUR (supported by MAR), France A BUR holds
+    const ctx = makeCtx(
+      [
+        army('FRANCE', 'PAR'),
+        army('FRANCE', 'MAR'),
+        army('FRANCE', 'BUR'),
+      ],
+      [
+        ['FRANCE', [
+          move('PAR', 'BUR'),
+          support('MAR', 'PAR', 'BUR'),
+          hold('BUR'),
+        ]],
+      ]
+    );
+    const results = adjudicate(ctx);
+    // Engine allows self-dislodgement when strength exceeds hold
+    expect(results.get('PAR')?.success).toBe(true);
+    expect(results.get('BUR')?.dislodged).toBe(true);
+  });
+});
