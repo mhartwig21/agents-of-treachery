@@ -35,6 +35,7 @@ import type {
   ExperimentProgress,
   ResumeOptions,
 } from './types';
+import { parseModelConfigFromSpec } from './model-spec';
 
 /**
  * Claude/Anthropic LLM Provider.
@@ -246,9 +247,20 @@ export class ExperimentRunner extends EventEmitter {
 
   /**
    * Normalize and validate experiment config.
+   * Handles defaultModelSpec by auto-generating a ModelConfig.
    */
   private normalizeConfig(config: ExperimentConfig): ExperimentConfig {
-    const normalized = { ...config };
+    const normalized = { ...config, models: [...config.models] };
+
+    // Handle defaultModelSpec: parse and add to models array
+    if (normalized.defaultModelSpec && !normalized.defaultModelConfigId) {
+      const modelConfig = parseModelConfigFromSpec(normalized.defaultModelSpec);
+      // Add to models if not already present
+      if (!normalized.models.find(m => m.id === modelConfig.id)) {
+        normalized.models.push(modelConfig);
+      }
+      normalized.defaultModelConfigId = modelConfig.id;
+    }
 
     // Ensure output directory
     if (!normalized.outputDir) {
@@ -458,7 +470,31 @@ export class ExperimentRunner extends EventEmitter {
   }
 
   /**
+   * Resolve a power assignment to its model config, handling both
+   * modelConfigId references and inline modelSpec strings.
+   */
+  private resolveAssignmentConfig(assignment: { modelConfigId: string; modelSpec?: string }): ModelConfig {
+    // Inline model spec takes priority
+    if (assignment.modelSpec) {
+      const specConfig = parseModelConfigFromSpec(assignment.modelSpec);
+      // Cache in models list for provider reuse
+      if (!this.config.models.find(m => m.id === specConfig.id)) {
+        this.config.models.push(specConfig);
+      }
+      return specConfig;
+    }
+
+    const modelConfig = this.config.models.find(m => m.id === assignment.modelConfigId);
+    if (!modelConfig) {
+      throw new Error(`Model config not found: ${assignment.modelConfigId}`);
+    }
+    return modelConfig;
+  }
+
+  /**
    * Run a single game.
+   * Supports per-power model assignment via modelSpec strings or modelConfigId references.
+   * When multiple providers are needed, creates a routing provider.
    */
   private async runGame(gameConfig: GameConfig): Promise<GameResult> {
     const startedAt = new Date();
@@ -467,34 +503,92 @@ export class ExperimentRunner extends EventEmitter {
 
     const logger = new GameLogger(gameConfig.gameId, logsDir);
 
-    // Determine model per power
+    // Pass 1: Resolve model config per power and detect if routing is needed
     const modelsByPower: Record<Power, string> = {} as Record<Power, string>;
-    const agentConfigs: AgentConfig[] = [];
+    const perPowerConfigs = new Map<Power, ModelConfig>();
+    const perPowerProviders = new Map<string, { provider: LLMProvider; modelName: string }>();
+    let needsRouting = false;
+
+    const defaultModelConfig = this.resolveAssignmentConfig({
+      modelConfigId: gameConfig.defaultModelConfigId,
+    });
+    const defaultModelConfigId = defaultModelConfig.id;
 
     for (const power of POWERS) {
-      // Check for power-specific assignment
       const assignment = gameConfig.powerAssignments?.find(a => a.power === power);
-      const modelConfigId = assignment?.modelConfigId || gameConfig.defaultModelConfigId;
-      const modelName = this.getModelName(modelConfigId);
-      modelsByPower[power] = modelName;
 
-      // Merge personality overrides with defaults
+      let modelConfig: ModelConfig;
+      if (assignment?.modelSpec || assignment?.modelConfigId) {
+        modelConfig = this.resolveAssignmentConfig(assignment);
+      } else {
+        modelConfig = defaultModelConfig;
+      }
+
+      perPowerConfigs.set(power, modelConfig);
+      modelsByPower[power] = modelConfig.model;
+
+      if (modelConfig.id !== defaultModelConfigId) {
+        needsRouting = true;
+      }
+
+      // Register provider for each unique config
+      if (!perPowerProviders.has(modelConfig.id)) {
+        perPowerProviders.set(modelConfig.id, {
+          provider: this.getProvider(modelConfig.id),
+          modelName: modelConfig.model,
+        });
+      }
+    }
+
+    // Pass 2: Build agent configs with correct model field
+    const agentConfigs: AgentConfig[] = [];
+    for (const power of POWERS) {
+      const modelConfig = perPowerConfigs.get(power)!;
+      const assignment = gameConfig.powerAssignments?.find(a => a.power === power);
+
       const personality: AgentPersonality = assignment?.personality
         ? { ...DEFAULT_PERSONALITY, ...assignment.personality }
         : DEFAULT_PERSONALITY;
 
       agentConfigs.push({
         power,
-        model: modelName,
+        // Use config ID as routing key when routing is needed,
+        // otherwise use the actual model name
+        model: needsRouting ? modelConfig.id : modelConfig.model,
         personality,
         temperature: 0.7,
         maxTokens: 2048,
       });
     }
 
-    // Create runtime with the default model's provider
-    // (All powers use the same provider in this simple implementation)
-    const defaultProvider = this.getProvider(gameConfig.defaultModelConfigId);
+    // Create the appropriate provider:
+    // - Single provider when all powers use the same model
+    // - Routing provider when powers use different models
+    let gameProvider: LLMProvider;
+    if (!needsRouting) {
+      gameProvider = this.getProvider(defaultModelConfigId);
+    } else {
+      // Finalize agent model fields to use routing keys
+      // (already set above when needsRouting is true)
+
+      // Build routing provider that maps config IDs to actual providers
+      gameProvider = {
+        async complete(params: LLMCompletionParams): Promise<LLMCompletionResult> {
+          const routingKey = params.model || '';
+          const entry = perPowerProviders.get(routingKey);
+          if (entry) {
+            // Route to the correct provider with the actual model name
+            return entry.provider.complete({ ...params, model: entry.modelName });
+          }
+          // Fallback to default
+          const defaultEntry = perPowerProviders.get(defaultModelConfigId);
+          if (defaultEntry) {
+            return defaultEntry.provider.complete({ ...params, model: defaultEntry.modelName });
+          }
+          throw new Error(`No provider found for model: ${routingKey}`);
+        },
+      };
+    }
 
     const runtimeConfig: AgentRuntimeConfig = {
       gameId: gameConfig.gameId,
@@ -506,7 +600,7 @@ export class ExperimentRunner extends EventEmitter {
       pressPeriodMinutes: this.config.pressPeriodMinutes ?? 1,
     };
 
-    const runtime = new AgentRuntime(runtimeConfig, defaultProvider, undefined, logger);
+    const runtime = new AgentRuntime(runtimeConfig, gameProvider, undefined, logger);
     this.activeRuntimes.set(gameConfig.gameId, runtime);
 
     // Set up auto-snapshots if enabled

@@ -6,3 +6,4 @@
 
 export * from './types';
 export * from './runner';
+export * from './model-spec';

@@ -30,8 +30,10 @@ import {
   type ExperimentConfig,
   type ModelConfig,
   type ExperimentEvent,
+  type PowerModelAssignment,
+  parseModelConfigFromSpec,
 } from '../src/experiment';
-import { POWERS } from '../src/engine/types';
+import { POWERS, type Power } from '../src/engine/types';
 
 interface CliArgs {
   configFile?: string;
@@ -45,6 +47,8 @@ interface CliArgs {
   outputDir?: string;
   verbose: boolean;
   runAnalysis: boolean;
+  /** Per-power model assignments: POWER=model_spec */
+  powerAssignments: string[];
 }
 
 function parseArgs(): CliArgs {
@@ -59,6 +63,7 @@ function parseArgs(): CliArgs {
     name: `experiment-${Date.now()}`,
     verbose: false,
     runAnalysis: true,
+    powerAssignments: [],
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -97,6 +102,9 @@ function parseArgs(): CliArgs {
       case '--no-analysis':
         result.runAnalysis = false;
         break;
+      case '--assign':
+        result.powerAssignments.push(args[++i]);
+        break;
       case '--help':
       case '-h':
         printHelp();
@@ -115,18 +123,25 @@ Usage:
   npx tsx scripts/run-experiment.ts [options]
 
 Options:
-  --config FILE      Load experiment config from JSON file
-  --mock             Use mock LLM (for testing)
-  --ollama           Use Ollama for local models
-  --model NAME       Model to use (default: claude-sonnet-4-20250514)
-  --games N          Number of games to run (default: 1)
-  --concurrent N     Max concurrent games (default: 1)
-  --turns N          Max turns per game (0 = unlimited, default: 50)
-  --name NAME        Experiment name
-  --output DIR       Output directory
-  --verbose          Enable verbose logging
-  --no-analysis      Skip post-game analysis
-  --help, -h         Show this help message
+  --config FILE            Load experiment config from JSON file
+  --mock                   Use mock LLM (for testing)
+  --ollama                 Use Ollama for local models
+  --model SPEC             Model spec for all powers (default: claude-sonnet-4-20250514)
+  --assign POWER=SPEC      Assign a model spec to a specific power (repeatable)
+  --games N                Number of games to run (default: 1)
+  --concurrent N           Max concurrent games (default: 1)
+  --turns N                Max turns per game (0 = unlimited, default: 50)
+  --name NAME              Experiment name
+  --output DIR             Output directory
+  --verbose                Enable verbose logging
+  --no-analysis            Skip post-game analysis
+  --help, -h               Show this help message
+
+Model Spec Format:
+  [provider:]model[@base_url][#api_key]
+
+  Providers: openai, anthropic, openrouter, ollama, custom, mock
+  Auto-detect: claude-* → anthropic, gpt-*/o1/o3 → openai, org/model → openrouter
 
 Examples:
   # Run 3 mock games for testing
@@ -136,15 +151,26 @@ Examples:
   npx tsx scripts/run-experiment.ts --games 5 --concurrent 2
 
   # Run with Ollama local model
-  npx tsx scripts/run-experiment.ts --ollama --model llama3.2 --games 2
+  npx tsx scripts/run-experiment.ts --model ollama:llama3.2 --games 2
+
+  # Mix cloud and local models in same game
+  npx tsx scripts/run-experiment.ts --model openai:gpt-4o \\
+    --assign ENGLAND=anthropic:claude-sonnet-4-5-20250929 \\
+    --assign FRANCE=openrouter:meta-llama/llama-3.1-70b-instruct
+
+  # Use OpenRouter for all with custom API key
+  npx tsx scripts/run-experiment.ts --model "openrouter:openai/gpt-4o#sk-or-xxx"
+
+  # Ollama on remote GPU server
+  npx tsx scripts/run-experiment.ts --model "ollama:qwen2.5:7b@http://gpu-server:11434"
 
   # Load config from file
   npx tsx scripts/run-experiment.ts --config my-experiment.json
 
 Environment Variables:
-  ANTHROPIC_API_KEY    Required for Claude models
-  OPENAI_API_KEY       Required for OpenAI models
-  OPENROUTER_API_KEY   Required for OpenRouter
+  ANTHROPIC_API_KEY    Required for Anthropic models (unless in spec)
+  OPENAI_API_KEY       Required for OpenAI models (unless in spec)
+  OPENROUTER_API_KEY   Required for OpenRouter (unless in spec)
   OLLAMA_BASE_URL      Ollama server URL (default: http://localhost:11434)
 `);
 }
@@ -157,39 +183,96 @@ async function loadConfigFromFile(filePath: string): Promise<ExperimentConfig> {
 function createConfigFromArgs(args: CliArgs): ExperimentConfig {
   const experimentId = args.name.replace(/\s+/g, '-').toLowerCase();
 
-  // Create model config
-  let modelConfig: ModelConfig;
+  // Create default model config
+  let defaultModelConfig: ModelConfig;
   if (args.useMock) {
-    modelConfig = {
+    defaultModelConfig = {
       id: 'mock',
       provider: 'mock',
       model: 'mock',
     };
   } else if (args.useOllama) {
-    modelConfig = {
-      id: 'ollama',
-      provider: 'ollama',
-      model: args.model,
-      baseUrl: process.env.OLLAMA_BASE_URL || 'http://localhost:11434',
-    };
+    // Legacy --ollama flag: wrap in spec format
+    defaultModelConfig = parseModelConfigFromSpec(
+      `ollama:${args.model}@${process.env.OLLAMA_BASE_URL || 'http://localhost:11434'}`,
+      'ollama'
+    );
   } else {
-    // Default to Claude
-    modelConfig = {
-      id: 'claude',
-      provider: 'anthropic',
-      model: args.model,
-    };
+    // Try parsing as a model spec (supports "openai:gpt-4o", "gpt-4o", etc.)
+    try {
+      defaultModelConfig = parseModelConfigFromSpec(args.model);
+    } catch {
+      // Fallback: treat as plain Anthropic model name for backward compat
+      defaultModelConfig = {
+        id: 'claude',
+        provider: 'anthropic',
+        model: args.model,
+      };
+    }
   }
+
+  const models: ModelConfig[] = [defaultModelConfig];
+
+  // Parse per-power assignments
+  let powerAssignments: PowerModelAssignment[] | undefined;
+  if (args.powerAssignments.length > 0) {
+    powerAssignments = [];
+    for (const assignment of args.powerAssignments) {
+      const eqIdx = assignment.indexOf('=');
+      if (eqIdx === -1) {
+        console.error(`Invalid --assign format: ${assignment}`);
+        console.error('Expected: POWER=model_spec (e.g., ENGLAND=openai:gpt-4o)');
+        process.exit(1);
+      }
+
+      const powerName = assignment.slice(0, eqIdx).toUpperCase() as Power;
+      const spec = assignment.slice(eqIdx + 1);
+
+      if (!POWERS.includes(powerName)) {
+        console.error(`Invalid power: ${powerName}`);
+        console.error(`Valid powers: ${POWERS.join(', ')}`);
+        process.exit(1);
+      }
+
+      // Parse and add model config
+      const modelConfig = parseModelConfigFromSpec(spec);
+      if (!models.find(m => m.id === modelConfig.id)) {
+        models.push(modelConfig);
+      }
+
+      powerAssignments.push({
+        power: powerName,
+        modelConfigId: modelConfig.id,
+        modelSpec: spec,
+      });
+    }
+  }
+
+  // Build description listing all models
+  const modelNames = [...new Set(models.map(m => m.model))];
+  const description = powerAssignments
+    ? `Mixed-model experiment: ${modelNames.join(', ')}`
+    : `Experiment with ${args.gameCount} games using ${defaultModelConfig.model}`;
+
+  // Generate game configs with power assignments
+  const games = powerAssignments
+    ? Array.from({ length: args.gameCount }, (_, i) => ({
+        gameId: `${experimentId}-game-${i + 1}`,
+        defaultModelConfigId: defaultModelConfig.id,
+        powerAssignments,
+      }))
+    : undefined;
 
   return createExperimentConfig({
     experimentId,
     name: args.name,
-    description: `Experiment with ${args.gameCount} games using ${modelConfig.model}`,
-    models: [modelConfig],
+    description,
+    models,
     gameCount: args.gameCount,
     maxConcurrent: args.maxConcurrent,
     maxTurnsPerGame: args.maxTurns,
-    defaultModelConfigId: modelConfig.id,
+    defaultModelConfigId: defaultModelConfig.id,
+    games,
     runAnalysis: args.runAnalysis,
     outputDir: args.outputDir || path.join(process.cwd(), 'experiments', experimentId),
     verbose: args.verbose,
@@ -200,13 +283,35 @@ function createConfigFromArgs(args: CliArgs): ExperimentConfig {
 async function main(): Promise<void> {
   const args = parseArgs();
 
-  // Validate API key if not using mock or ollama
-  if (!args.useMock && !args.useOllama && !process.env.ANTHROPIC_API_KEY) {
-    console.error('Error: ANTHROPIC_API_KEY environment variable is required.');
-    console.error('Set it with: export ANTHROPIC_API_KEY=your-key');
-    console.error('Or use --mock for testing without API calls.');
-    console.error('Or use --ollama for local Ollama models.');
-    process.exit(1);
+  // Validate API key if not using mock, ollama, or model spec with embedded key
+  if (!args.useMock && !args.useOllama) {
+    // Check if the model spec might handle its own auth
+    const hasSpecKey = args.model.includes('#');
+    const isOllamaSpec = args.model.startsWith('ollama:');
+    const isMockSpec = args.model.startsWith('mock:') || args.model === 'mock';
+    const isOpenRouterSpec = args.model.startsWith('openrouter:') || args.model.includes('/');
+    const isOpenAISpec = args.model.startsWith('openai:') || args.model.startsWith('gpt-') || /^o[134]/.test(args.model);
+
+    if (!hasSpecKey && !isOllamaSpec && !isMockSpec) {
+      // Check for the appropriate env var
+      if (isOpenRouterSpec && !process.env.OPENROUTER_API_KEY) {
+        console.error('Error: OPENROUTER_API_KEY environment variable is required for OpenRouter.');
+        console.error('Set it with: export OPENROUTER_API_KEY=your-key');
+        console.error('Or embed in spec: openrouter:model#your-key');
+        process.exit(1);
+      } else if (isOpenAISpec && !process.env.OPENAI_API_KEY) {
+        console.error('Error: OPENAI_API_KEY environment variable is required for OpenAI.');
+        console.error('Set it with: export OPENAI_API_KEY=your-key');
+        console.error('Or embed in spec: openai:model#your-key');
+        process.exit(1);
+      } else if (!isOpenRouterSpec && !isOpenAISpec && !process.env.ANTHROPIC_API_KEY) {
+        console.error('Error: ANTHROPIC_API_KEY environment variable is required.');
+        console.error('Set it with: export ANTHROPIC_API_KEY=your-key');
+        console.error('Or use --mock for testing without API calls.');
+        console.error('Or use model spec format: provider:model#api-key');
+        process.exit(1);
+      }
+    }
   }
 
   // Load or create config
@@ -229,7 +334,26 @@ async function main(): Promise<void> {
   console.log(`Max Concurrent: ${config.maxConcurrent}`);
   console.log(`Max Turns: ${config.maxTurnsPerGame || 'unlimited'}`);
   console.log(`Output: ${config.outputDir}`);
-  console.log(`Models: ${config.models.map(m => m.model).join(', ')}`);
+  console.log(`Models: ${config.models.map(m => `${m.provider}:${m.model}`).join(', ')}`);
+
+  // Show per-power assignments if any
+  const firstGame = config.games?.[0];
+  if (firstGame?.powerAssignments && firstGame.powerAssignments.length > 0) {
+    console.log('');
+    console.log('Power Assignments:');
+    for (const pa of firstGame.powerAssignments) {
+      const spec = pa.modelSpec || pa.modelConfigId;
+      console.log(`  ${pa.power}: ${spec}`);
+    }
+    // Show default for unassigned powers
+    const assignedPowers = new Set(firstGame.powerAssignments.map(a => a.power));
+    const unassigned = POWERS.filter(p => !assignedPowers.has(p));
+    if (unassigned.length > 0) {
+      const defaultModel = config.models.find(m => m.id === config.defaultModelConfigId);
+      console.log(`  ${unassigned.join(', ')}: ${defaultModel?.provider}:${defaultModel?.model} (default)`);
+    }
+  }
+
   console.log('');
   console.log('─'.repeat(60));
 

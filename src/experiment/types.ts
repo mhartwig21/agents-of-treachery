@@ -36,8 +36,15 @@ export interface ModelConfig {
 export interface PowerModelAssignment {
   /** The power to assign */
   power: Power;
-  /** Model config ID to use for this power */
+  /** Model config ID to use for this power (references ModelConfig.id) */
   modelConfigId: string;
+  /**
+   * Inline model spec string (alternative to modelConfigId).
+   * Format: [provider:]model[@base_url][#api_key]
+   * Examples: "openai:gpt-4o", "ollama:llama3.2@http://gpu:11434"
+   * When set, overrides modelConfigId.
+   */
+  modelSpec?: string;
   /** Optional personality overrides */
   personality?: Partial<AgentPersonality>;
 }
@@ -76,6 +83,12 @@ export interface ExperimentConfig {
   maxTurnsPerGame: number;
   /** Default model config ID for all powers */
   defaultModelConfigId: string;
+  /**
+   * Default model spec string (alternative to defaultModelConfigId).
+   * Format: [provider:]model[@base_url][#api_key]
+   * When set, auto-generates a ModelConfig and uses it as default.
+   */
+  defaultModelSpec?: string;
   /** Per-game configurations (optional, auto-generated if not provided) */
   games?: GameConfig[];
   /** Whether to run analysis after each game */
