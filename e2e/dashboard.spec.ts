@@ -16,9 +16,10 @@ test.describe('Dashboard Filtering', () => {
 
   test('displays status filter buttons', async ({ page }) => {
     // Should have filter buttons for All, Active, Completed
-    const allButton = page.getByRole('button', { name: /all/i });
-    const activeButton = page.getByRole('button', { name: /active/i });
-    const completedButton = page.getByRole('button', { name: /completed/i });
+    const filterBar = page.locator('.bg-gray-700.rounded-lg').first();
+    const allButton = filterBar.getByRole('button', { name: /all/i });
+    const activeButton = filterBar.getByRole('button', { name: /active/i });
+    const completedButton = filterBar.getByRole('button', { name: /completed/i });
 
     await expect(allButton).toBeVisible();
     await expect(activeButton).toBeVisible();
@@ -32,7 +33,8 @@ test.describe('Dashboard Filtering', () => {
     await screenshot(page, { name: 'filter-before', subdir: 'dashboard' });
 
     // Click active filter
-    const activeButton = page.getByRole('button', { name: /active/i });
+    const filterBar = page.locator('.bg-gray-700.rounded-lg').first();
+    const activeButton = filterBar.getByRole('button', { name: /active/i });
     if (await activeButton.isVisible()) {
       await activeButton.click();
       await page.waitForTimeout(300);
@@ -40,7 +42,7 @@ test.describe('Dashboard Filtering', () => {
     }
 
     // Click completed filter
-    const completedButton = page.getByRole('button', { name: /completed/i });
+    const completedButton = filterBar.getByRole('button', { name: /completed/i });
     if (await completedButton.isVisible()) {
       await completedButton.click();
       await page.waitForTimeout(300);
@@ -48,7 +50,7 @@ test.describe('Dashboard Filtering', () => {
     }
 
     // Click all to reset
-    const allButton = page.getByRole('button', { name: /all/i });
+    const allButton = filterBar.getByRole('button', { name: /all/i });
     if (await allButton.isVisible()) {
       await allButton.click();
       await page.waitForTimeout(300);
@@ -214,7 +216,7 @@ test.describe('Game Card Interactions', () => {
       await page.waitForTimeout(500);
 
       // Should navigate to game view (has back button)
-      const backButton = page.getByRole('button', { name: /back/i });
+      const backButton = page.getByRole('button', { name: 'Back to dashboard' });
       await expect(backButton).toBeVisible();
 
       await screenshot(page, { name: 'card-clicked', subdir: 'dashboard' });

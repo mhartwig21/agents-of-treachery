@@ -488,8 +488,9 @@ test.describe('Button responsiveness', () => {
     await page.goto('/');
     await page.waitForTimeout(500);
 
-    // Status filter buttons
-    const activeFilter = page.getByRole('button', { name: /active/i });
+    // Status filter buttons (scoped to filter bar to avoid matching game cards)
+    const filterBar = page.locator('.bg-gray-700.rounded-lg').first();
+    const activeFilter = filterBar.getByRole('button', { name: /active/i });
     if (await activeFilter.isVisible()) {
       await activeFilter.click();
       await page.waitForTimeout(100);
@@ -529,7 +530,7 @@ test.describe('Button responsiveness', () => {
       await page.waitForTimeout(500);
 
       // Click back button
-      const backBtn = page.getByRole('button', { name: /back/i });
+      const backBtn = page.getByRole('button', { name: 'Back to dashboard' });
       if (await backBtn.isVisible()) {
         await backBtn.click();
         await page.waitForTimeout(500);

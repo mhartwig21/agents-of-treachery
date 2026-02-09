@@ -29,7 +29,7 @@ test.describe('Spectator Dashboard', () => {
     await page.getByText('AI Championship Round 1').click();
 
     // Should navigate to game view
-    await expect(page.getByRole('button', { name: /back/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Back to dashboard' })).toBeVisible();
   });
 });
 
@@ -70,7 +70,7 @@ test.describe('Game View', () => {
   });
 
   test('can navigate back to dashboard', async ({ page }) => {
-    await page.getByRole('button', { name: /back/i }).click();
+    await page.getByRole('button', { name: 'Back to dashboard' }).click();
     await expect(page.getByText('Spectator Dashboard')).toBeVisible();
   });
 });

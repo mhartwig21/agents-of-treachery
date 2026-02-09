@@ -149,7 +149,7 @@ test.describe('Exploratory: Press System', () => {
       }
 
       // Go back
-      const backBtn = page.getByRole('button', { name: /back/i });
+      const backBtn = page.getByRole('button', { name: 'Back to dashboard' });
       if (await backBtn.isVisible().catch(() => false)) {
         await backBtn.click();
         await page.waitForTimeout(300);
@@ -414,7 +414,7 @@ test.describe('Exploratory: Browser Navigation', () => {
 
       // Check where we ended up
       const isDashboard = await page.getByText('Spectator Dashboard').isVisible().catch(() => false);
-      const isGameView = await page.getByRole('button', { name: /back/i }).isVisible().catch(() => false);
+      const isGameView = await page.getByRole('button', { name: 'Back to dashboard' }).isVisible().catch(() => false);
 
       console.log(`After browser back: dashboard=${isDashboard}, gameView=${isGameView}`);
       await screenshot(page, { name: 'browser-back', subdir: 'exploratory-2' });
@@ -466,7 +466,7 @@ test.describe('Exploratory: Browser Navigation', () => {
 
       // Check what state we're in after reload
       const isDashboard = await page.getByText('Spectator Dashboard').isVisible().catch(() => false);
-      const isGameView = await page.getByRole('button', { name: /back/i }).isVisible().catch(() => false);
+      const isGameView = await page.getByRole('button', { name: 'Back to dashboard' }).isVisible().catch(() => false);
 
       console.log(`After reload: dashboard=${isDashboard}, gameView=${isGameView}`);
       await screenshot(page, { name: 'after-reload', subdir: 'exploratory-2' });

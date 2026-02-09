@@ -339,6 +339,7 @@ export function DiplomacyMap({
           }))}
           className="bg-gray-700 hover:bg-gray-600 text-white w-8 h-8 rounded flex items-center justify-center"
           aria-label="Zoom in"
+          title="Zoom in"
           tabIndex={-1}
         >
           +
@@ -351,6 +352,7 @@ export function DiplomacyMap({
           }))}
           className="bg-gray-700 hover:bg-gray-600 text-white w-8 h-8 rounded flex items-center justify-center"
           aria-label="Zoom out"
+          title="Zoom out"
           tabIndex={-1}
         >
           −
@@ -359,6 +361,7 @@ export function DiplomacyMap({
           onClick={resetZoom}
           className="bg-gray-700 hover:bg-gray-600 text-white w-8 h-8 rounded flex items-center justify-center text-xs"
           aria-label="Reset zoom"
+          title="Reset zoom"
           tabIndex={-1}
         >
           ⟲

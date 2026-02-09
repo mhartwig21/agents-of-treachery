@@ -282,7 +282,7 @@ test.describe('Back Navigation', () => {
     await page.waitForTimeout(500);
 
     // Find and click back button
-    const backButton = page.getByRole('button', { name: /back/i });
+    const backButton = page.getByRole('button', { name: 'Back to dashboard' });
     await expect(backButton).toBeVisible();
     await backButton.click();
 

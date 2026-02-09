@@ -169,9 +169,10 @@ test.describe('Exploratory: Dashboard', () => {
     await page.goto('/');
     await page.waitForTimeout(500);
 
-    const allBtn = page.getByRole('button', { name: /all/i });
-    const activeBtn = page.getByRole('button', { name: /active/i });
-    const completedBtn = page.getByRole('button', { name: /completed/i });
+    const filterBar = page.locator('.bg-gray-700.rounded-lg').first();
+    const allBtn = filterBar.getByRole('button', { name: /all/i });
+    const activeBtn = filterBar.getByRole('button', { name: /active/i });
+    const completedBtn = filterBar.getByRole('button', { name: /completed/i });
 
     // Rapid fire clicks between filters
     for (let i = 0; i < 10; i++) {
@@ -610,7 +611,7 @@ test.describe('Exploratory: Navigation Stress', () => {
       }
 
       // Click back
-      const backBtn = page.getByRole('button', { name: /back/i });
+      const backBtn = page.getByRole('button', { name: 'Back to dashboard' });
       if (await backBtn.isVisible().catch(() => false)) {
         await backBtn.click();
         await page.waitForTimeout(200);
@@ -641,7 +642,7 @@ test.describe('Exploratory: Navigation Stress', () => {
         await page.waitForTimeout(300);
         await screenshot(page, { name: `game-card-${i}`, subdir: 'exploratory' });
 
-        const backBtn = page.getByRole('button', { name: /back/i });
+        const backBtn = page.getByRole('button', { name: 'Back to dashboard' });
         if (await backBtn.isVisible().catch(() => false)) {
           await backBtn.click();
           await page.waitForTimeout(300);

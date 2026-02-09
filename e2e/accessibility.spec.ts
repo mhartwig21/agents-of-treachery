@@ -45,7 +45,7 @@ test.describe('Keyboard Navigation', () => {
       await page.waitForTimeout(500);
 
       // Should navigate to game view
-      const backButton = page.getByRole('button', { name: /back/i });
+      const backButton = page.getByRole('button', { name: 'Back to dashboard' });
       const navigated = await backButton.isVisible().catch(() => false);
 
       await screenshot(page, { name: 'keyboard-enter', subdir: 'accessibility' });
@@ -57,7 +57,8 @@ test.describe('Keyboard Navigation', () => {
     await page.waitForTimeout(500);
 
     // Focus the Active filter button
-    const activeButton = page.getByRole('button', { name: /active/i });
+    const filterBar = page.locator('.bg-gray-700.rounded-lg').first();
+    const activeButton = filterBar.getByRole('button', { name: /active/i });
 
     if (await activeButton.isVisible()) {
       await activeButton.focus();
@@ -219,7 +220,7 @@ test.describe('Game View Accessibility', () => {
   });
 
   test('back button is accessible', async ({ page }) => {
-    const backButton = page.getByRole('button', { name: /back/i });
+    const backButton = page.getByRole('button', { name: 'Back to dashboard' });
     await expect(backButton).toBeVisible();
 
     // Should be focusable
