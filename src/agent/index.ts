@@ -15,6 +15,7 @@ export type {
   StrategicNote,
   PowerRelationship,
   AgentMemory,
+  StrategicPlan,
   TurnSummary,
   ConsolidatedBlock,
   TrustAffectingEvent,
@@ -247,6 +248,15 @@ export {
 } from './order-parser';
 
 export type { ParseResult } from './order-parser';
+
+// Strategic planning
+export {
+  buildPlanningPrompt,
+  parsePlanResponse,
+  generateStrategicPlan,
+  recordPlanInDiary,
+  formatPlanForPrompt,
+} from './planning';
 
 // Negotiation analysis
 export {

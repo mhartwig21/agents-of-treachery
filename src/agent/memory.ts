@@ -324,6 +324,11 @@ export function serializeMemory(memory: AgentMemory): string {
       ...e,
       timestamp: e.timestamp.toISOString(),
     })),
+    // Strategic plan (transient - not critical to persist, but included for completeness)
+    currentTurnPlan: memory.currentTurnPlan ? {
+      ...memory.currentTurnPlan,
+      timestamp: memory.currentTurnPlan.timestamp.toISOString(),
+    } : undefined,
   };
   return JSON.stringify(serializable, null, 2);
 }
@@ -361,6 +366,11 @@ export function deserializeMemory(json: string): AgentMemory {
     yearSummaries: (parsed.yearSummaries || []).map(deserializeYearSummary),
     currentYearDiary: (parsed.currentYearDiary || []).map(deserializeDiaryEntry),
     consolidatedBlocks: (parsed.consolidatedBlocks || []).map(deserializeConsolidatedBlock),
+    // Deserialize strategic plan (handle missing field for backwards compatibility)
+    currentTurnPlan: parsed.currentTurnPlan ? {
+      ...parsed.currentTurnPlan,
+      timestamp: new Date(parsed.currentTurnPlan.timestamp),
+    } : undefined,
   };
 }
 

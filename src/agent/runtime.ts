@@ -72,6 +72,11 @@ import {
   recordReflectionInDiary,
   formatReflectionForLog,
 } from './reflection';
+import {
+  generateStrategicPlan,
+  recordPlanInDiary,
+  formatPlanForPrompt,
+} from './planning';
 import type { MessageAnalysis, PhaseReflection } from './types';
 
 /**
@@ -370,6 +375,10 @@ export class AgentRuntime {
 
     console.log(`\n📬 Press period started (${pressPeriodMinutes} minute window)`);
 
+    // Generate strategic plans for all powers before diplomacy begins.
+    // Each agent creates a manifesto that will guide both their diplomacy and orders.
+    await this.generateStrategicPlans();
+
     // Track which agents have sent at least one message this phase
     const agentsWhoActed = new Set<Power>();
     let roundNumber = 0;
@@ -540,6 +549,44 @@ export class AgentRuntime {
         console.warn(`  [${power}] Message analysis failed:`, error);
       }
     }
+  }
+
+  /**
+   * Generate strategic plans for all powers at the start of a diplomacy phase.
+   * Each agent creates a manifesto that guides both diplomacy and orders.
+   */
+  private async generateStrategicPlans(): Promise<void> {
+    const llm = this.sessionManager.getLLMProvider();
+    console.log(`\n📋 Generating strategic plans...`);
+
+    // Generate plans sequentially to avoid TPM rate limit crashes.
+    for (const power of POWERS) {
+      const session = this.sessionManager.getSession(power);
+      if (!session) continue;
+
+      try {
+        const plan = await generateStrategicPlan(
+          power,
+          this.gameState.year,
+          this.gameState.season,
+          session.memory,
+          this.gameState,
+          llm
+        );
+
+        // Store plan in memory for use in subsequent prompts
+        session.memory.currentTurnPlan = plan;
+
+        // Record plan in diary
+        recordPlanInDiary(session.memory, plan);
+
+        console.log(`  [${power}] Plan: ${plan.objectives.slice(0, 3).join('; ')}`);
+      } catch (error) {
+        console.warn(`  [${power}] Planning failed:`, error);
+      }
+    }
+
+    console.log(`📋 Strategic planning complete\n`);
   }
 
   /**
@@ -1158,7 +1205,14 @@ export class AgentRuntime {
       }
     }
 
-    const fullPrompt = `${strategicSummary}${promiseSection}${analysisSection}\n\n${turnPrompt}`;
+    // Add strategic plan (for diplomacy and movement phases)
+    let planSection = '';
+    if (session.memory.currentTurnPlan &&
+        (this.gameState.phase === 'DIPLOMACY' || this.gameState.phase === 'MOVEMENT')) {
+      planSection = `\n${formatPlanForPrompt(session.memory.currentTurnPlan)}\n`;
+    }
+
+    const fullPrompt = `${strategicSummary}${promiseSection}${analysisSection}${planSection}\n\n${turnPrompt}`;
 
     // Verbose: log the full prompt being sent
     if (this.config.verbose) {

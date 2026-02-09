@@ -133,6 +133,13 @@ export interface AgentMemory {
    * At year end, these are summarized and moved to yearSummaries.
    */
   currentYearDiary: DiaryEntry[];
+
+  /**
+   * Strategic plan for the current turn.
+   * Generated at the start of each diplomacy phase.
+   * Informs both diplomatic messaging and order generation.
+   */
+  currentTurnPlan?: StrategicPlan;
 }
 
 /**
@@ -186,9 +193,34 @@ export interface TrustAffectingEvent {
 }
 
 /**
+ * Strategic plan generated at the start of each turn's diplomacy phase.
+ * The "manifesto" that guides both diplomatic messaging and order generation.
+ */
+export interface StrategicPlan {
+  /** Power that created this plan */
+  power: Power;
+  /** Game year when plan was created */
+  year: number;
+  /** Game season when plan was created */
+  season: Season;
+  /** Short-term objectives for this turn (e.g., "secure Munich") */
+  objectives: string[];
+  /** Diplomatic strategy: who to target, what deals to propose */
+  diplomaticStrategy: string;
+  /** Military plan: territories to target, unit positioning */
+  militaryPlan: string;
+  /** Contingencies: what to do if key moves fail */
+  contingencies: string;
+  /** Full manifesto text from LLM */
+  manifesto: string;
+  /** When this plan was generated */
+  timestamp: Date;
+}
+
+/**
  * Type of diary entry.
  */
-export type DiaryEntryType = 'negotiation' | 'orders' | 'reflection' | 'consolidation';
+export type DiaryEntryType = 'negotiation' | 'orders' | 'reflection' | 'planning' | 'consolidation';
 
 /**
  * A single diary entry recording agent thoughts and actions.
