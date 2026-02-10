@@ -517,6 +517,9 @@ export interface AgentGameView {
   /** Available build locations (if builds pending) */
   availableBuildLocations?: string[];
 
+  /** Occupied home centers (shown during BUILD to explain why some locations are unavailable) */
+  occupiedHomeCenters?: string[];
+
   /** Recent orders results (if available) */
   lastOrderResults?: OrderResultView[];
 }

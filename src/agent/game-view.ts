@@ -80,11 +80,11 @@ export function createAgentGameView(
     const buildCount = state.pendingBuilds.get(viewingPower) ?? 0;
     view.buildCount = buildCount;
 
+    const homeCenters = getHomeCenters(viewingPower);
+    const occupiedProvinces = new Set(state.units.map(u => u.province));
+
     if (buildCount > 0) {
       // Find available build locations (unoccupied home centers we control)
-      const homeCenters = getHomeCenters(viewingPower);
-      const occupiedProvinces = new Set(state.units.map(u => u.province));
-
       view.availableBuildLocations = homeCenters
         .filter(hc =>
           state.supplyCenters.get(hc.id) === viewingPower &&
@@ -92,6 +92,14 @@ export function createAgentGameView(
         )
         .map(hc => hc.id);
     }
+
+    // Always show occupied home centers during BUILD phase for clarity
+    view.occupiedHomeCenters = homeCenters
+      .filter(hc =>
+        state.supplyCenters.get(hc.id) === viewingPower &&
+        occupiedProvinces.has(hc.id)
+      )
+      .map(hc => hc.id);
   }
 
   // Add last order results if available

@@ -740,8 +740,8 @@ ${unitListWithAdjacent}
 1. Start with "ORDERS:" on the FIRST LINE
 2. One order per line, NO text after the orders
 3. Use ONLY 3-letter province abbreviations
-4. **MOVES CAN ONLY GO TO ADJACENT PROVINCES** - see destinations listed above!
-5. Do NOT attempt multi-turn moves (e.g., LON cannot reach NWY in one turn)
+4. **MOVES CAN ONLY GO TO ADJACENT PROVINCES** - see "can move to" list above! If a province is NOT in a unit's list, that move is ILLEGAL and will be rejected.
+5. Do NOT attempt multi-turn moves — if "Reachable Supply Centers" shows 2+ moves, you must move to an INTERMEDIATE province first this turn
 6. **BE AGGRESSIVE** - holding all units is a losing strategy!
 
 **Format (EXACTLY like this, no explanations after):**
@@ -772,10 +772,15 @@ RETREATS:
 
     case 'BUILD':
       if (view.buildCount && view.buildCount > 0) {
+        const occupiedNote = view.occupiedHomeCenters && view.occupiedHomeCenters.length > 0
+          ? `\nOccupied (CANNOT build here): ${view.occupiedHomeCenters.join(', ')}`
+          : '';
         return `## Your Task: Build Units
 You may build ${view.buildCount} new unit(s) in your unoccupied home supply centers.
 
-Available locations: ${view.availableBuildLocations?.join(', ') || 'None'}
+Available locations (EMPTY, can build): ${view.availableBuildLocations?.join(', ') || 'None'}${occupiedNote}
+
+**RULES:** You can ONLY build in locations listed as "Available" above. Do NOT attempt to build in occupied locations.
 
 Respond with:
 1. **REASONING**: Which builds best support your strategy
@@ -787,8 +792,17 @@ BUILDS:
 BUILD [A/F] [Province]
 \`\`\``;
       } else {
+        const unitList = view.myUnits.map(u => {
+          const unitType = u.type === 'ARMY' ? 'A' : 'F';
+          return `- ${unitType} ${u.province}`;
+        }).join('\n');
         return `## Your Task: Disband Units
-You must disband ${Math.abs(view.buildCount ?? 0)} unit(s).
+You must disband exactly ${Math.abs(view.buildCount ?? 0)} unit(s). You have more units than supply centers.
+
+**Your current units:**
+${unitList}
+
+Choose which unit(s) to disband from the list above.
 
 Respond with:
 1. **REASONING**: Which units are least valuable

@@ -719,10 +719,12 @@ export function formatStrategicContextMarkdown(
   // Reachable targets
   if (context.reachableTargets.length > 0) {
     lines.push('### Reachable Supply Centers');
+    lines.push('*(Note: "2 moves" = requires 2 SEPARATE TURNS, not achievable this turn)*');
     for (const target of context.reachableTargets.slice(0, 5)) {
       const ownerStr = target.owner ? `(${target.owner})` : '(neutral)';
       const contestedStr = target.contested ? ' [CONTESTED]' : '';
-      lines.push(`- **${target.province}** ${ownerStr}: ${target.distance} move(s)${contestedStr}`);
+      const turnsNote = target.distance > 1 ? ` [${target.distance} TURNS needed]` : ' [this turn]';
+      lines.push(`- **${target.province}** ${ownerStr}: ${target.distance} move(s)${contestedStr}${turnsNote}`);
       lines.push(`  Path: ${target.path.join(' -> ')}`);
     }
     lines.push('');

@@ -116,8 +116,9 @@ DIPLOMATIC_STRATEGY:
 Be specific: "Propose France a DMZ in Burgundy in exchange for support into Belgium."]
 
 MILITARY_PLAN:
-[Where to move units, which SCs to target, what supports to arrange.
-Be specific: "Move A PAR -> BUR, use F MAO to threaten SPA."]
+[Where to move units THIS TURN, which SCs to target, what supports to arrange.
+Units can only move to ADJACENT provinces per turn. If a target is 2+ moves away, plan the intermediate step.
+Be specific: "Move A PAR -> BUR (toward MUN next turn), use F MAO to threaten SPA."]
 
 CONTINGENCIES:
 [What if key moves fail? What if an ally betrays you?

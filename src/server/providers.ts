@@ -257,19 +257,31 @@ export function createOpenAICompatibleProvider(
         headers['Authorization'] = `Bearer ${apiKey}`;
       }
 
+      // o-series and gpt-5 reasoning models don't support temperature/max_tokens
+      const isReasoningModel = /^(o[1-4]|gpt-5($|[.-]))/.test(model);
+
+      const body: Record<string, unknown> = {
+        model,
+        messages: params.messages.map((m) => ({
+          role: m.role,
+          content: m.content,
+        })),
+      };
+
+      if (isReasoningModel) {
+        body.max_completion_tokens = params.maxTokens || 4096;
+      } else {
+        body.max_tokens = params.maxTokens || 1024;
+        body.temperature = params.temperature ?? 0.7;
+        if (params.stopSequences) {
+          body.stop = params.stopSequences;
+        }
+      }
+
       const response = await fetchWithRetry(`${baseUrl}/v1/chat/completions`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({
-          model,
-          max_tokens: params.maxTokens || 1024,
-          temperature: params.temperature ?? 0.7,
-          messages: params.messages.map((m) => ({
-            role: m.role,
-            content: m.content,
-          })),
-          stop: params.stopSequences,
-        }),
+        body: JSON.stringify(body),
       }, maxRetries, baseDelay);
 
       if (!response.ok) {
@@ -280,6 +292,10 @@ export function createOpenAICompatibleProvider(
       const data = await response.json();
       const content = data.choices?.[0]?.message?.content || '';
       const finishReason = data.choices?.[0]?.finish_reason;
+
+      if (!content) {
+        console.warn(`[LLM] Empty response from ${model} (finish_reason: ${finishReason}, refusal: ${data.choices?.[0]?.message?.refusal || 'none'})`);
+      }
 
       return {
         content,
