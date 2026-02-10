@@ -18,6 +18,7 @@ import type { AgentRuntimeConfig, LLMProvider, LLMCompletionParams, LLMCompletio
 import { MockLLMProvider } from '../session';
 import { InMemoryStore } from '../memory';
 import { GameLogger } from '../../server/game-logger';
+import { createDiverseOpenAIRegistry } from '../model-registry';
 
 /**
  * LLM provider that fails on specific call indices.
@@ -222,6 +223,47 @@ describe('AgentRuntime', () => {
         expect(session).toBeDefined();
         expect(session!.conversationHistory.length).toBeGreaterThan(0);
         expect(session!.conversationHistory[0].role).toBe('system');
+      }
+    });
+
+    it('should resolve models from registry when agents have no explicit model', async () => {
+      const registry = createDiverseOpenAIRegistry(POWERS);
+      runtime = new AgentRuntime(
+        makeConfig(),
+        mockLLM,
+        new InMemoryStore(),
+        undefined,
+        registry,
+      );
+      await runtime.initialize();
+
+      const sm = runtime.getSessionManager();
+      for (const power of POWERS) {
+        const session = sm.getSession(power);
+        expect(session).toBeDefined();
+        const assignment = registry.getAssignment(power);
+        expect(session!.config.model).toBe(assignment!.modelId);
+      }
+    });
+
+    it('should not override explicit agent model when registry is present', async () => {
+      const registry = createDiverseOpenAIRegistry(POWERS);
+      const config = makeConfig({
+        agents: POWERS.map(power => ({ power, model: 'explicit-model' })),
+      });
+      runtime = new AgentRuntime(
+        config,
+        mockLLM,
+        new InMemoryStore(),
+        undefined,
+        registry,
+      );
+      await runtime.initialize();
+
+      const sm = runtime.getSessionManager();
+      for (const power of POWERS) {
+        const session = sm.getSession(power);
+        expect(session!.config.model).toBe('explicit-model');
       }
     });
   });

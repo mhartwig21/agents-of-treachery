@@ -225,6 +225,14 @@ export class AgentRuntime {
     // Create sessions for all configured agents
     const agentConfigs: Partial<Record<Power, any>> = {};
     for (const agentConfig of this.config.agents) {
+      // Resolve model from registry when agent has no explicit model
+      if (this.modelRegistry && !agentConfig.model) {
+        const resolved = this.modelRegistry.resolveModelForPower(agentConfig.power);
+        if (resolved) {
+          agentConfig.model = resolved;
+          this.logger.debug(`Model resolved for ${agentConfig.power}`, { power: agentConfig.power, model: resolved });
+        }
+      }
       agentConfigs[agentConfig.power] = agentConfig;
     }
 
