@@ -25,7 +25,7 @@ import type { Order as UIOrder } from '../types/game';
 /**
  * Reducer for spectator state.
  */
-function spectatorReducer(state: SpectatorState, action: SpectatorAction): SpectatorState {
+export function spectatorReducer(state: SpectatorState, action: SpectatorAction): SpectatorState {
   switch (action.type) {
     case 'SET_GAMES': {
       const games = new Map<string, GameHistory>();
