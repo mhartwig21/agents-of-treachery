@@ -47,7 +47,7 @@ interface VersionedMessage {
 export type ServerMessage = VersionedMessage & (
   | { type: 'GAME_LIST'; games: GameHistory[] }
   | { type: 'GAME_CREATED'; game: GameHistory }
-  | { type: 'GAME_UPDATED'; gameId: string; updates: Partial<GameHistory> }
+  | { type: 'GAME_UPDATED'; gameId: string; updates: Partial<GameHistory>; latestMessages?: Message[]; latestOrders?: Record<string, import('../types/game').Order[]> }
   | { type: 'SNAPSHOT_ADDED'; gameId: string; snapshot: GameSnapshot }
   | { type: 'GAME_ENDED'; gameId: string; winner?: string; draw?: boolean }
   | { type: 'ERROR'; message: string }
@@ -415,8 +415,8 @@ export class GameServer {
           gameId: game.gameId,
           updates: {
             updatedAt: event.timestamp,
-            latestMessages,
           },
+          latestMessages,
         });
       }
     }
@@ -468,8 +468,8 @@ export class GameServer {
         gameId: game.gameId,
         updates: {
           updatedAt: event.timestamp,
-          latestOrders: { [event.data.power]: event.data.orders.map(o => engineToUIOrder(o)) },
         },
+        latestOrders: { [event.data.power]: event.data.orders.map(o => engineToUIOrder(o)) },
       });
     }
 

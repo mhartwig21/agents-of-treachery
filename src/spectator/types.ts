@@ -114,10 +114,6 @@ export interface GameHistory {
   updatedAt: Date;
   /** Live: which agent is currently thinking */
   currentAgent?: string;
-  /** Live: recent messages as they arrive */
-  latestMessages?: Message[];
-  /** Live: recent orders as submitted */
-  latestOrders?: Record<string, UIOrder[]>;
 }
 
 /**

@@ -136,12 +136,12 @@ export function SpectatorGameView({ onBack }: SpectatorGameViewProps) {
     if (!currentSnapshot) return [];
     const snapshotMessages = currentSnapshot.messages;
 
-    // In replay mode or no accumulator, just use snapshot data
+    // In replay mode, just use snapshot data
     if (!isLive || !liveAccumulator?.messages.length) {
       return snapshotMessages;
     }
 
-    // In live mode, merge snapshot messages with accumulated streaming messages
+    // In live mode, merge snapshot messages with live accumulator messages
     // Use a Set to dedupe by message ID
     const messageIds = new Set(snapshotMessages.map((m: Message) => m.id));
     const merged = [...snapshotMessages];
@@ -164,13 +164,13 @@ export function SpectatorGameView({ onBack }: SpectatorGameViewProps) {
     if (!currentSnapshot) return [];
     const snapshotOrders = currentSnapshot.orders;
 
-    // In replay mode or no accumulator, just use snapshot data
-    if (!isLive || !liveAccumulator?.orders || Object.keys(liveAccumulator.orders).length === 0) {
+    // In replay mode, just use snapshot data
+    if (!isLive || !liveAccumulator || !Object.keys(liveAccumulator.orders).length) {
       return snapshotOrders;
     }
 
-    // In live mode, merge snapshot orders with accumulated streaming orders
-    // liveAccumulator.orders is Record<power, Order[]> - flatten and dedupe by unit
+    // In live mode, merge snapshot orders with live accumulator orders
+    // orders is Record<power, Order[]> - flatten and dedupe by unit
     const ordersByUnit = new Map<string, typeof snapshotOrders[0]>();
 
     // Add snapshot orders first
@@ -178,7 +178,7 @@ export function SpectatorGameView({ onBack }: SpectatorGameViewProps) {
       ordersByUnit.set(order.unit, order);
     }
 
-    // Override with accumulated streaming orders (more recent)
+    // Override with live accumulator orders (more recent)
     for (const orders of Object.values(liveAccumulator.orders)) {
       for (const order of orders) {
         ordersByUnit.set(order.unit, order);
@@ -186,7 +186,7 @@ export function SpectatorGameView({ onBack }: SpectatorGameViewProps) {
     }
 
     return Array.from(ordersByUnit.values());
-  }, [currentSnapshot, isLive, liveAccumulator?.orders]);
+  }, [currentSnapshot, isLive, liveAccumulator]);
 
   // Find selected message from accumulated messages (includes live data)
   const selectedMessage = useMemo(() => {

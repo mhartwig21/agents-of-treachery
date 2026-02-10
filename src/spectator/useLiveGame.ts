@@ -8,6 +8,8 @@ import { useEffect, useRef, useCallback, useState } from 'react';
 import { useSpectator } from './SpectatorContext';
 import type { GameHistory, GameSnapshot } from './types';
 import { toUIPower, type UppercasePower } from './types';
+import type { Message } from '../press/types';
+import type { Order as UIOrder } from '../types/game';
 
 /**
  * Server message types (must match server).
@@ -15,7 +17,7 @@ import { toUIPower, type UppercasePower } from './types';
 type ServerMessage =
   | { type: 'GAME_LIST'; games: GameHistory[] }
   | { type: 'GAME_CREATED'; game: GameHistory }
-  | { type: 'GAME_UPDATED'; gameId: string; updates: Partial<GameHistory> }
+  | { type: 'GAME_UPDATED'; gameId: string; updates: Partial<GameHistory>; latestMessages?: Message[]; latestOrders?: Record<string, UIOrder[]> }
   | { type: 'SNAPSHOT_ADDED'; gameId: string; snapshot: GameSnapshot }
   | { type: 'GAME_ENDED'; gameId: string; winner?: string; draw?: boolean }
   | { type: 'ERROR'; message: string };
@@ -146,11 +148,11 @@ export function useLiveGame(options: UseLiveGameOptions = {}): UseLiveGameReturn
           case 'GAME_UPDATED':
             updateGame(message.gameId, message.updates);
             // Accumulate real-time messages and orders into live accumulator
-            if (message.updates.latestMessages && message.updates.latestMessages.length > 0) {
-              accumulateMessages(message.gameId, message.updates.latestMessages);
+            if (message.latestMessages && message.latestMessages.length > 0) {
+              accumulateMessages(message.gameId, message.latestMessages);
             }
-            if (message.updates.latestOrders) {
-              accumulateOrders(message.gameId, message.updates.latestOrders);
+            if (message.latestOrders) {
+              accumulateOrders(message.gameId, message.latestOrders);
             }
             break;
 
