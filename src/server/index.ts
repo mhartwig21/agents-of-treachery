@@ -42,6 +42,8 @@ import 'dotenv/config';
 
 import { GameServer, createMockLLMProvider } from './game-server';
 import type { LLMProvider } from '../agent/types';
+import { createDiverseOpenAIRegistry } from '../agent/model-registry';
+import { POWERS } from '../engine/types';
 import {
   createOpenRouterProvider,
   createAnthropicProvider,
@@ -75,6 +77,7 @@ async function main() {
 
   // Create LLM provider based on configuration
   let llmProvider: LLMProvider;
+  let modelRegistry: import('../agent/model-registry').ModelRegistry | undefined;
 
   switch (LLM_PROVIDER.toLowerCase()) {
     case 'mock':
@@ -107,6 +110,18 @@ async function main() {
       console.log('Using OpenAI ChatGPT API');
       console.log(`  Model: ${LLM_MODEL || 'gpt-4o-mini'}`);
       llmProvider = createOpenAIProvider(OPENAI_API_KEY, LLM_MODEL || 'gpt-4o-mini');
+
+      // When no explicit model is set, use diverse model registry for personality variety
+      if (!LLM_MODEL) {
+        modelRegistry = createDiverseOpenAIRegistry(POWERS);
+        console.log('  Diverse model registry enabled (per-power model assignments):');
+        for (const power of POWERS) {
+          const assignment = modelRegistry.getAssignment(power);
+          if (assignment) {
+            console.log(`    ${power}: ${assignment.modelId} (fallback: ${assignment.fallbackModelId ?? 'none'})`);
+          }
+        }
+      }
       break;
 
     case 'ollama':
@@ -168,6 +183,7 @@ async function main() {
   const server = new GameServer({
     port: PORT,
     llmProvider,
+    modelRegistry,
   });
 
   server.start(PORT);

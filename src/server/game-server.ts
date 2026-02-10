@@ -8,6 +8,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { createServer, IncomingMessage, ServerResponse } from 'http';
 import { AgentRuntime, type RuntimeEvent } from '../agent/runtime';
 import type { LLMProvider, AgentRuntimeConfig } from '../agent/types';
+import type { ModelRegistry } from '../agent/model-registry';
 import { SpectatorAPI } from '../press/spectator';
 import { POWERS, type Power } from '../engine/types';
 import {
@@ -88,6 +89,7 @@ export interface GameServerConfig {
   port: number;
   llmProvider: LLMProvider;
   snapshotManager?: SnapshotManager;
+  modelRegistry?: ModelRegistry;
 }
 
 /**
@@ -100,11 +102,13 @@ export class GameServer {
   private clients: Set<WebSocket> = new Set();
   private llmProvider: LLMProvider;
   private snapshotManager: SnapshotManager | null;
+  private modelRegistry?: ModelRegistry;
   private gameCounter: number = 0;
 
   constructor(config: GameServerConfig) {
     this.llmProvider = config.llmProvider;
     this.snapshotManager = config.snapshotManager ?? null;
+    this.modelRegistry = config.modelRegistry;
   }
 
   /**
@@ -255,7 +259,7 @@ export class GameServer {
     const logger = getGameLogger(gameId);
     // Wrap LLM provider with logging
     const loggingProvider = createLoggingLLMProvider(this.llmProvider, logger);
-    const runtime = new AgentRuntime(config, loggingProvider);
+    const runtime = new AgentRuntime(config, loggingProvider, undefined, undefined, this.modelRegistry);
     const spectator = new SpectatorAPI(runtime.getPressSystem());
 
     const now = new Date();
