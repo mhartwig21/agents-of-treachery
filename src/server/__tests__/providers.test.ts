@@ -177,6 +177,142 @@ describe('Provider Factory Functions', () => {
     });
   });
 
+  describe('createOpenAICompatibleProvider model-specific params', () => {
+    it('should use max_completion_tokens for gpt-5 models', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          choices: [{ message: { content: 'Response' }, finish_reason: 'stop' }],
+          usage: { prompt_tokens: 10, completion_tokens: 20 },
+        }),
+      });
+
+      const provider = createOpenAICompatibleProvider('https://api.openai.com', 'key', 'gpt-5');
+      await provider.complete({
+        messages: [{ role: 'user', content: 'Hello', timestamp: new Date() }],
+        maxTokens: 2048,
+      });
+
+      const callBody = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(callBody.max_completion_tokens).toBe(2048);
+      expect(callBody.max_tokens).toBeUndefined();
+    });
+
+    it('should use max_completion_tokens for o-series models', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          choices: [{ message: { content: 'Response' }, finish_reason: 'stop' }],
+          usage: { prompt_tokens: 10, completion_tokens: 20 },
+        }),
+      });
+
+      const provider = createOpenAICompatibleProvider('https://api.openai.com', 'key', 'o3-mini');
+      await provider.complete({
+        messages: [{ role: 'user', content: 'Hello', timestamp: new Date() }],
+      });
+
+      const callBody = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(callBody.max_completion_tokens).toBe(1024);
+      expect(callBody.max_tokens).toBeUndefined();
+    });
+
+    it('should omit temperature for o-series models', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          choices: [{ message: { content: 'Response' }, finish_reason: 'stop' }],
+          usage: { prompt_tokens: 10, completion_tokens: 20 },
+        }),
+      });
+
+      const provider = createOpenAICompatibleProvider('https://api.openai.com', 'key', 'o1');
+      await provider.complete({
+        messages: [{ role: 'user', content: 'Hello', timestamp: new Date() }],
+        temperature: 0.5,
+      });
+
+      const callBody = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(callBody.temperature).toBeUndefined();
+    });
+
+    it('should omit temperature for gpt-5 base but not gpt-5.1', async () => {
+      // gpt-5 base: omit temperature
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          choices: [{ message: { content: 'Response' }, finish_reason: 'stop' }],
+          usage: { prompt_tokens: 10, completion_tokens: 20 },
+        }),
+      });
+
+      const provider5 = createOpenAICompatibleProvider('https://api.openai.com', 'key', 'gpt-5');
+      await provider5.complete({
+        messages: [{ role: 'user', content: 'Hello', timestamp: new Date() }],
+      });
+
+      const body5 = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(body5.temperature).toBeUndefined();
+
+      // gpt-5.1: include temperature
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          choices: [{ message: { content: 'Response' }, finish_reason: 'stop' }],
+          usage: { prompt_tokens: 10, completion_tokens: 20 },
+        }),
+      });
+
+      const provider51 = createOpenAICompatibleProvider('https://api.openai.com', 'key', 'gpt-5.1');
+      await provider51.complete({
+        messages: [{ role: 'user', content: 'Hello', timestamp: new Date() }],
+      });
+
+      const body51 = JSON.parse(mockFetch.mock.calls[1][1].body);
+      expect(body51.temperature).toBe(0.7);
+      expect(body51.max_completion_tokens).toBe(1024);
+    });
+
+    it('should use standard max_tokens and temperature for gpt-4o', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          choices: [{ message: { content: 'Response' }, finish_reason: 'stop' }],
+          usage: { prompt_tokens: 10, completion_tokens: 20 },
+        }),
+      });
+
+      const provider = createOpenAICompatibleProvider('https://api.openai.com', 'key', 'gpt-4o');
+      await provider.complete({
+        messages: [{ role: 'user', content: 'Hello', timestamp: new Date() }],
+      });
+
+      const callBody = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(callBody.max_tokens).toBe(1024);
+      expect(callBody.max_completion_tokens).toBeUndefined();
+      expect(callBody.temperature).toBe(0.7);
+    });
+
+    it('should handle gpt-5-turbo with omitted temperature', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          choices: [{ message: { content: 'Response' }, finish_reason: 'stop' }],
+          usage: { prompt_tokens: 10, completion_tokens: 20 },
+        }),
+      });
+
+      const provider = createOpenAICompatibleProvider('https://api.openai.com', 'key', 'gpt-5-turbo');
+      await provider.complete({
+        messages: [{ role: 'user', content: 'Hello', timestamp: new Date() }],
+      });
+
+      const callBody = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(callBody.max_completion_tokens).toBe(1024);
+      expect(callBody.temperature).toBeUndefined();
+    });
+  });
+
   describe('createOllamaProvider', () => {
     it('should create a provider with custom base URL', async () => {
       const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});

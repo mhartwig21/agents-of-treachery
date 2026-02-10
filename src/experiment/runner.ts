@@ -150,15 +150,31 @@ class OpenAICompatibleLLMProvider implements LLMProvider {
       headers['Authorization'] = `Bearer ${this.apiKey}`;
     }
 
+    const model = params.model || this.model;
+    // gpt-5.x and o-series models require max_completion_tokens instead of max_tokens
+    const useMaxCompletionTokens = /^(gpt-5|o[1-4])/.test(model);
+    // o-series and gpt-5 base (not gpt-5.1/5.2) only support temperature=1
+    const omitTemperature = /^(o[1-4]|gpt-5($|-))/.test(model);
+
+    const body: Record<string, unknown> = {
+      model,
+      messages: params.messages.map(m => ({ role: m.role, content: m.content })),
+    };
+
+    if (useMaxCompletionTokens) {
+      body.max_completion_tokens = maxTokens;
+    } else {
+      body.max_tokens = maxTokens;
+    }
+
+    if (!omitTemperature) {
+      body.temperature = temperature;
+    }
+
     const response = await fetchWithRetry(`${this.baseUrl}/v1/chat/completions`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({
-        model: params.model || this.model,
-        max_tokens: maxTokens,
-        temperature,
-        messages: params.messages.map(m => ({ role: m.role, content: m.content })),
-      }),
+      body: JSON.stringify(body),
     });
 
     if (!response.ok) {

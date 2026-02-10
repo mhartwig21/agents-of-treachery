@@ -257,8 +257,10 @@ export function createOpenAICompatibleProvider(
         headers['Authorization'] = `Bearer ${apiKey}`;
       }
 
-      // o-series and gpt-5 reasoning models don't support temperature/max_tokens
-      const isReasoningModel = /^(o[1-4]|gpt-5($|[.-]))/.test(model);
+      // gpt-5.x and o-series models require max_completion_tokens instead of max_tokens
+      const useMaxCompletionTokens = /^(gpt-5|o[1-4])/.test(model);
+      // o-series and gpt-5 base (not gpt-5.1/5.2) only support temperature=1
+      const omitTemperature = /^(o[1-4]|gpt-5($|-))/.test(model);
 
       const body: Record<string, unknown> = {
         model,
@@ -266,16 +268,17 @@ export function createOpenAICompatibleProvider(
           role: m.role,
           content: m.content,
         })),
+        stop: params.stopSequences,
       };
 
-      if (isReasoningModel) {
-        body.max_completion_tokens = params.maxTokens || 4096;
+      if (useMaxCompletionTokens) {
+        body.max_completion_tokens = params.maxTokens || 1024;
       } else {
         body.max_tokens = params.maxTokens || 1024;
+      }
+
+      if (!omitTemperature) {
         body.temperature = params.temperature ?? 0.7;
-        if (params.stopSequences) {
-          body.stop = params.stopSequences;
-        }
       }
 
       const response = await fetchWithRetry(`${baseUrl}/v1/chat/completions`, {
