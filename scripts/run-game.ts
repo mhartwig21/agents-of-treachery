@@ -253,7 +253,8 @@ function parseArgs(): {
   maxTurns: number;
   maxYears: number;
   pressPeriod: number;
-  outputFile?: string
+  outputFile?: string;
+  assignments: Map<string, string>;
 } {
   const args = process.argv.slice(2);
   let useMock = false;
@@ -265,6 +266,7 @@ function parseArgs(): {
   let maxYears = 0; // 0 means unlimited
   let pressPeriod = -1; // -1 means use default (1 min for real, 0 for mock)
   let outputFile: string | undefined;
+  const assignments = new Map<string, string>();
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--mock') useMock = true;
@@ -291,6 +293,14 @@ function parseArgs(): {
       outputFile = args[i + 1];
       i++;
     }
+    if (args[i] === '--assign' && args[i + 1]) {
+      // Format: POWER=model (e.g., ENGLAND=gpt-5.2)
+      const [power, model] = args[i + 1].split('=');
+      if (power && model) {
+        assignments.set(power.toUpperCase(), model);
+      }
+      i++;
+    }
   }
 
   // Default press period: 0 for mock (instant), 1 for real LLMs
@@ -298,7 +308,7 @@ function parseArgs(): {
     pressPeriod = useMock ? 0 : 1;
   }
 
-  return { useMock, useOllama, useOpenAI, ollamaModel, openaiModel, maxTurns, maxYears, pressPeriod, outputFile };
+  return { useMock, useOllama, useOpenAI, ollamaModel, openaiModel, maxTurns, maxYears, pressPeriod, outputFile, assignments };
 }
 
 // Game state snapshots for export
@@ -315,7 +325,7 @@ interface GameSnapshot {
 async function main() {
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
   const openaiKey = process.env.OPENAI_API_KEY;
-  const { useMock, useOllama, useOpenAI, ollamaModel, openaiModel, maxTurns, maxYears, pressPeriod, outputFile } = parseArgs();
+  const { useMock, useOllama, useOpenAI, ollamaModel, openaiModel, maxTurns, maxYears, pressPeriod, outputFile, assignments } = parseArgs();
 
   if (!anthropicKey && !openaiKey && !useMock && !useOllama && !useOpenAI) {
     console.error('Error: API key required.');
@@ -329,6 +339,7 @@ async function main() {
     console.error('  --years N       Limit to N game years');
     console.error('  --press-period M  Press period in minutes (0=instant, default: 0 for mock, 1 for real)');
     console.error('  --output FILE   Save game state to JSON file');
+    console.error('  --assign POWER=MODEL  Assign a specific model to a power (repeatable)');
     process.exit(1);
   }
 
@@ -371,6 +382,15 @@ async function main() {
   const gameId = `game-${Date.now()}`;
   const snapshots: GameSnapshot[] = [];
 
+  // Log per-power model assignments if any
+  if (assignments.size > 0) {
+    console.log('📋 Per-power model assignments:');
+    for (const [power, model] of assignments) {
+      console.log(`  ${power}: ${model}`);
+    }
+    console.log('');
+  }
+
   // Configure agents with varied personalities
   const agentConfigs = POWERS.map((power, i) => ({
     power,
@@ -382,7 +402,7 @@ async function main() {
       paranoia: 0.3 + (i % 3) * 0.15,
       deceptiveness: 0.2 + (i % 4) * 0.1,
     },
-    model: modelName,
+    model: assignments.get(power) || modelName,
     temperature: 0.7,
     maxTokens: 2048,
   }));
