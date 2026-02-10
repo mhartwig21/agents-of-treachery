@@ -48,6 +48,7 @@ export function SpectatorGameView({ onBack }: SpectatorGameViewProps) {
     activeGame,
     currentSnapshot,
     isLive,
+    liveAccumulator,
     setGameViewTab,
   } = useSpectator();
 
@@ -120,22 +121,24 @@ export function SpectatorGameView({ onBack }: SpectatorGameViewProps) {
   const isAnimationActive = animationState.phase !== 'idle' && animationState.phase !== 'complete';
 
   // Live Data Accumulator: Merge snapshot data with streaming data when live
-  // This shows messages/orders as they arrive, before phase resolution
+  // Uses LiveAccumulator from context which correctly accumulates across
+  // multiple GAME_UPDATED events (unlike latestMessages/latestOrders which
+  // get overwritten on each event)
   const accumulatedMessages = useMemo(() => {
     if (!currentSnapshot) return [];
     const snapshotMessages = currentSnapshot.messages;
 
-    // In replay mode, just use snapshot data
-    if (!isLive || !activeGame?.latestMessages) {
+    // In replay mode or no accumulator, just use snapshot data
+    if (!isLive || !liveAccumulator?.messages.length) {
       return snapshotMessages;
     }
 
-    // In live mode, merge snapshot messages with latest streaming messages
+    // In live mode, merge snapshot messages with accumulated streaming messages
     // Use a Set to dedupe by message ID
     const messageIds = new Set(snapshotMessages.map((m: Message) => m.id));
     const merged = [...snapshotMessages];
 
-    for (const msg of activeGame.latestMessages) {
+    for (const msg of liveAccumulator.messages) {
       if (!messageIds.has(msg.id)) {
         merged.push(msg);
         messageIds.add(msg.id);
@@ -146,20 +149,20 @@ export function SpectatorGameView({ onBack }: SpectatorGameViewProps) {
     return merged.sort((a, b) =>
       new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
     );
-  }, [currentSnapshot, isLive, activeGame?.latestMessages]);
+  }, [currentSnapshot, isLive, liveAccumulator?.messages]);
 
-  // Accumulate orders: merge snapshot orders with live streaming orders
+  // Accumulate orders: merge snapshot orders with live accumulated orders
   const accumulatedOrders = useMemo(() => {
     if (!currentSnapshot) return [];
     const snapshotOrders = currentSnapshot.orders;
 
-    // In replay mode, just use snapshot data
-    if (!isLive || !activeGame?.latestOrders) {
+    // In replay mode or no accumulator, just use snapshot data
+    if (!isLive || !liveAccumulator?.orders || Object.keys(liveAccumulator.orders).length === 0) {
       return snapshotOrders;
     }
 
-    // In live mode, merge snapshot orders with latest streaming orders
-    // latestOrders is Record<power, Order[]> - flatten and dedupe by unit
+    // In live mode, merge snapshot orders with accumulated streaming orders
+    // liveAccumulator.orders is Record<power, Order[]> - flatten and dedupe by unit
     const ordersByUnit = new Map<string, typeof snapshotOrders[0]>();
 
     // Add snapshot orders first
@@ -167,15 +170,15 @@ export function SpectatorGameView({ onBack }: SpectatorGameViewProps) {
       ordersByUnit.set(order.unit, order);
     }
 
-    // Override with latest streaming orders (more recent)
-    for (const orders of Object.values(activeGame.latestOrders)) {
+    // Override with accumulated streaming orders (more recent)
+    for (const orders of Object.values(liveAccumulator.orders)) {
       for (const order of orders) {
         ordersByUnit.set(order.unit, order);
       }
     }
 
     return Array.from(ordersByUnit.values());
-  }, [currentSnapshot, isLive, activeGame?.latestOrders]);
+  }, [currentSnapshot, isLive, liveAccumulator?.orders]);
 
   // Find selected message from accumulated messages (includes live data)
   const selectedMessage = useMemo(() => {
@@ -305,8 +308,8 @@ export function SpectatorGameView({ onBack }: SpectatorGameViewProps) {
             >
               <LiveActivityPanel
                 currentAgent={activeGame.currentAgent}
-                latestMessages={activeGame.latestMessages}
-                latestOrders={activeGame.latestOrders}
+                latestMessages={liveAccumulator?.messages}
+                latestOrders={liveAccumulator?.orders}
                 isLive={isLive}
               />
             </CollapsiblePanel>
