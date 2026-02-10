@@ -251,7 +251,8 @@ export function createFallbackConsolidation(
  */
 export async function consolidateTurnSummaries(
   memory: AgentMemory,
-  llmProvider?: LLMProvider
+  llmProvider?: LLMProvider,
+  model?: string
 ): Promise<ConsolidatedBlock | null> {
   if (!shouldConsolidateTurns(memory)) {
     return null;
@@ -280,6 +281,7 @@ export async function consolidateTurnSummaries(
       const prompt = buildTurnConsolidationPrompt(memory.power, toConsolidate);
       const result = await llmProvider.complete({
         messages: [{ role: 'user', content: prompt, timestamp: new Date() }],
+        model,
         maxTokens: 300,
         temperature: 0.3,
       });
@@ -505,9 +507,10 @@ export function formatConsolidatedMemory(memory: AgentMemory): string {
  */
 export async function consolidateMemory(
   memory: AgentMemory,
-  llmProvider?: LLMProvider
+  llmProvider?: LLMProvider,
+  model?: string
 ): Promise<{ turnBlock: ConsolidatedBlock | null; notesMerged: boolean }> {
-  const turnBlock = await consolidateTurnSummaries(memory, llmProvider);
+  const turnBlock = await consolidateTurnSummaries(memory, llmProvider, model);
   const notesBefore = memory.strategicNotes.length;
   mergeStrategicNotes(memory);
   const notesMerged = memory.strategicNotes.length < notesBefore;

@@ -364,7 +364,8 @@ export async function generateYearlySummary(
   gameState: GameState,
   memory: AgentMemory,
   llmProvider: LLMProvider,
-  previousYearSCs?: string[]
+  previousYearSCs?: string[],
+  model?: string
 ): Promise<YearSummary> {
   // Extract game context
   const gameContext = extractYearlyGameContext(power, gameState, memory, previousYearSCs);
@@ -399,6 +400,7 @@ export async function generateYearlySummary(
       messages: [
         { role: 'user', content: prompt, timestamp: new Date() },
       ],
+      model,
       maxTokens: 500,
       temperature: 0.3,
     });
@@ -481,7 +483,8 @@ export function parseConsolidationResponse(response: string, year: number): Year
 export async function consolidateYear(
   memory: AgentMemory,
   year: number,
-  llmProvider: LLMProvider
+  llmProvider: LLMProvider,
+  model?: string
 ): Promise<YearSummary> {
   const entries = memory.currentYearDiary || [];
 
@@ -504,6 +507,7 @@ export async function consolidateYear(
       messages: [
         { role: 'user', content: prompt, timestamp: new Date() },
       ],
+      model,
       maxTokens: 500,
       temperature: 0.3, // Lower temperature for more consistent summaries
     });
@@ -539,7 +543,8 @@ function createFallbackSummary(year: number, entries: DiaryEntry[]): YearSummary
 export async function performYearEndConsolidation(
   memory: AgentMemory,
   completedYear: number,
-  llmProvider: LLMProvider
+  llmProvider: LLMProvider,
+  model?: string
 ): Promise<void> {
   // Initialize arrays if needed
   if (!memory.yearSummaries) {
@@ -547,7 +552,7 @@ export async function performYearEndConsolidation(
   }
 
   // Consolidate the completed year
-  const summary = await consolidateYear(memory, completedYear, llmProvider);
+  const summary = await consolidateYear(memory, completedYear, llmProvider, model);
 
   // Add consolidation entry to full diary
   const consolidationEntry = createDiaryEntry(
@@ -687,7 +692,8 @@ export async function consolidateDiary(
   year: number,
   llmProvider: LLMProvider,
   gameState?: GameState,
-  previousYearSCs?: string[]
+  previousYearSCs?: string[],
+  model?: string
 ): Promise<YearSummary> {
   // Use enhanced summary generation when game state is available
   const summary = gameState
@@ -698,9 +704,10 @@ export async function consolidateDiary(
         gameState,
         memory,
         llmProvider,
-        previousYearSCs
+        previousYearSCs,
+        model
       )
-    : await consolidateYear(memory, year, llmProvider);
+    : await consolidateYear(memory, year, llmProvider, model);
 
   // Add consolidation entry to full diary
   const consolidationEntry = createDiaryEntry(

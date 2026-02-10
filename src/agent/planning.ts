@@ -210,7 +210,8 @@ export async function generateStrategicPlan(
   season: Season,
   memory: AgentMemory,
   gameState: GameState,
-  llmProvider: LLMProvider
+  llmProvider: LLMProvider,
+  model?: string
 ): Promise<StrategicPlan> {
   const prompt = buildPlanningPrompt(power, year, season, memory, gameState);
 
@@ -219,6 +220,7 @@ export async function generateStrategicPlan(
       messages: [
         { role: 'user', content: prompt, timestamp: new Date() },
       ],
+      model,
       maxTokens: 600,
       temperature: 0.5, // Moderate temperature for creative but focused planning
     });

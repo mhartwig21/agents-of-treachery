@@ -281,7 +281,8 @@ export async function generatePhaseReflection(
   orderResults: OrderResolution[],
   messagesThisPhase: Message[],
   memory: AgentMemory,
-  llmProvider: LLMProvider
+  llmProvider: LLMProvider,
+  model?: string
 ): Promise<PhaseReflection> {
   const prompt = buildReflectionPrompt(
     power,
@@ -298,6 +299,7 @@ export async function generatePhaseReflection(
       messages: [
         { role: 'user', content: prompt, timestamp: new Date() },
       ],
+      model,
       maxTokens: 800,
       temperature: 0.3, // Lower temperature for consistent analysis
     });
@@ -450,7 +452,8 @@ export async function generateAllReflections(
   orderResults: OrderResolution[],
   messagesThisPhase: Message[],
   memories: Map<Power, AgentMemory>,
-  llmProvider: LLMProvider
+  llmProvider: LLMProvider,
+  models?: Map<Power, string | undefined>
 ): Promise<Map<Power, PhaseReflection>> {
   const reflections = new Map<Power, PhaseReflection>();
 
@@ -466,7 +469,8 @@ export async function generateAllReflections(
       orderResults,
       messagesThisPhase,
       memory,
-      llmProvider
+      llmProvider,
+      models?.get(power)
     );
 
     reflections.set(power, reflection);

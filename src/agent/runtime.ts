@@ -528,7 +528,8 @@ export class AgentRuntime {
           power,
           incomingMessages,
           session.memory,
-          llm
+          llm,
+          session.config.model
         );
 
         if (analyses.length > 0) {
@@ -586,7 +587,8 @@ export class AgentRuntime {
           this.gameState.season,
           session.memory,
           this.gameState,
-          llm
+          llm,
+          session.config.model
         );
 
         // Store plan in memory for use in subsequent prompts
@@ -880,7 +882,8 @@ export class AgentRuntime {
           orderResults,
           this.lastPhaseMessages,
           session.memory,
-          llm
+          llm,
+          session.config.model
         );
 
         this.pendingReflections.set(power, reflection);
@@ -1058,7 +1061,8 @@ export class AgentRuntime {
             year,
             llm,
             this.gameState,
-            previousYearSCs
+            previousYearSCs,
+            session.config.model
           );
 
           if (this.config.verbose) {
@@ -1083,7 +1087,7 @@ export class AgentRuntime {
       if (!session) continue;
 
       try {
-        const result = await consolidateMemory(session.memory, llm);
+        const result = await consolidateMemory(session.memory, llm, session.config.model);
         if (result.turnBlock && this.config.verbose) {
           console.log(
             `[${power}] Consolidated turns ${result.turnBlock.fromYear} ${result.turnBlock.fromSeason}` +

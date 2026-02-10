@@ -174,7 +174,8 @@ export async function analyzeIncomingMessage(
   message: Message,
   memory: AgentMemory,
   recentHistory: Message[],
-  llmProvider: LLMProvider
+  llmProvider: LLMProvider,
+  model?: string
 ): Promise<MessageAnalysis> {
   const prompt = buildAnalysisPrompt(receiver, message, memory, recentHistory);
 
@@ -183,6 +184,7 @@ export async function analyzeIncomingMessage(
       messages: [
         { role: 'user', content: prompt, timestamp: new Date() },
       ],
+      model,
       maxTokens: 500,
       temperature: 0.3, // Lower temperature for more consistent analysis
     });
@@ -279,7 +281,8 @@ export async function analyzeIncomingMessages(
   receiver: Power,
   messages: Message[],
   memory: AgentMemory,
-  llmProvider: LLMProvider
+  llmProvider: LLMProvider,
+  model?: string
 ): Promise<MessageAnalysis[]> {
   // Filter to only messages from other powers
   const incomingMessages = messages.filter(m => m.sender !== receiver);
@@ -294,7 +297,7 @@ export async function analyzeIncomingMessages(
   // Analyze each message (in parallel for speed)
   const analyses = await Promise.all(
     incomingMessages.map(message =>
-      analyzeIncomingMessage(receiver, message, memory, recentHistory, llmProvider)
+      analyzeIncomingMessage(receiver, message, memory, recentHistory, llmProvider, model)
     )
   );
 
