@@ -57,6 +57,13 @@ import {
   type DeceptionRecord,
 } from '../analysis/deception';
 import {
+  hasRecallRequest,
+  parseRecallBlock,
+  executeRecall,
+  stripRecallBlock,
+  MAX_RECALL_CALLS_PER_TURN,
+} from './recall';
+import {
   createPromiseTracker,
   generatePromiseSummary,
   PromiseTracker,
@@ -1282,12 +1289,13 @@ export class AgentRuntime {
       };
     }
 
-    // Call the LLM
+    // Call the LLM (with recall tool loop)
     const llm = this.sessionManager.getLLMProvider();
     console.log(`[${power}] Calling LLM (${session.conversationHistory.length} msgs, ~${fullPrompt.length} chars, turn ${this.turnNumber}, ${contextStats.compressionLevel})...`);
     const startTime = Date.now();
     this.logger.llmRequest(power, session.config.model, session.conversationHistory.length, fullPrompt.length);
     let response;
+    let recallCount = 0;
     try {
       response = await llm.complete({
         messages: session.conversationHistory,
@@ -1325,6 +1333,77 @@ export class AgentRuntime {
         console.log(response.content);
         console.log(`${'─'.repeat(80)}\n`);
       }
+
+      // Recall tool loop: if agent requests conversation recall, fulfill and re-prompt
+      while (
+        hasRecallRequest(response.content) &&
+        recallCount < MAX_RECALL_CALLS_PER_TURN
+      ) {
+        recallCount++;
+        const recallParams = parseRecallBlock(response.content);
+
+        if (!recallParams) break;
+
+        // Execute recall against agent memory
+        const recallResult = executeRecall(session.memory, recallParams);
+        console.log(`[${power}] 🔍 Recall #${recallCount}: ${recallResult.entryCount} entries found`);
+
+        // Add the assistant's response (with RECALL request) to conversation
+        this.sessionManager.addMessage(power, {
+          role: 'assistant',
+          content: response.content,
+        });
+
+        // Inject recall results as a user message
+        this.sessionManager.addMessage(power, {
+          role: 'user',
+          content: `${recallResult.content}\n\nNow continue with your orders and/or diplomatic messages based on the above recalled context. Do NOT issue another RECALL.`,
+        });
+
+        // Check budget before re-calling LLM
+        const recallBudgetCheck = this.tokenTracker.checkBudget(power);
+        if (!recallBudgetCheck.allowed) {
+          console.log(`[${power}] 🚫 Budget exceeded during recall loop`);
+          break;
+        }
+
+        // Re-call LLM with recalled context
+        const recallStart = Date.now();
+        response = await llm.complete({
+          messages: session.conversationHistory,
+          model: session.config.model,
+          temperature: session.config.temperature,
+          maxTokens: session.config.maxTokens,
+        });
+        const recallDuration = Date.now() - recallStart;
+        console.log(`[${power}] Recall follow-up in ${(recallDuration / 1000).toFixed(1)}s`);
+
+        // Track recall token usage
+        if (response.usage) {
+          const model = session.config.model ?? 'default';
+          const record = this.tokenTracker.record(
+            power,
+            model,
+            this.gameState.phase,
+            this.gameState.season,
+            this.gameState.year,
+            response.usage.inputTokens,
+            response.usage.outputTokens
+          );
+          this.logger.tokenUsage(
+            power, model, this.gameState.phase, this.gameState.season, this.gameState.year,
+            response.usage.inputTokens, response.usage.outputTokens, record.costUsd
+          );
+        }
+
+        if (this.config.verbose) {
+          console.log(`\n${'─'.repeat(80)}`);
+          console.log(`[${power}] RECALL FOLLOW-UP RESPONSE:`);
+          console.log(`${'─'.repeat(80)}`);
+          console.log(response.content);
+          console.log(`${'─'.repeat(80)}\n`);
+        }
+      }
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       this.logger.llmError(power, errorMsg, session.config.model);
@@ -1332,14 +1411,17 @@ export class AgentRuntime {
       throw error;
     }
 
-    // Add assistant response to conversation
+    // Add final assistant response to conversation
     this.sessionManager.addMessage(power, {
       role: 'assistant',
       content: response.content,
     });
 
+    // Strip any residual RECALL blocks before parsing orders/diplomacy
+    const finalContent = stripRecallBlock(response.content);
+
     // Parse the response
-    const parsed = parseAgentResponse(response.content);
+    const parsed = parseAgentResponse(finalContent);
 
     // Log parsed orders
     if (parsed.orders.length > 0) {

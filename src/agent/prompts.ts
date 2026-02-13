@@ -299,6 +299,35 @@ Format: POWER: Xu/Ysc [A:prov,prov F:prov,prov] SC:prov,prov
 Example: ENGLAND: 3u/3sc [F:LON,EDI A:LVP] SC:LON,EDI,LVP`;
 
 /**
+ * Recall tool documentation for system prompt.
+ * Teaches agents they can request past conversation context on demand.
+ */
+const RECALL_TOOL_DOCS = `## Available Tool: recall_conversation
+
+You can retrieve past conversation context by including a RECALL line in your response.
+Use this sparingly—your diary and current game state are usually sufficient.
+
+**When to use:** Only when you need specific details about what was discussed, promised,
+or ordered in a prior turn that isn't covered by your diary summaries.
+
+**Format:** Place on its own line:
+  RECALL: phase=S1903M type=messages
+  RECALL: power=FRANCE count=2 type=all
+  RECALL: phase=1903 type=orders
+
+**Parameters (all optional, but provide at least one):**
+- phase: Target phase (e.g., "S1903M", "F1902D", or just "1903")
+- power: Filter by power name (e.g., "FRANCE")
+- count: Number of recent turns to retrieve (1-5, default 1)
+- type: "messages" (diplomatic), "orders" (what was ordered), or "all"
+
+**How it works:** If you include a RECALL line, the system will retrieve matching context
+from your diary and inject it. You'll then continue with your orders/diplomacy.
+Do NOT issue a RECALL and orders in the same response—the RECALL must come first.
+
+**Budget note:** Each recall costs an extra LLM round-trip. Use sparingly (max 3 per turn).`;
+
+/**
  * Response guidelines fallback (inline).
  */
 const RESPONSE_GUIDELINES = `## Response Guidelines
@@ -392,6 +421,11 @@ export function buildSystemPrompt(
   // Guidelines omitted in aggressive mode
   if (guidelines) {
     sections.push(guidelines);
+  }
+
+  // Recall tool documentation (omitted in aggressive mode - by then agent knows)
+  if (level !== 'aggressive') {
+    sections.push(RECALL_TOOL_DOCS);
   }
 
   return sections.filter(s => s.length > 0).join('\n\n');
