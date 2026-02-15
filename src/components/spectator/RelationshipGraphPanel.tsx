@@ -141,12 +141,30 @@ function computeRelationships(messages: Message[]): PowerPairRelationship[] {
 
   // Analyze messages
   for (const message of messages) {
-    // Extract recipients from channel participants (bilateral channels)
-    // Channel ID format is typically "POWER1-POWER2" for bilateral
-    const channelParts = message.channelId.split('-');
-    if (channelParts.length === 2) {
-      const [p1, p2] = channelParts.map(p => p.toLowerCase()) as [LowercasePower, LowercasePower];
+    // Extract bilateral pair from channel ID.
+    // Primary format: "bilateral:POWER1:POWER2" (from getBilateralChannelId)
+    // Legacy fallback: "POWER1-POWER2"
+    // Skip multiparty: and global channels (not bilateral pairs)
+    let p1: LowercasePower | undefined;
+    let p2: LowercasePower | undefined;
 
+    const channelId = message.channelId;
+    if (channelId.startsWith('bilateral:')) {
+      const parts = channelId.slice('bilateral:'.length).split(':');
+      if (parts.length === 2) {
+        p1 = parts[0].toLowerCase() as LowercasePower;
+        p2 = parts[1].toLowerCase() as LowercasePower;
+      }
+    } else if (!channelId.startsWith('multiparty:') && !channelId.startsWith('global')) {
+      // Legacy "POWER1-POWER2" format
+      const parts = channelId.split('-');
+      if (parts.length === 2) {
+        p1 = parts[0].toLowerCase() as LowercasePower;
+        p2 = parts[1].toLowerCase() as LowercasePower;
+      }
+    }
+
+    if (p1 && p2) {
       // Normalize the key (alphabetical order)
       const key = p1 < p2 ? `${p1}-${p2}` : `${p2}-${p1}`;
       const data = pairData.get(key);

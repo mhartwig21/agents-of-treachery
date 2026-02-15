@@ -69,10 +69,10 @@ describe('RelationshipGraphPanel', () => {
 
   it('computes relationships from messages', () => {
     const messages: Message[] = [
-      createMessage('ENGLAND', 'ENGLAND-FRANCE', 'PROPOSAL'),
-      createMessage('FRANCE', 'ENGLAND-FRANCE', 'ACCEPTANCE'),
-      createMessage('ENGLAND', 'ENGLAND-FRANCE', 'INFORMATION'),
-      createMessage('FRANCE', 'ENGLAND-FRANCE', 'PROPOSAL'),
+      createMessage('ENGLAND', 'bilateral:ENGLAND:FRANCE', 'PROPOSAL'),
+      createMessage('FRANCE', 'bilateral:ENGLAND:FRANCE', 'ACCEPTANCE'),
+      createMessage('ENGLAND', 'bilateral:ENGLAND:FRANCE', 'INFORMATION'),
+      createMessage('FRANCE', 'bilateral:ENGLAND:FRANCE', 'PROPOSAL'),
     ];
 
     render(<RelationshipGraphPanel messages={messages} selectedPower="england" />);
@@ -84,7 +84,7 @@ describe('RelationshipGraphPanel', () => {
   it('handles case-insensitive channel IDs', () => {
     const messages: Message[] = [
       createMessage('ENGLAND', 'england-france', 'PROPOSAL'),
-      createMessage('FRANCE', 'ENGLAND-FRANCE', 'ACCEPTANCE'),
+      createMessage('FRANCE', 'bilateral:ENGLAND:FRANCE', 'ACCEPTANCE'),
     ];
 
     render(<RelationshipGraphPanel messages={messages} selectedPower="england" />);
@@ -95,10 +95,10 @@ describe('RelationshipGraphPanel', () => {
 
   it('identifies allies based on positive message intents', () => {
     const messages: Message[] = [
-      createMessage('ENGLAND', 'ENGLAND-FRANCE', 'PROPOSAL'),
-      createMessage('FRANCE', 'ENGLAND-FRANCE', 'ACCEPTANCE'),
-      createMessage('ENGLAND', 'ENGLAND-FRANCE', 'INFORMATION'),
-      createMessage('FRANCE', 'ENGLAND-FRANCE', 'PROPOSAL'),
+      createMessage('ENGLAND', 'bilateral:ENGLAND:FRANCE', 'PROPOSAL'),
+      createMessage('FRANCE', 'bilateral:ENGLAND:FRANCE', 'ACCEPTANCE'),
+      createMessage('ENGLAND', 'bilateral:ENGLAND:FRANCE', 'INFORMATION'),
+      createMessage('FRANCE', 'bilateral:ENGLAND:FRANCE', 'PROPOSAL'),
     ];
 
     render(<RelationshipGraphPanel messages={messages} selectedPower="england" />);
@@ -112,14 +112,41 @@ describe('RelationshipGraphPanel', () => {
 
   it('identifies enemies based on negative message intents', () => {
     const messages: Message[] = [
-      createMessage('ENGLAND', 'ENGLAND-GERMANY', 'THREAT'),
-      createMessage('GERMANY', 'ENGLAND-GERMANY', 'REJECTION'),
+      createMessage('ENGLAND', 'bilateral:ENGLAND:GERMANY', 'THREAT'),
+      createMessage('GERMANY', 'bilateral:ENGLAND:GERMANY', 'REJECTION'),
     ];
 
     render(<RelationshipGraphPanel messages={messages} selectedPower="england" />);
 
     // The "Enemies:" label should be present
     expect(screen.getByText(/Enemies:/)).toBeInTheDocument();
+  });
+
+  it('parses bilateral:POWER1:POWER2 channel ID format', () => {
+    const messages: Message[] = [
+      createMessage('ENGLAND', 'bilateral:ENGLAND:FRANCE', 'PROPOSAL'),
+      createMessage('FRANCE', 'bilateral:ENGLAND:FRANCE', 'ACCEPTANCE'),
+      createMessage('ENGLAND', 'bilateral:ENGLAND:FRANCE', 'INFORMATION'),
+      createMessage('FRANCE', 'bilateral:ENGLAND:FRANCE', 'PROPOSAL'),
+    ];
+
+    render(<RelationshipGraphPanel messages={messages} selectedPower="england" />);
+
+    // Messages should be counted correctly via bilateral: format
+    expect(screen.getByText('4')).toBeInTheDocument();
+    expect(screen.getByText(/Allies:/)).toBeInTheDocument();
+  });
+
+  it('skips multiparty and global channels', () => {
+    const messages: Message[] = [
+      createMessage('ENGLAND', 'multiparty:ENGLAND:FRANCE:GERMANY', 'PROPOSAL'),
+      createMessage('FRANCE', 'global', 'INFORMATION'),
+    ];
+
+    render(<RelationshipGraphPanel messages={messages} selectedPower="england" />);
+
+    // No bilateral messages parsed, so message count should be 0
+    expect(screen.getByText('0')).toBeInTheDocument();
   });
 
   it('applies custom className', () => {
@@ -134,8 +161,8 @@ describe('RelationshipGraphPanel', () => {
     // The old implementation used CSS transform which caused clipping.
     // The fix uses direct left/top clamped to container bounds.
     const messages: Message[] = [
-      createMessage('ENGLAND', 'ENGLAND-FRANCE', 'PROPOSAL'),
-      createMessage('FRANCE', 'ENGLAND-FRANCE', 'ACCEPTANCE'),
+      createMessage('ENGLAND', 'bilateral:ENGLAND:FRANCE', 'PROPOSAL'),
+      createMessage('FRANCE', 'bilateral:ENGLAND:FRANCE', 'ACCEPTANCE'),
     ];
 
     const { container } = render(
@@ -284,9 +311,9 @@ describe('RelationshipGraphPanel', () => {
   describe('Combined Mode Scoring', () => {
     it('shows score badge for selected power in combined mode', () => {
       const messages: Message[] = [
-        createMessage('ENGLAND', 'ENGLAND-FRANCE', 'PROPOSAL'),
-        createMessage('FRANCE', 'ENGLAND-FRANCE', 'ACCEPTANCE'),
-        createMessage('ENGLAND', 'ENGLAND-FRANCE', 'INFORMATION'),
+        createMessage('ENGLAND', 'bilateral:ENGLAND:FRANCE', 'PROPOSAL'),
+        createMessage('FRANCE', 'bilateral:ENGLAND:FRANCE', 'ACCEPTANCE'),
+        createMessage('ENGLAND', 'bilateral:ENGLAND:FRANCE', 'INFORMATION'),
       ];
 
       const gameEvents: GameEvent[] = [
