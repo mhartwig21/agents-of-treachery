@@ -8,6 +8,7 @@ node_modules/
 dist/
 .env
 coverage/
+data/
 
 # Secrets vault private keys (NEVER commit)
 secrets/.keys/
