@@ -508,6 +508,16 @@ export class GameServer {
       };
       const hasAnalysis = analysis.deceptions?.length || analysis.promiseUpdates?.length || analysis.narrativeEvents?.length;
 
+      // Collect diary data from all agent memories
+      const diaries = runtime.getDiaries();
+      const diaryData: Record<string, { entries: import('../agent/types').DiaryEntry[]; yearSummaries: import('../agent/types').YearSummary[] }> = {};
+      for (const [power, data] of Object.entries(diaries)) {
+        if (data.entries.length > 0 || data.yearSummaries.length > 0) {
+          diaryData[power] = data;
+        }
+      }
+      const hasDiaries = Object.keys(diaryData).length > 0;
+
       const snapshot: GameSnapshot = {
         id: generateSnapshotId(snapshotYear, snapshotSeason, snapshotPhase),
         year: snapshotYear,
@@ -518,6 +528,7 @@ export class GameServer {
         messages: [...game.accumulatedMessages],
         timestamp: event.timestamp,
         ...(hasAnalysis ? { analysis } : {}),
+        ...(hasDiaries ? { diaries: diaryData } : {}),
       };
 
       // Add snapshot to history

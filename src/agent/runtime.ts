@@ -85,7 +85,7 @@ import {
   recordPlanInDiary,
   formatPlanForPrompt,
 } from './planning';
-import type { MessageAnalysis, PhaseReflection } from './types';
+import type { MessageAnalysis, PhaseReflection, DiaryEntry, YearSummary } from './types';
 
 /**
  * Event types emitted by the runtime.
@@ -1714,6 +1714,24 @@ export class AgentRuntime {
    */
   getGameState(): GameState {
     return cloneState(this.gameState);
+  }
+
+  /**
+   * Get diary data for all powers.
+   * Returns full diary entries and year summaries per power.
+   */
+  getDiaries(): Record<Power, { entries: DiaryEntry[]; yearSummaries: YearSummary[] }> {
+    const result = {} as Record<Power, { entries: DiaryEntry[]; yearSummaries: YearSummary[] }>;
+    for (const power of POWERS) {
+      const session = this.sessionManager.getSession(power);
+      if (session) {
+        result[power] = {
+          entries: session.memory.fullPrivateDiary ?? [],
+          yearSummaries: session.memory.yearSummaries ?? [],
+        };
+      }
+    }
+    return result;
   }
 
   /**
