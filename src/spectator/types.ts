@@ -16,6 +16,7 @@ import type { Message, ChannelId } from '../press/types';
 import type { DeceptionRecord } from '../analysis/deception';
 import type { PromiseMemoryUpdate } from '../analysis/promise-tracker';
 import type { NarrativeEvent } from '../analysis/narrative';
+import type { DiaryEntry, YearSummary } from '../agent/types';
 
 // Re-export press Power type
 export type { EnginePower, Season, Phase };
@@ -86,6 +87,8 @@ export interface GameSnapshot {
   timestamp: Date;
   /** Analysis results for this phase */
   analysis?: SnapshotAnalysis;
+  /** Per-power diary data (entries + year summaries) */
+  diaries?: Record<string, { entries: DiaryEntry[]; yearSummaries: YearSummary[] }>;
 }
 
 /**

@@ -23,6 +23,7 @@ import { RelationshipGraphPanel } from './RelationshipGraphPanel';
 import { PhaseIndicator, PhaseBadge } from '../shared/PhaseIndicator';
 import { CollapsiblePanel } from '../shared/CollapsiblePanel';
 import { GameEventOverlay } from './GameEventOverlay';
+import { DiaryPanel } from './DiaryPanel';
 import { useGameSounds } from '../../audio';
 import { useResolutionAnimation } from '../../hooks/useResolutionAnimation';
 import { useActionRelationships } from '../../hooks/useActionRelationships';
@@ -36,6 +37,7 @@ interface CollapsedPanels {
   orders: boolean;
   press: boolean;
   relationships: boolean;
+  diaries: boolean;
 }
 
 interface SpectatorGameViewProps {
@@ -65,6 +67,7 @@ export function SpectatorGameView({ onBack }: SpectatorGameViewProps) {
     orders: false,
     press: false,
     relationships: false,
+    diaries: true,
   });
   const [animationSpeed, setAnimationSpeed] = useState<'slow' | 'normal' | 'fast'>('normal');
   const [isAnimationPlaying, setIsAnimationPlaying] = useState(false);
@@ -392,7 +395,7 @@ export function SpectatorGameView({ onBack }: SpectatorGameViewProps) {
             count={accumulatedMessages.length}
             collapsed={collapsedPanels.press}
             onCollapsedChange={(v) => setCollapsedPanels((p) => ({ ...p, press: v }))}
-            className="flex-1 min-h-0"
+            className="border-b border-gray-700"
           >
             <ChannelPanel
               messages={accumulatedMessages}
@@ -403,6 +406,18 @@ export function SpectatorGameView({ onBack }: SpectatorGameViewProps) {
               className="max-h-96"
             />
           </CollapsiblePanel>
+
+          {/* Agent Diaries */}
+          {currentSnapshot.diaries && (
+            <CollapsiblePanel
+              title="Agent Diaries"
+              collapsed={collapsedPanels.diaries}
+              onCollapsedChange={(v) => setCollapsedPanels((p) => ({ ...p, diaries: v }))}
+              className="flex-1 min-h-0"
+            >
+              <DiaryPanel diaries={currentSnapshot.diaries} />
+            </CollapsiblePanel>
+          )}
         </div>
       </div>
 
