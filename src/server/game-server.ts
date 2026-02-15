@@ -27,6 +27,7 @@ import type { Message } from '../press/types';
 import { GameLogger, getGameLogger, removeGameLogger, createLoggingLLMProvider } from './game-logger';
 import { GameStore } from '../store/game-store';
 import { SnapshotManager } from '../store/snapshot-manager';
+import { WebhookManager } from './webhooks';
 
 /**
  * Protocol version for API evolution.
@@ -104,6 +105,7 @@ export class GameServer {
   private snapshotManager: SnapshotManager | null;
   private modelRegistry?: ModelRegistry;
   private gameCounter: number = 0;
+  readonly webhooks: WebhookManager = new WebhookManager();
 
   constructor(config: GameServerConfig) {
     this.llmProvider = config.llmProvider;
@@ -112,20 +114,145 @@ export class GameServer {
   }
 
   /**
-   * Handles HTTP requests (health check endpoint).
+   * Handles HTTP requests (health check and webhook management endpoints).
    */
   private handleHttpRequest(req: IncomingMessage, res: ServerResponse): void {
-    if (req.url === '/health' || req.url === '/') {
+    const url = req.url ?? '';
+
+    if (url === '/health' || url === '/') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         status: 'ok',
         games: this.games.size,
         clients: this.clients.size,
       }));
-    } else {
-      res.writeHead(404);
-      res.end('Not found');
+      return;
     }
+
+    // Webhook management endpoints
+    if (url.startsWith('/webhooks')) {
+      this.handleWebhookRequest(req, res, url);
+      return;
+    }
+
+    res.writeHead(404);
+    res.end('Not found');
+  }
+
+  /**
+   * Handles webhook management HTTP requests.
+   */
+  private handleWebhookRequest(req: IncomingMessage, res: ServerResponse, url: string): void {
+    const json = (status: number, data: unknown) => {
+      res.writeHead(status, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(data));
+    };
+
+    const readBody = (): Promise<string> => new Promise((resolve, reject) => {
+      const chunks: Buffer[] = [];
+      req.on('data', (chunk: Buffer) => chunks.push(chunk));
+      req.on('end', () => resolve(Buffer.concat(chunks).toString()));
+      req.on('error', reject);
+    });
+
+    // GET /webhooks - list registrations
+    if (req.method === 'GET' && url === '/webhooks') {
+      json(200, this.webhooks.listRegistrations());
+      return;
+    }
+
+    // POST /webhooks - register a new webhook
+    if (req.method === 'POST' && url === '/webhooks') {
+      readBody().then(body => {
+        try {
+          const { url: webhookUrl, secret, events, description } = JSON.parse(body);
+          if (!webhookUrl || !secret || !events?.length) {
+            json(400, { error: 'url, secret, and events are required' });
+            return;
+          }
+          const reg = this.webhooks.register(webhookUrl, secret, events, description);
+          json(201, reg);
+        } catch (err) {
+          json(400, { error: err instanceof Error ? err.message : 'Invalid request' });
+        }
+      }).catch(() => json(400, { error: 'Failed to read request body' }));
+      return;
+    }
+
+    // Extract webhook ID from URL like /webhooks/:id or /webhooks/:id/action
+    const idMatch = url.match(/^\/webhooks\/([^/]+)(\/(.+))?$/);
+    if (!idMatch) {
+      json(404, { error: 'Not found' });
+      return;
+    }
+
+    const webhookId = idMatch[1];
+    const action = idMatch[3]; // e.g., "activate", "deactivate"
+
+    // GET /webhooks/:id - get a specific registration
+    if (req.method === 'GET' && !action) {
+      const reg = this.webhooks.getRegistration(webhookId);
+      if (!reg) { json(404, { error: 'Webhook not found' }); return; }
+      json(200, reg);
+      return;
+    }
+
+    // DELETE /webhooks/:id - unregister
+    if (req.method === 'DELETE' && !action) {
+      const removed = this.webhooks.unregister(webhookId);
+      if (!removed) { json(404, { error: 'Webhook not found' }); return; }
+      json(200, { deleted: true });
+      return;
+    }
+
+    // POST /webhooks/:id/activate
+    if (req.method === 'POST' && action === 'activate') {
+      if (!this.webhooks.activate(webhookId)) { json(404, { error: 'Webhook not found' }); return; }
+      json(200, { activated: true });
+      return;
+    }
+
+    // POST /webhooks/:id/deactivate
+    if (req.method === 'POST' && action === 'deactivate') {
+      if (!this.webhooks.deactivate(webhookId)) { json(404, { error: 'Webhook not found' }); return; }
+      json(200, { deactivated: true });
+      return;
+    }
+
+    // Webhook debugging/monitoring endpoints
+    if (req.method === 'GET' && webhookId === 'stats') {
+      json(200, this.webhooks.getStats());
+      return;
+    }
+
+    if (req.method === 'GET' && webhookId === 'dead-letters') {
+      json(200, this.webhooks.getDeadLetters());
+      return;
+    }
+
+    if (req.method === 'DELETE' && webhookId === 'dead-letters') {
+      const count = this.webhooks.clearDeadLetters();
+      json(200, { cleared: count });
+      return;
+    }
+
+    if (req.method === 'GET' && webhookId === 'deliveries') {
+      json(200, this.webhooks.getDeliveryLog());
+      return;
+    }
+
+    if (req.method === 'POST' && webhookId === 'dead-letters' && action) {
+      // POST /webhooks/dead-letters/:deadLetterId/retry
+      const dlIdMatch = url.match(/^\/webhooks\/dead-letters\/([^/]+)\/retry$/);
+      if (dlIdMatch) {
+        const retried = this.webhooks.retryDeadLetter(dlIdMatch[1]);
+        if (!retried) { json(404, { error: 'Dead letter not found' }); return; }
+        json(200, { retried: true });
+        return;
+      }
+    }
+
+    json(404, { error: 'Not found' });
   }
 
   /**
@@ -178,12 +305,14 @@ export class GameServer {
   }
 
   /**
-   * Stops the server.
+   * Stops the server and flushes pending webhook deliveries.
    */
   stop(): void {
     for (const game of this.games.values()) {
       game.runtime.stop();
     }
+    // Best-effort flush of pending webhook deliveries
+    this.webhooks.flush().catch(() => {});
     if (this.wss) {
       this.wss.close();
       this.wss = null;
@@ -298,6 +427,14 @@ export class GameServer {
       const channelParts = message.channelId.split(':');
       const recipients = channelParts.slice(1).filter(p => p !== message.sender);
       logger.messageSent(message.sender, recipients.length > 0 ? recipients : ['all'], preview);
+
+      // Dispatch webhook for message sent
+      this.webhooks.dispatch('message.sent', {
+        gameId,
+        sender: message.sender,
+        channelId: message.channelId,
+        preview,
+      });
     });
 
     // Subscribe to runtime events
@@ -310,6 +447,9 @@ export class GameServer {
       type: 'GAME_CREATED',
       game: history,
     });
+
+    // Dispatch webhook for game creation
+    this.webhooks.dispatch('game.created', { gameId, name: gameName });
 
     // Initialize and run game
     try {
@@ -389,6 +529,9 @@ export class GameServer {
   private handleRuntimeEvent(game: ActiveGame, event: RuntimeEvent): void {
     const { runtime, logger } = game;
     console.log(`[${game.gameId}] Event: ${event.type}`, event.data.power || '');
+
+    // Dispatch webhook events for game lifecycle
+    this.dispatchWebhookForEvent(game.gameId, event);
 
     // Send real-time updates for agent activity
     if (event.type === 'agent_turn_started' && event.data.power) {
@@ -559,6 +702,58 @@ export class GameServer {
         gameId: game.gameId,
         snapshot,
       });
+    }
+  }
+
+  /**
+   * Maps a runtime event to a webhook dispatch.
+   */
+  private dispatchWebhookForEvent(gameId: string, event: RuntimeEvent): void {
+    switch (event.type) {
+      case 'game_started':
+        this.webhooks.dispatch('game.started', {
+          gameId,
+          year: event.data.year ?? 1901,
+          season: event.data.season ?? 'SPRING',
+          phase: event.data.phase ?? 'DIPLOMACY',
+        });
+        break;
+      case 'game_ended':
+        this.webhooks.dispatch('game.ended', {
+          gameId,
+          winner: event.data.winner,
+          draw: event.data.draw,
+        });
+        break;
+      case 'phase_started':
+        if (event.data.year && event.data.season && event.data.phase) {
+          this.webhooks.dispatch('phase.started', {
+            gameId,
+            year: event.data.year,
+            season: event.data.season,
+            phase: event.data.phase,
+          });
+        }
+        break;
+      case 'phase_resolved':
+        if (event.data.year && event.data.season && event.data.phase) {
+          this.webhooks.dispatch('phase.resolved', {
+            gameId,
+            year: event.data.year,
+            season: event.data.season,
+            phase: event.data.phase,
+          });
+        }
+        break;
+      case 'orders_submitted':
+        if (event.data.power) {
+          this.webhooks.dispatch('orders.submitted', {
+            gameId,
+            power: event.data.power,
+            orderCount: event.data.orders?.length ?? 0,
+          });
+        }
+        break;
     }
   }
 
