@@ -17,15 +17,12 @@ type ViewMode = 'grid' | 'list';
 interface SpectatorDashboardProps {
   /** Callback when a game is selected */
   onSelectGame?: (gameId: string) => void;
-  /** Whether to enable live game connection */
-  enableLiveConnection?: boolean;
   /** WebSocket server URL */
   serverUrl?: string;
 }
 
 export function SpectatorDashboard({
   onSelectGame,
-  enableLiveConnection = false,
   serverUrl,
 }: SpectatorDashboardProps) {
   const { state, selectGame } = useSpectator();
@@ -34,7 +31,7 @@ export function SpectatorDashboard({
   const [searchQuery, setSearchQuery] = useState('');
   const [notification, setNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
-  // Live game connection (only active when enabled)
+  // Always connect to the live game server
   const {
     connectionState,
     error: connectionError,
@@ -44,8 +41,8 @@ export function SpectatorDashboard({
     reconnect,
   } = useLiveGame({
     serverUrl,
-    autoConnect: enableLiveConnection,
-    autoReconnect: enableLiveConnection,
+    autoConnect: true,
+    autoReconnect: true,
   });
 
   const isStartingGame = gameStartEvent.status === 'pending';
@@ -137,40 +134,38 @@ export function SpectatorDashboard({
               </p>
             </div>
             <div className="flex items-center gap-4">
-              {enableLiveConnection && (
-                <div className="flex flex-col items-end gap-2">
-                  <div className="flex items-center gap-3">
-                    <ConnectionIndicator
-                      state={connectionState}
-                      error={connectionError}
-                      onReconnect={reconnect}
-                    />
-                    <button
-                      onClick={handleStartNewGame}
-                      disabled={connectionState !== 'connected' || isStartingGame}
-                      className={`
-                        px-4 py-2 rounded-lg font-medium transition-colors
-                        ${connectionState === 'connected' && !isStartingGame
-                          ? 'bg-green-600 hover:bg-green-500 text-white'
-                          : 'bg-gray-600 text-gray-400 cursor-not-allowed'
-                        }
-                      `}
-                    >
-                      {isStartingGame ? 'Starting...' : 'Start New Game'}
-                    </button>
-                  </div>
-                  {notification && (
-                    <GameNotification
-                      type={notification.type}
-                      message={notification.message}
-                      onDismiss={() => {
-                        setNotification(null);
-                        clearGameStartEvent();
-                      }}
-                    />
-                  )}
+              <div className="flex flex-col items-end gap-2">
+                <div className="flex items-center gap-3">
+                  <ConnectionIndicator
+                    state={connectionState}
+                    error={connectionError}
+                    onReconnect={reconnect}
+                  />
+                  <button
+                    onClick={handleStartNewGame}
+                    disabled={connectionState !== 'connected' || isStartingGame}
+                    className={`
+                      px-4 py-2 rounded-lg font-medium transition-colors
+                      ${connectionState === 'connected' && !isStartingGame
+                        ? 'bg-green-600 hover:bg-green-500 text-white'
+                        : 'bg-gray-600 text-gray-400 cursor-not-allowed'
+                      }
+                    `}
+                  >
+                    {isStartingGame ? 'Starting...' : 'Start New Game'}
+                  </button>
                 </div>
-              )}
+                {notification && (
+                  <GameNotification
+                    type={notification.type}
+                    message={notification.message}
+                    onDismiss={() => {
+                      setNotification(null);
+                      clearGameStartEvent();
+                    }}
+                  />
+                )}
+              </div>
               <PowerBadgeRow size="md" />
             </div>
           </div>
@@ -239,7 +234,37 @@ export function SpectatorDashboard({
         </div>
       </header>
 
+      {/* Full-screen connection state when not connected */}
+      {connectionState !== 'connected' && (
+        <div className="flex items-center justify-center py-24">
+          <div className="text-center">
+            {connectionState === 'connecting' ? (
+              <>
+                <div className="w-8 h-8 border-2 border-blue-400 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+                <h2 className="text-xl font-semibold mb-2">Connecting to server...</h2>
+                <p className="text-gray-400">Attempting to reach the game server</p>
+              </>
+            ) : (
+              <>
+                <div className="text-gray-500 text-6xl mb-4">!</div>
+                <h2 className="text-xl font-semibold mb-2">Server unavailable</h2>
+                <p className="text-gray-400 mb-4">
+                  {connectionError || 'Unable to connect to the game server'}
+                </p>
+                <button
+                  onClick={reconnect}
+                  className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium transition-colors"
+                >
+                  Retry Connection
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Main content */}
+      {connectionState === 'connected' && (
       <main className="max-w-7xl mx-auto px-4 py-6">
         {filteredGames.length === 0 ? (
           <EmptyState
@@ -275,6 +300,7 @@ export function SpectatorDashboard({
           </div>
         )}
       </main>
+      )}
     </div>
   );
 }

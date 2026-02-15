@@ -61,20 +61,9 @@ export function spectatorReducer(state: SpectatorState, action: SpectatorAction)
       return {
         ...state,
         activeGameId: action.gameId,
-        viewMode: 'live',
         replayPosition: null,
         gameViewTab: 'map',
       };
-    }
-
-    case 'SET_VIEW_MODE': {
-      if (action.mode === 'live') {
-        return { ...state, viewMode: 'live', replayPosition: null };
-      }
-      // When switching to replay, start at the latest snapshot
-      const game = state.activeGameId ? state.games.get(state.activeGameId) : null;
-      const position = game ? game.snapshots.length - 1 : null;
-      return { ...state, viewMode: 'replay', replayPosition: position };
     }
 
     case 'SET_REPLAY_POSITION': {
@@ -86,7 +75,7 @@ export function spectatorReducer(state: SpectatorState, action: SpectatorAction)
       if (!game) return state;
       const position = game.snapshots.findIndex(s => s.id === action.snapshotId);
       if (position === -1) return state;
-      return { ...state, viewMode: 'replay', replayPosition: position };
+      return { ...state, replayPosition: position };
     }
 
     case 'ADD_SNAPSHOT': {
@@ -185,7 +174,6 @@ interface SpectatorContextValue {
 
   // Action helpers
   selectGame: (gameId: string | null) => void;
-  setViewMode: (mode: 'live' | 'replay') => void;
   seekToPosition: (position: number) => void;
   seekToSnapshot: (snapshotId: string) => void;
   stepForward: () => void;
@@ -247,10 +235,6 @@ export function SpectatorProvider({ children, initialGames = [] }: SpectatorProv
     dispatch({ type: 'SELECT_GAME', gameId });
   }, []);
 
-  const setViewMode = useCallback((mode: 'live' | 'replay') => {
-    dispatch({ type: 'SET_VIEW_MODE', mode });
-  }, []);
-
   const seekToPosition = useCallback((position: number) => {
     dispatch({ type: 'SET_REPLAY_POSITION', position });
   }, []);
@@ -266,10 +250,9 @@ export function SpectatorProvider({ children, initialGames = [] }: SpectatorProv
   }, [activeGame, state.replayPosition]);
 
   const stepBackward = useCallback(() => {
-    // If in live mode, switch to replay and go to second-to-last snapshot
+    // If at latest position, scrub back to second-to-last snapshot
     if (state.replayPosition === null) {
       if (!activeGame || activeGame.snapshots.length < 2) return;
-      dispatch({ type: 'SET_VIEW_MODE', mode: 'replay' });
       dispatch({ type: 'SET_REPLAY_POSITION', position: activeGame.snapshots.length - 2 });
       return;
     }
@@ -278,7 +261,7 @@ export function SpectatorProvider({ children, initialGames = [] }: SpectatorProv
   }, [state.replayPosition, activeGame]);
 
   const goToLive = useCallback(() => {
-    dispatch({ type: 'SET_VIEW_MODE', mode: 'live' });
+    dispatch({ type: 'SET_REPLAY_POSITION', position: null });
   }, []);
 
   const setPressFilters = useCallback((filters: Partial<PressFilters>) => {
@@ -329,7 +312,6 @@ export function SpectatorProvider({ children, initialGames = [] }: SpectatorProv
     isLive,
     liveAccumulator,
     selectGame,
-    setViewMode,
     seekToPosition,
     seekToSnapshot,
     stepForward,
@@ -373,7 +355,6 @@ export function useReplayControls(autoPlaySpeed: number = 1000) {
     state,
     activeGame,
     isLive,
-    setViewMode,
     seekToPosition,
     stepForward,
     stepBackward,
@@ -400,12 +381,11 @@ export function useReplayControls(autoPlaySpeed: number = 1000) {
 
   const play = useCallback(() => {
     if (isLive) {
-      // Start from beginning when switching from live mode
-      setViewMode('replay');
+      // Start from beginning when at latest position
       seekToPosition(0);
     }
     setIsPlaying(true);
-  }, [isLive, setViewMode, seekToPosition]);
+  }, [isLive, seekToPosition]);
 
   const pause = useCallback(() => {
     setIsPlaying(false);

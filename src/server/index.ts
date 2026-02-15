@@ -202,7 +202,7 @@ async function main() {
   });
 
   console.log(`\nGame server ready at ws://localhost:${PORT}`);
-  console.log('Connect the spectator UI with enableLiveConnection={true}');
+  console.log('The spectator UI will connect automatically');
 }
 
 main().catch((error) => {

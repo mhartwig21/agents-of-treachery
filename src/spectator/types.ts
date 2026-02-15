@@ -138,9 +138,7 @@ export interface SpectatorState {
   games: Map<string, GameHistory>;
   /** Currently selected game */
   activeGameId: string | null;
-  /** Viewing mode */
-  viewMode: 'live' | 'replay';
-  /** Index into snapshots array when in replay mode (null = live) */
+  /** Index into snapshots array when in replay mode (null = latest/live) */
   replayPosition: number | null;
   /** Press filtering options */
   pressFilters: PressFilters;
@@ -175,7 +173,6 @@ export type SpectatorAction =
   | { type: 'UPDATE_GAME'; gameId: string; updates: Partial<GameHistory> }
   | { type: 'REMOVE_GAME'; gameId: string }
   | { type: 'SELECT_GAME'; gameId: string | null }
-  | { type: 'SET_VIEW_MODE'; mode: 'live' | 'replay' }
   | { type: 'SET_REPLAY_POSITION'; position: number | null }
   | { type: 'SEEK_TO_SNAPSHOT'; snapshotId: string }
   | { type: 'ADD_SNAPSHOT'; gameId: string; snapshot: GameSnapshot }
@@ -193,7 +190,6 @@ export type SpectatorAction =
 export const initialSpectatorState: SpectatorState = {
   games: new Map(),
   activeGameId: null,
-  viewMode: 'live',
   replayPosition: null,
   pressFilters: {
     channels: [],
@@ -230,7 +226,7 @@ export function getCurrentSnapshot(state: SpectatorState): GameSnapshot | null {
   const game = state.games.get(state.activeGameId);
   if (!game || game.snapshots.length === 0) return null;
 
-  if (state.viewMode === 'live' || state.replayPosition === null) {
+  if (state.replayPosition === null) {
     return game.snapshots[game.snapshots.length - 1];
   }
 
@@ -247,9 +243,13 @@ export function getActiveGame(state: SpectatorState): GameHistory | null {
 
 /**
  * Checks if currently viewing a live game.
+ * Live means: viewing an active game at the latest position (not scrubbed back).
  */
 export function isViewingLive(state: SpectatorState): boolean {
-  return state.viewMode === 'live' || state.replayPosition === null;
+  if (state.replayPosition !== null) return false;
+  if (!state.activeGameId) return false;
+  const game = state.games.get(state.activeGameId);
+  return game?.status === 'active';
 }
 
 /**
