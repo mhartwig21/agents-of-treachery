@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState } from 'react'
 import type { GameState, Power, Unit, Order } from '../types/game'
 import { territories, getTerritory, getTerritoryCenter } from '../data/territories'
 import { AnimatedUnit } from './map/AnimatedUnit'
@@ -51,12 +51,6 @@ const POWER_COLORS: Record<Power, string> = {
   turkey: '#f9a825',
 }
 
-const VIEWBOX = { width: 1835, height: 1360 }
-// Initial offset to center Europe (eliminates dead space on left/top)
-// Map content starts around x=200, y=175 - offset centers UK-Turkey range
-const INITIAL_OFFSET = { x: 150, y: 50 }
-// Minimum drag distance (in pixels) before a click becomes a pan
-const DRAG_THRESHOLD = 5
 
 export function DiplomacyMap({
   gameState,
@@ -70,15 +64,7 @@ export function DiplomacyMap({
 }: DiplomacyMapProps) {
   // Use provided orders or fall back to gameState.orders
   const displayOrders = ordersProp ?? gameState.orders
-  const svgRef = useRef<SVGSVGElement>(null)
-  const [viewBox, setViewBox] = useState({ x: INITIAL_OFFSET.x, y: INITIAL_OFFSET.y, width: VIEWBOX.width, height: VIEWBOX.height })
-  const [isPanning, setIsPanning] = useState(false)
-  const [panStart, setPanStart] = useState({ x: 0, y: 0 })
   const [hoveredTerritory, setHoveredTerritory] = useState<string | null>(null)
-  // Track mouse position at start of potential drag to distinguish click vs pan
-  const mouseDownPosRef = useRef<{ x: number; y: number } | null>(null)
-  // Track if we've moved past the drag threshold (true = panning, false = click)
-  const hasDraggedRef = useRef(false)
 
   // Get territory fill color based on owner
   const getTerritoryFill = (territoryId: string, type: string) => {
@@ -92,93 +78,6 @@ export function DiplomacyMap({
     }
     return '#e8dcc4' // Neutral land
   }
-
-  // Handle zoom
-  const handleWheel = useCallback((e: React.WheelEvent) => {
-    e.preventDefault()
-    const svg = svgRef.current
-    if (!svg) return
-
-    const rect = svg.getBoundingClientRect()
-    const mouseX = ((e.clientX - rect.left) / rect.width) * viewBox.width + viewBox.x
-    const mouseY = ((e.clientY - rect.top) / rect.height) * viewBox.height + viewBox.y
-
-    const zoomFactor = e.deltaY > 0 ? 1.1 : 0.9
-    const newWidth = Math.min(VIEWBOX.width * 2, Math.max(400, viewBox.width * zoomFactor))
-    const newHeight = Math.min(VIEWBOX.height * 2, Math.max(300, viewBox.height * zoomFactor))
-
-    // Keep mouse position fixed during zoom
-    const newX = mouseX - (mouseX - viewBox.x) * (newWidth / viewBox.width)
-    const newY = mouseY - (mouseY - viewBox.y) * (newHeight / viewBox.height)
-
-    setViewBox({
-      x: Math.max(-200, Math.min(VIEWBOX.width, newX)),
-      y: Math.max(-200, Math.min(VIEWBOX.height, newY)),
-      width: newWidth,
-      height: newHeight,
-    })
-  }, [viewBox])
-
-  // Pan handlers - supports left-click drag, middle-click, and right-click
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    // Track initial position for all mouse buttons
-    mouseDownPosRef.current = { x: e.clientX, y: e.clientY }
-    hasDraggedRef.current = false
-
-    if (e.button === 0 || e.button === 1 || e.button === 2) {
-      // For middle/right click, prevent default immediately
-      if (e.button === 1 || e.button === 2) {
-        e.preventDefault()
-      }
-      setIsPanning(true)
-      setPanStart({ x: e.clientX, y: e.clientY })
-    }
-  }, [])
-
-  const handleMouseMove = useCallback((e: React.MouseEvent) => {
-    if (!isPanning) return
-    const svg = svgRef.current
-    if (!svg) return
-
-    // Check if we've moved past the drag threshold
-    if (mouseDownPosRef.current && !hasDraggedRef.current) {
-      const distance = Math.sqrt(
-        Math.pow(e.clientX - mouseDownPosRef.current.x, 2) +
-        Math.pow(e.clientY - mouseDownPosRef.current.y, 2)
-      )
-      if (distance > DRAG_THRESHOLD) {
-        hasDraggedRef.current = true
-      }
-    }
-
-    // Only pan if we've crossed the drag threshold
-    if (!hasDraggedRef.current) return
-
-    const rect = svg.getBoundingClientRect()
-    const dx = ((e.clientX - panStart.x) / rect.width) * viewBox.width
-    const dy = ((e.clientY - panStart.y) / rect.height) * viewBox.height
-
-    setViewBox(prev => ({
-      ...prev,
-      x: Math.max(-200, Math.min(VIEWBOX.width, prev.x - dx)),
-      y: Math.max(-200, Math.min(VIEWBOX.height, prev.y - dy)),
-    }))
-    setPanStart({ x: e.clientX, y: e.clientY })
-  }, [isPanning, panStart, viewBox.width, viewBox.height])
-
-  const handleMouseUp = useCallback(() => {
-    setIsPanning(false)
-    mouseDownPosRef.current = null
-    // Reset hasDragged after a microtask so onClick handlers can check it first
-    setTimeout(() => {
-      hasDraggedRef.current = false
-    }, 0)
-  }, [])
-
-  // Reset zoom
-  const resetZoom = useCallback(() => {
-    setViewBox({ x: INITIAL_OFFSET.x, y: INITIAL_OFFSET.y, width: VIEWBOX.width, height: VIEWBOX.height })
-  }, [])
 
   // Render unit icon
   const renderUnit = (unit: Unit, x: number, y: number) => {
@@ -329,45 +228,6 @@ export function DiplomacyMap({
 
   return (
     <div className="absolute inset-0 bg-gray-800">
-      {/* Zoom controls */}
-      <div className="absolute top-4 right-4 z-10 flex flex-col gap-2">
-        <button
-          onClick={() => setViewBox(prev => ({
-            ...prev,
-            width: Math.max(400, prev.width * 0.8),
-            height: Math.max(300, prev.height * 0.8),
-          }))}
-          className="bg-gray-700 hover:bg-gray-600 text-white w-8 h-8 rounded flex items-center justify-center"
-          aria-label="Zoom in"
-          title="Zoom in"
-          tabIndex={-1}
-        >
-          +
-        </button>
-        <button
-          onClick={() => setViewBox(prev => ({
-            ...prev,
-            width: Math.min(VIEWBOX.width * 2, prev.width * 1.25),
-            height: Math.min(VIEWBOX.height * 2, prev.height * 1.25),
-          }))}
-          className="bg-gray-700 hover:bg-gray-600 text-white w-8 h-8 rounded flex items-center justify-center"
-          aria-label="Zoom out"
-          title="Zoom out"
-          tabIndex={-1}
-        >
-          −
-        </button>
-        <button
-          onClick={resetZoom}
-          className="bg-gray-700 hover:bg-gray-600 text-white w-8 h-8 rounded flex items-center justify-center text-xs"
-          aria-label="Reset zoom"
-          title="Reset zoom"
-          tabIndex={-1}
-        >
-          ⟲
-        </button>
-      </div>
-
       {/* Hovered territory tooltip */}
       {hoveredTerritory && (() => {
         const territory = getTerritory(hoveredTerritory)
@@ -396,17 +256,11 @@ export function DiplomacyMap({
       })()}
 
       <svg
-        ref={svgRef}
-        viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`}
+        viewBox="150 50 1835 1360"
+        preserveAspectRatio="xMidYMid meet"
         className="w-full h-full"
         role="img"
         aria-label="Diplomacy game map showing territories, units, and orders"
-        onWheel={handleWheel}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
-        onContextMenu={(e) => e.preventDefault()}
       >
         <defs>
           <marker
@@ -448,10 +302,7 @@ export function DiplomacyMap({
                 aria-label={`${getTerritory(territory.id)?.name || territory.id.toUpperCase()} territory${gameState.supplyCenters[territory.id] ? `, owned by ${gameState.supplyCenters[territory.id]}` : ''}`}
                 className={readOnly ? 'transition-opacity duration-150' : 'cursor-pointer transition-opacity duration-150'}
                 onClick={readOnly ? undefined : () => {
-                  // Only select if we didn't drag (click vs pan)
-                  if (!hasDraggedRef.current) {
-                    onTerritorySelect(isSelected ? null : territory.id)
-                  }
+                  onTerritorySelect(isSelected ? null : territory.id)
                 }}
                 onMouseEnter={() => setHoveredTerritory(territory.id)}
                 onMouseLeave={() => setHoveredTerritory(null)}
@@ -581,9 +432,6 @@ export function DiplomacyMap({
           const center = getTerritoryCenter(baseId) || getTerritoryCenter(conflict.territory)
           if (!center) return null
 
-          // Scale markers based on zoom level (smaller when zoomed out)
-          const zoomScale = Math.min(1, VIEWBOX.width / viewBox.width)
-
           return (
             <ConflictMarker
               key={`conflict-${conflict.territory}`}
@@ -591,7 +439,7 @@ export function DiplomacyMap({
               y={center.y}
               contenders={conflict.contenders}
               resolved={conflict.resolved}
-              scale={zoomScale}
+              scale={1}
             />
           )
         })}
