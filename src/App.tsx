@@ -297,9 +297,8 @@ function AppContent() {
     )
   }
 
-  // Check URL params for live mode
+  // Server URL from query param (defaults to ws://localhost:3001)
   const urlParams = new URLSearchParams(window.location.search)
-  const enableLive = urlParams.get('live') === 'true'
   const serverUrl = urlParams.get('server') || 'ws://localhost:3001'
 
   // Spectator mode
@@ -313,16 +312,7 @@ function AppContent() {
 
   return (
     <div>
-      {/* Mode toggle header */}
-      <div className="fixed top-4 right-4 z-50 flex gap-2">
-        {!enableLive && (
-          <a
-            href="?live=true"
-            className="px-3 py-1.5 text-sm rounded bg-green-700 hover:bg-green-600 transition-colors"
-          >
-            Enable Live
-          </a>
-        )}
+      <div className="fixed top-4 right-4 z-50">
         <button
           onClick={() => setMode('player')}
           className="px-3 py-1.5 text-sm rounded bg-gray-700 hover:bg-gray-600 transition-colors"
@@ -331,7 +321,6 @@ function AppContent() {
         </button>
       </div>
       <SpectatorDashboard
-        enableLiveConnection={enableLive}
         serverUrl={serverUrl}
       />
     </div>

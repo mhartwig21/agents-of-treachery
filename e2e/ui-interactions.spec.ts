@@ -22,18 +22,16 @@ test.describe('Start New Game button', () => {
       await page.waitForTimeout(500);
     });
 
-    test('button should not be visible when enableLiveConnection is false', async ({ page }) => {
-      // Default dashboard doesn't have live connection enabled
-      // The "Start New Game" button only shows when enableLiveConnection={true}
+    test('button should be disabled when not connected to server', async ({ page }) => {
+      // The "Start New Game" button is always visible but disabled without server
       const newGameBtn = page.getByRole('button', { name: /start new game/i });
       const btnCount = await newGameBtn.count();
 
-      // If button exists, verify it's disabled (no server connected)
+      // Button should exist and be disabled (no server connected)
       if (btnCount > 0) {
         await expect(newGameBtn).toBeDisabled();
         await screenshot(page, { name: 'new-game-btn-disabled', subdir: 'ui-interactions' });
       }
-      // If button doesn't exist, that's the expected behavior without live connection
     });
 
     test('connection indicator should show disconnected state', async ({ page }) => {
