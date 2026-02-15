@@ -33,19 +33,16 @@ export function PressMessageModal({
 }: PressMessageModalProps) {
   const modalRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const clickedMessageRef = useRef<HTMLDivElement>(null);
 
   // Derive channel info from message if not provided
   const channelInfo = channel || deriveChannelInfo(message.channelId);
   const senderPower = toUIPower(message.sender);
 
-  // Find thread context
-  const threadMessages = allMessages.filter(
-    (m) => m.replyTo === message.id || m.id === message.replyTo || m.id === message.id
-  );
-  const parentMessage = message.replyTo
-    ? allMessages.find((m) => m.id === message.replyTo)
-    : undefined;
-  const replies = allMessages.filter((m) => m.replyTo === message.id);
+  // Find all messages in the same channel, sorted chronologically
+  const channelMessages = allMessages
+    .filter((m) => m.channelId === message.channelId)
+    .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 
   // Handle escape key
   useEffect(() => {
@@ -59,9 +56,13 @@ export function PressMessageModal({
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [onClose]);
 
-  // Focus trap
+  // Focus trap and auto-scroll to clicked message
   useEffect(() => {
     closeButtonRef.current?.focus();
+    // Delay scroll slightly to ensure DOM is rendered
+    requestAnimationFrame(() => {
+      clickedMessageRef.current?.scrollIntoView({ block: 'center' });
+    });
   }, []);
 
   // Click outside to close
@@ -107,48 +108,44 @@ export function PressMessageModal({
           </button>
         </div>
 
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {/* Parent message reference */}
-          {parentMessage && (
-            <div className="border-l-2 border-gray-600 pl-3">
-              <button
-                onClick={() => onNavigate?.(parentMessage.id)}
-                className="text-left w-full hover:bg-gray-700/50 rounded p-2 transition-colors"
+        {/* Content - chronological channel conversation */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          {channelMessages.map((msg) => {
+            const isClicked = msg.id === message.id;
+            const msgPower = toUIPower(msg.sender);
+            return (
+              <div
+                key={msg.id}
+                ref={isClicked ? clickedMessageRef : undefined}
+                className={`rounded-lg p-3 transition-colors ${
+                  isClicked
+                    ? 'bg-blue-900/40 ring-1 ring-blue-500/50'
+                    : 'bg-gray-700/30 hover:bg-gray-700/50'
+                }`}
               >
                 <div className="flex items-center gap-2 mb-1">
-                  <span className="text-xs text-gray-500">Replying to</span>
-                  <PowerBadge power={toUIPower(parentMessage.sender)} size="sm" />
+                  <PowerBadge power={msgPower} size="sm" />
+                  <span className="text-xs text-gray-500">
+                    {formatFullTime(msg.timestamp)}
+                  </span>
+                  {msg.metadata?.intent && (
+                    <IntentBadge intent={msg.metadata.intent} size="md" />
+                  )}
                 </div>
-                <p className="text-sm text-gray-400 line-clamp-2">
-                  {parentMessage.content}
+                <p
+                  id={isClicked ? 'modal-title' : undefined}
+                  className={`text-sm whitespace-pre-wrap leading-relaxed ${
+                    isClicked ? 'text-gray-100' : 'text-gray-300'
+                  }`}
+                >
+                  {msg.content}
                 </p>
-              </button>
-            </div>
-          )}
+              </div>
+            );
+          })}
 
-          {/* Main message content */}
-          <div>
-            <p
-              id="modal-title"
-              className="text-lg text-gray-100 whitespace-pre-wrap leading-relaxed"
-            >
-              {message.content}
-            </p>
-          </div>
-
-          {/* Metadata section */}
+          {/* Metadata for clicked message */}
           <div className="space-y-3 pt-4 border-t border-gray-700">
-            {/* Timestamp and intent */}
-            <div className="flex flex-wrap items-center gap-3">
-              <span className="text-sm text-gray-500">
-                {formatFullTime(message.timestamp)}
-              </span>
-              {message.metadata?.intent && (
-                <IntentBadge intent={message.metadata.intent} size="md" />
-              )}
-            </div>
-
             {/* References */}
             {message.metadata?.references && message.metadata.references.length > 0 && (
               <div>
@@ -186,52 +183,24 @@ export function PressMessageModal({
               <ChannelDetails channel={channelInfo} />
             </div>
           </div>
-
-          {/* Replies section */}
-          {replies.length > 0 && (
-            <div className="pt-4 border-t border-gray-700">
-              <h3 className="text-xs text-gray-500 uppercase tracking-wide mb-3">
-                Replies ({replies.length})
-              </h3>
-              <div className="space-y-2">
-                {replies.map((reply) => (
-                  <button
-                    key={reply.id}
-                    onClick={() => onNavigate?.(reply.id)}
-                    className="w-full text-left p-3 bg-gray-700/50 rounded hover:bg-gray-700 transition-colors"
-                  >
-                    <div className="flex items-center gap-2 mb-1">
-                      <PowerBadge power={toUIPower(reply.sender)} size="sm" />
-                      <span className="text-xs text-gray-500">
-                        {formatFullTime(reply.timestamp)}
-                      </span>
-                    </div>
-                    <p className="text-sm text-gray-300 line-clamp-2">
-                      {reply.content}
-                    </p>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
 
-        {/* Footer with thread navigation */}
-        {threadMessages.length > 1 && (
+        {/* Footer with channel navigation */}
+        {channelMessages.length > 1 && (
           <div className="px-4 py-3 border-t border-gray-700 flex items-center justify-between">
             <span className="text-xs text-gray-500">
-              {threadMessages.length} messages in thread
+              {channelMessages.length} messages in channel
             </span>
             <div className="flex gap-2">
               <NavigateButton
                 direction="prev"
-                messages={threadMessages}
+                messages={channelMessages}
                 currentId={message.id}
                 onNavigate={onNavigate}
               />
               <NavigateButton
                 direction="next"
-                messages={threadMessages}
+                messages={channelMessages}
                 currentId={message.id}
                 onNavigate={onNavigate}
               />
